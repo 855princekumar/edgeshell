@@ -120,7 +120,7 @@ jobs:
         # Reports to the Security tab. The vulnerability DB download is
         # rate limited on shared runners, so a scan outage must not block CI.
         continue-on-error: true
-        uses: aquasecurity/trivy-action@b6643a29fecd7f34b3597bc6acb0a98b03d33ff8  # v0.33.1
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25  # v0.36.0
         with:
           image-ref: edgeshell:audit
           format: sarif
