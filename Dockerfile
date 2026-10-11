@@ -1,3 +1,5 @@
+# check=skip=SecretsUsedInArgOrEnv
+# (false positive: ANSIBLE_HOST_KEY_CHECKING is a setting, not a secret)
 # EdgeShell control plane. Multi-arch: linux/amd64 and linux/arm64
 # (x86 clouds, AWS Graviton, Ampere Altra, Raspberry Pi 4/5).
 #
