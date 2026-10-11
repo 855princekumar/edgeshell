@@ -29,6 +29,8 @@ EXPECTED_NODES = int(os.environ.get('EXPECTED_NODES', '6'))
 # Set to 127.0.0.1 when EdgeShell runs on the host instead of in the sandbox
 # network, so host.docker.internal addresses in the export are rewritten.
 HOST_OVERRIDE = os.environ.get('E2E_HOST_OVERRIDE', '')
+FLEET_FILE = os.environ.get('FLEET_FILE',
+                            os.path.join(os.path.dirname(os.path.abspath(__file__)), 'fleet.json'))
 
 FAILED = []
 
@@ -169,8 +171,15 @@ def main():
     section('Import fleet from Pi Fleet Emulator export')
     with urllib.request.urlopen(PFE + '/api/export-edgeshell', timeout=30) as r:
         export = json.loads(r.read())
-    check(f'export lists {EXPECTED_NODES} nodes', export.get('node_count') == EXPECTED_NODES,
-          export.get('node_count'))
+    # The emulator exports every running pi-emu-* container on the host, which
+    # can include fleets from other projects. Keep only the nodes we spawned.
+    with open(FLEET_FILE) as f:
+        ours = {f"(pi-emu-{n['name']})" for n in json.load(f)['nodes']}
+    export['nodes'] = [n for n in export.get('nodes', [])
+                       if any(tag in (n.get('description') or '') for tag in ours)]
+    export['node_count'] = len(export['nodes'])
+    check(f'export lists the {EXPECTED_NODES} sandbox nodes', export['node_count'] == EXPECTED_NODES,
+          export['node_count'])
     admin.get('/nodes/import')
     status, _, body = admin.post_multipart('/nodes/import', [],
                                            [('file', ('pi-fleet-nodes.json', json.dumps(export).encode()))])

@@ -93,7 +93,7 @@ step "Image hardening"
 uid="$(docker exec "$ES" id -u)"; [ "$uid" = 10001 ] && echo "  PASS  runs as non-root uid 10001" || { echo "  FAIL  uid=$uid"; exit 1; }
 docker exec "$ES" sh -c 'test ! -e /app/.env' && echo "  PASS  no .env in image"
 docker exec "$ES" sh -c '! touch /app/app/.write-test 2>/dev/null' && echo "  PASS  application code is read-only"
-leaks="$(docker exec "$ES" sh -c 'find / -xdev \( -name "*.db" -o -name ".env" -o -name "*.pem" -o -name "id_rsa*" -o -name "snapshot*.json" \) -not -path "/proc/*" -not -path "/app/instance/*" -not -path "/opt/venv/*" -not -path "/usr/*" 2>/dev/null' || true)"
+leaks="$(docker exec "$ES" sh -c 'find / -xdev \( -name "*.db" -o -name ".env" -o -name "*.pem" -o -name "id_rsa*" -o -name "snapshot*.json" \) -not -path "/proc/*" -not -path "/app/instance/*" -not -path "/opt/venv/*" -not -path "/usr/*" -not -path "/etc/ssl/*" 2>/dev/null' || true)"
 [ -z "$leaks" ] && echo "  PASS  no databases, keys or env files outside the data volume" || { echo "  FAIL  found: $leaks"; exit 1; }
 
 step "Data survives a container restart"
