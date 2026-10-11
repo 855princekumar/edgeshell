@@ -5,7 +5,7 @@ name: Release
 #
 # Repository settings needed (Settings > Secrets and variables > Actions):
 #   secret   DOCKERHUB_TOKEN     Docker Hub access token (Read & Write)
-#   variable DOCKERHUB_USERNAME  optional, defaults to devprincekumar
+#   secret   DOCKERHUB_USERNAME  optional (a variable works too), defaults to devprincekumar
 
 on:
   push:
@@ -36,7 +36,7 @@ jobs:
       id-token: write        # provenance attestation
       attestations: write
     env:
-      DOCKERHUB_USERNAME: ${{ vars.DOCKERHUB_USERNAME || 'devprincekumar' }}
+      DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME || vars.DOCKERHUB_USERNAME || 'devprincekumar' }}
       TAG: ${{ inputs.tag || github.ref_name }}
     steps:
       - uses: actions/checkout@v5
