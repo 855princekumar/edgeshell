@@ -1,0 +1,42 @@
+# Python
+__pycache__/
+*.py[cod]
+*.so
+build/
+dist/
+*.egg-info/
+
+# Virtualenv
+venv/
+.venv/
+env/
+ENV/
+
+# Flask / EdgeShell
+instance/
+*.db
+*.db-wal
+*.db-shm
+uploads/
+logs/
+.env
+releases/
+snapshot*.json
+
+# Ansible generated
+ansible/inventory/hosts_*.ini
+
+# OS / IDE
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.swp
+
+# Secrets (never commit)
+*.pem
+*.key
+*.crt
+id_rsa
+id_ed25519
+wg*.conf

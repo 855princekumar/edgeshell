@@ -1,0 +1,403 @@
+{% extends "base.html" %}
+{% block title %}System Monitoring - EdgeShell{% endblock %}
+
+{% block content %}
+<div class="d-flex align-items-center justify-content-between mb-4">
+  <div>
+    <h4 class="fw-bold mb-0">System Monitoring</h4>
+    <small class="text-muted">Real-time metrics from fleet nodes</small>
+  </div>
+  <div class="d-flex gap-2 align-items-center">
+    <span class="text-muted small me-2" id="last-refresh"> n/a </span>
+    <button class="btn btn-sm btn-outline-primary" onclick="pollAll()">
+      <i class="bi bi-arrow-clockwise me-1"></i>Refresh All
+    </button>
+    <div class="form-check form-switch mb-0 ms-2">
+      <input class="form-check-input" type="checkbox" id="autoRefreshToggle" checked>
+      <label class="form-check-label small text-muted" for="autoRefreshToggle">Auto</label>
+    </div>
+  </div>
+</div>
+
+{% if not nodes %}
+<div class="text-center py-5 text-muted">
+  <i class="bi bi-cpu fs-1 mb-3 d-block opacity-25"></i>
+  <p>No nodes configured. <a href="{{ url_for('nodes.add') }}">Add a node</a> to start monitoring.</p>
+</div>
+{% else %}
+
+<!-- Fleet Summary Bar -->
+<div class="row g-3 mb-4">
+  <div class="col-6 col-md-2">
+    <div class="stat-card">
+      <div class="stat-value text-primary" id="sum-online"> n/a </div>
+      <div class="stat-label">Online</div>
+    </div>
+  </div>
+  <div class="col-6 col-md-2">
+    <div class="stat-card">
+      <div class="stat-value text-danger" id="sum-offline"> n/a </div>
+      <div class="stat-label">Offline</div>
+    </div>
+  </div>
+  <div class="col-6 col-md-2">
+    <div class="stat-card">
+      <div class="stat-value text-warning" id="sum-high-cpu"> n/a </div>
+      <div class="stat-label">High CPU</div>
+    </div>
+  </div>
+  <div class="col-6 col-md-2">
+    <div class="stat-card">
+      <div class="stat-value text-warning" id="sum-high-mem"> n/a </div>
+      <div class="stat-label">High Mem</div>
+    </div>
+  </div>
+  <div class="col-6 col-md-2">
+    <div class="stat-card">
+      <div class="stat-value text-info" id="sum-docker"> n/a </div>
+      <div class="stat-label">Docker Up</div>
+    </div>
+  </div>
+  <div class="col-6 col-md-2">
+    <div class="stat-card">
+      <div class="stat-value text-success" id="sum-nodered"> n/a </div>
+      <div class="stat-label">Node-RED Up</div>
+    </div>
+  </div>
+</div>
+
+<!-- Node Monitoring Cards -->
+<div class="row g-3" id="monitoring-grid">
+  {% for node in nodes %}
+  <div class="col-12 col-xl-6" id="card-wrap-{{ node.id }}">
+    <div class="card border-0 shadow-sm h-100">
+      <div class="card-header bg-white border-bottom d-flex align-items-center justify-content-between py-2">
+        <div class="d-flex align-items-center gap-2">
+          <span class="status-badge status-{{ node.status }}" id="status-{{ node.id }}">{{ node.status }}</span>
+          <span class="fw-semibold">{{ node.name }}</span>
+          <small class="text-muted">{{ node.ip_address }}</small>
+        </div>
+        <div class="d-flex gap-1">
+          <button class="btn btn-xs btn-outline-secondary" onclick="pollNode({{ node.id }})" title="Refresh">
+            <i class="bi bi-arrow-clockwise"></i>
+          </button>
+          {% if current_user.role in ['Administrator','Operator'] %}
+          <button class="btn btn-xs btn-outline-warning" onclick="restartNode({{ node.id }}, '{{ node.name }}')" title="Restart Node">
+            <i class="bi bi-power"></i>
+          </button>
+          {% endif %}
+          <button class="btn btn-xs btn-outline-primary" data-bs-toggle="modal" data-bs-target="#historyModal" onclick="loadHistory({{ node.id }}, '{{ node.name }}')" title="History">
+            <i class="bi bi-graph-up"></i>
+          </button>
+        </div>
+      </div>
+      <div class="card-body p-3" id="metrics-{{ node.id }}">
+        <div class="text-center py-3 text-muted small" id="loading-{{ node.id }}">
+          <div class="spinner-border spinner-border-sm me-2"></div>Collecting metrics…
+        </div>
+
+        <div id="data-{{ node.id }}" style="display:none">
+          <!-- CPU / RAM / Disk row -->
+          <div class="row g-2 mb-3">
+            <div class="col-4">
+              <div class="text-center">
+                <div class="small text-muted mb-1">CPU</div>
+                <div class="fw-bold fs-5" id="cpu-val-{{ node.id }}"> n/a </div>
+                <div class="progress mt-1" style="height:4px">
+                  <div class="progress-bar" id="cpu-bar-{{ node.id }}" style="width:0%"></div>
+                </div>
+              </div>
+            </div>
+            <div class="col-4">
+              <div class="text-center">
+                <div class="small text-muted mb-1">Memory</div>
+                <div class="fw-bold fs-5" id="mem-val-{{ node.id }}"> n/a </div>
+                <div class="progress mt-1" style="height:4px">
+                  <div class="progress-bar bg-info" id="mem-bar-{{ node.id }}" style="width:0%"></div>
+                </div>
+              </div>
+            </div>
+            <div class="col-4">
+              <div class="text-center">
+                <div class="small text-muted mb-1">Disk</div>
+                <div class="fw-bold fs-5" id="disk-val-{{ node.id }}"> n/a </div>
+                <div class="progress mt-1" style="height:4px">
+                  <div class="progress-bar bg-warning" id="disk-bar-{{ node.id }}" style="width:0%"></div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Detail rows -->
+          <div class="row g-2 small">
+            <div class="col-6">
+              <table class="table table-sm table-borderless mb-0">
+                <tr><td class="text-muted ps-0">Load Avg</td><td class="fw-medium" id="load-{{ node.id }}"> n/a </td></tr>
+                <tr><td class="text-muted ps-0">Uptime</td><td class="fw-medium" id="uptime-{{ node.id }}"> n/a </td></tr>
+                <tr><td class="text-muted ps-0">Network In</td><td class="fw-medium" id="net-in-{{ node.id }}"> n/a </td></tr>
+                <tr><td class="text-muted ps-0">Network Out</td><td class="fw-medium" id="net-out-{{ node.id }}"> n/a </td></tr>
+              </table>
+            </div>
+            <div class="col-6">
+              <table class="table table-sm table-borderless mb-0">
+                <tr>
+                  <td class="text-muted ps-0">Docker</td>
+                  <td id="docker-status-{{ node.id }}"><span class="badge bg-secondary"> n/a </span></td>
+                </tr>
+                <tr>
+                  <td class="text-muted ps-0">Node-RED</td>
+                  <td id="nodered-status-{{ node.id }}"><span class="badge bg-secondary"> n/a </span></td>
+                </tr>
+                <tr>
+                  <td class="text-muted ps-0">Temp</td>
+                  <td class="fw-medium" id="temp-{{ node.id }}"> n/a </td>
+                </tr>
+                <tr>
+                  <td class="text-muted ps-0">Last Seen</td>
+                  <td class="fw-medium" id="seen-{{ node.id }}"> n/a </td>
+                </tr>
+              </table>
+            </div>
+          </div>
+
+          <!-- Mini sparkline -->
+          <div id="spark-{{ node.id }}" style="height:50px;margin-top:8px"></div>
+        </div>
+
+        <div id="error-{{ node.id }}" style="display:none" class="alert alert-danger py-2 small mb-0"></div>
+      </div>
+    </div>
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
+
+<!-- History Modal -->
+<div class="modal fade" id="historyModal" tabindex="-1">
+  <div class="modal-dialog modal-xl modal-dialog-centered">
+    <div class="modal-content border-0 shadow">
+      <div class="modal-header border-bottom">
+        <h5 class="modal-title fw-bold" id="historyModalLabel">Metrics History</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body p-3">
+        <div id="historyCharts" style="min-height:300px">
+          <div class="text-center py-5 text-muted">
+            <div class="spinner-border me-2"></div>Loading history…
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<style>
+.btn-xs { padding: 2px 7px; font-size: .75rem; }
+</style>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const nodeIds = [{% for n in nodes %}{{ n.id }}{% if not loop.last %},{% endif %}{% endfor %}];
+const sparkData = {};
+let histChart = null;
+let autoTimer = null;
+
+function setBar(id, pct) {
+  const bar = document.getElementById(id);
+  if (!bar) return;
+  bar.style.width = pct + '%';
+  bar.className = 'progress-bar ' + (pct > 85 ? 'bg-danger' : pct > 65 ? 'bg-warning' : 'bg-success');
+}
+
+function humanBytes(b) {
+  if (b == null || isNaN(b)) return 'n/a';
+  const u = ['B','KB','MB','GB','TB'];
+  let i = 0, v = Number(b);
+  while (v >= 1024 && i < u.length - 1) { v /= 1024; i++; }
+  return v.toFixed(v < 10 && i > 0 ? 1 : 0) + ' ' + u[i];
+}
+
+function svcBadge(up) {
+  return up
+    ? '<span class="badge bg-success">Running</span>'
+    : '<span class="badge bg-danger">Down</span>';
+}
+
+function pollNode(id) {
+  document.getElementById('loading-'+id).style.display = '';
+  document.getElementById('data-'+id).style.display = 'none';
+  document.getElementById('error-'+id).style.display = 'none';
+
+  fetch('/monitoring/poll', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCSRF() },
+    body: JSON.stringify({ node_ids: [id] })
+  })
+  .then(r => r.json())
+  .then(data => {
+    const r = data.results && data.results[id];
+    if (!r) { showNodeError(id, 'No data returned'); return; }
+    if (r.error) { showNodeError(id, r.error); return; }
+    if (!r.success || !r.metrics) { showNodeError(id, 'Node offline or unreachable'); return; }
+    renderNode(id, r.metrics);
+  })
+  .catch(e => showNodeError(id, e.message));
+}
+
+function renderNode(id, m) {
+  document.getElementById('loading-'+id).style.display = 'none';
+  document.getElementById('data-'+id).style.display = '';
+  document.getElementById('error-'+id).style.display = 'none';
+
+  const cpu = Math.round(m.cpu_percent || 0);
+  const mem = Math.round(m.mem_percent || 0);
+  const disk = Math.round(m.disk_percent || 0);
+
+  document.getElementById('cpu-val-'+id).textContent = cpu + '%';
+  document.getElementById('mem-val-'+id).textContent = mem + '%';
+  document.getElementById('disk-val-'+id).textContent = disk + '%';
+  setBar('cpu-bar-'+id, cpu);
+  setBar('mem-bar-'+id, mem);
+  setBar('disk-bar-'+id, disk);
+
+  const loadStr = [m.load_1, m.load_5, m.load_15]
+    .map(v => (v != null ? v : '0')).join(' ');
+  document.getElementById('load-'+id).textContent = loadStr || 'n/a';
+  document.getElementById('uptime-'+id).textContent = m.uptime || 'n/a';
+  document.getElementById('net-in-'+id).textContent = humanBytes(m.net_rx_bytes);
+  document.getElementById('net-out-'+id).textContent = humanBytes(m.net_tx_bytes);
+  document.getElementById('temp-'+id).textContent = m.temperature ? m.temperature + '°C' : 'N/A';
+  document.getElementById('seen-'+id).textContent = m.collected_at ? new Date(m.collected_at).toLocaleTimeString() : 'n/a';
+
+  document.getElementById('docker-status-'+id).innerHTML = svcBadge(m.docker_running);
+  document.getElementById('nodered-status-'+id).innerHTML = svcBadge(m.nodered_running);
+
+  // status badge
+  const sb = document.getElementById('status-'+id);
+  if (sb) { sb.textContent = m.status || 'online'; sb.className = 'status-badge status-' + (m.status || 'online'); }
+
+  // sparkline
+  if (!sparkData[id]) sparkData[id] = [];
+  sparkData[id].push(cpu);
+  if (sparkData[id].length > 20) sparkData[id].shift();
+  renderSpark(id);
+}
+
+function renderSpark(id) {
+  const el = document.getElementById('spark-'+id);
+  if (!el) return;
+  let chart = echarts.getInstanceByDom(el);
+  if (!chart) chart = echarts.init(el, null, { renderer: 'svg' });
+  chart.setOption({
+    animation: false,
+    grid: { top: 0, bottom: 0, left: 0, right: 0 },
+    xAxis: { type: 'category', show: false },
+    yAxis: { type: 'value', show: false, min: 0, max: 100 },
+    series: [{
+      type: 'line', data: sparkData[id], smooth: true,
+      symbol: 'none', lineStyle: { color: '#1a56db', width: 1.5 },
+      areaStyle: { color: 'rgba(26,86,219,0.08)' }
+    }]
+  });
+}
+
+function showNodeError(id, msg) {
+  document.getElementById('loading-'+id).style.display = 'none';
+  document.getElementById('data-'+id).style.display = 'none';
+  const el = document.getElementById('error-'+id);
+  el.style.display = '';
+  el.textContent = 'Error: ' + msg;
+  const sb = document.getElementById('status-'+id);
+  if (sb) { sb.textContent = 'offline'; sb.className = 'status-badge status-offline'; }
+}
+
+function pollAll() {
+  if (!nodeIds.length) return;
+  document.getElementById('last-refresh').textContent = 'Refreshing…';
+  nodeIds.forEach(id => pollNode(id));
+  updateSummary();
+  document.getElementById('last-refresh').textContent = 'Last: ' + new Date().toLocaleTimeString();
+}
+
+function updateSummary() {
+  let online=0, offline=0, highCpu=0, highMem=0, docker=0, nodered=0;
+  nodeIds.forEach(id => {
+    const sb = document.getElementById('status-'+id);
+    if (sb && sb.textContent === 'online') online++; else offline++;
+    const cv = document.getElementById('cpu-val-'+id);
+    if (cv && parseInt(cv.textContent) > 80) highCpu++;
+    const mv = document.getElementById('mem-val-'+id);
+    if (mv && parseInt(mv.textContent) > 80) highMem++;
+    const ds = document.getElementById('docker-status-'+id);
+    if (ds && ds.innerHTML.includes('bg-success')) docker++;
+    const ns = document.getElementById('nodered-status-'+id);
+    if (ns && ns.innerHTML.includes('bg-success')) nodered++;
+  });
+  document.getElementById('sum-online').textContent = online;
+  document.getElementById('sum-offline').textContent = offline;
+  document.getElementById('sum-high-cpu').textContent = highCpu;
+  document.getElementById('sum-high-mem').textContent = highMem;
+  document.getElementById('sum-docker').textContent = docker;
+  document.getElementById('sum-nodered').textContent = nodered;
+}
+
+function restartNode(id, name) {
+  if (!confirm('Restart node ' + name + '?')) return;
+  fetch('/terminal/restart', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCSRF() },
+    body: JSON.stringify({ node_ids: [id] })
+  }).then(r => r.json()).then(d => {
+    showToast(d.message || 'Restart command sent', d.success ? 'success' : 'warning');
+  });
+}
+
+function loadHistory(id, name) {
+  document.getElementById('historyModalLabel').textContent = name + ' - Metrics History';
+  document.getElementById('historyCharts').innerHTML = '<div class="text-center py-5 text-muted"><div class="spinner-border me-2"></div>Loading…</div>';
+  fetch('/monitoring/history/' + id)
+  .then(r => r.json())
+  .then(d => {
+    if (!d.history || !d.history.length) {
+      document.getElementById('historyCharts').innerHTML = '<p class="text-muted text-center py-4">No history available yet.</p>';
+      return;
+    }
+    renderHistory(d.history);
+  });
+}
+
+function renderHistory(history) {
+  const container = document.getElementById('historyCharts');
+  container.innerHTML = '<div id="hist-chart" style="height:320px"></div>';
+  const chart = echarts.init(document.getElementById('hist-chart'));
+  const times = history.map(h => new Date(h.collected_at).toLocaleTimeString());
+  const cpu = history.map(h => h.cpu_percent || 0);
+  const mem = history.map(h => h.memory_percent || 0);
+  const disk = history.map(h => h.disk_percent || 0);
+  chart.setOption({
+    tooltip: { trigger: 'axis' },
+    legend: { data: ['CPU', 'Memory', 'Disk'] },
+    grid: { left: '3%', right: '4%', bottom: '8%', containLabel: true },
+    xAxis: { type: 'category', data: times, axisLabel: { rotate: 30 } },
+    yAxis: { type: 'value', min: 0, max: 100, axisLabel: { formatter: '{value}%' } },
+    series: [
+      { name: 'CPU', type: 'line', data: cpu, smooth: true, lineStyle: { color: '#1a56db' } },
+      { name: 'Memory', type: 'line', data: mem, smooth: true, lineStyle: { color: '#0ea5e9' } },
+      { name: 'Disk', type: 'line', data: disk, smooth: true, lineStyle: { color: '#d97706' } }
+    ]
+  });
+}
+
+// Auto-refresh
+const toggle = document.getElementById('autoRefreshToggle');
+function startAuto() { autoTimer = setInterval(pollAll, 30000); }
+function stopAuto() { clearInterval(autoTimer); }
+toggle.addEventListener('change', () => toggle.checked ? startAuto() : stopAuto());
+
+document.addEventListener('DOMContentLoaded', () => {
+  pollAll();
+  startAuto();
+});
+</script>
+{% endblock %}

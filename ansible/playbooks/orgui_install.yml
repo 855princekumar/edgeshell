@@ -1,0 +1,34 @@
+---
+# Fleet-wide OpenRemoteGUI install. Idempotent: clones only if absent,
+# runs install.sh, verifies the service. Unreachable/failed hosts are
+# reported per-host by ansible-runner and logged by EdgeShell.
+- name: Install OpenRemoteGUI across the fleet
+  hosts: all
+  gather_facts: false
+  become: true
+  vars:
+    orgui_repo: "https://github.com/855princekumar/OpenRemoteGUI.git"
+    orgui_dir: "{{ ansible_env.HOME | default('/root') }}/OpenRemoteGUI"
+  tasks:
+    - name: Ensure git is present
+      package:
+        name: git
+        state: present
+      ignore_errors: true
+
+    - name: Clone OpenRemoteGUI if missing
+      git:
+        repo: "{{ orgui_repo }}"
+        dest: "{{ orgui_dir }}"
+        version: main
+        update: false
+
+    - name: Run install.sh
+      command: ./install.sh
+      args:
+        chdir: "{{ orgui_dir }}"
+      register: install_out
+
+    - name: Show install summary
+      debug:
+        msg: "OpenRemoteGUI install finished on {{ inventory_hostname }}"

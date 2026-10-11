@@ -1,0 +1,57 @@
+---
+# EdgeShell - Log Collection Playbook
+# Usage: ansible-playbook log_fetch.yml -i inventory/hosts.ini
+#   -e "log_path=/var/log/syslog local_dest=/tmp/edgeshell_logs/"
+
+- name: Collect Logs from Edge Nodes
+  hosts: target_nodes
+  gather_facts: false
+  become: true
+  vars:
+    log_path: "/var/log/syslog"
+    local_dest: "/tmp/edgeshell_logs/"
+    tail_lines: 500
+    list_only: false
+
+  tasks:
+    - name: List files in log directory
+      ansible.builtin.shell: "ls -lh {{ log_path }}"
+      register: ls_result
+      ignore_errors: true
+      when: list_only | bool
+
+    - name: Print directory listing
+      ansible.builtin.debug:
+        msg: "{{ ls_result.stdout_lines }}"
+      when: list_only | bool and ls_result is defined
+
+    - name: Fetch last N lines of log file
+      ansible.builtin.shell: "tail -n {{ tail_lines }} {{ log_path }}"
+      register: log_content
+      ignore_errors: true
+      when: not list_only | bool
+
+    - name: Ensure local staging directory exists
+      ansible.builtin.file:
+        path: "{{ local_dest }}/{{ inventory_hostname }}"
+        state: directory
+        mode: "0755"
+      delegate_to: localhost
+      when: not list_only | bool
+
+    - name: Write log content to local file
+      ansible.builtin.copy:
+        content: "{{ log_content.stdout }}"
+        dest: "{{ local_dest }}/{{ inventory_hostname }}/{{ log_path | basename }}.txt"
+        mode: "0644"
+      delegate_to: localhost
+      when: not list_only | bool and log_content is defined
+
+    - name: Capture log result fact
+      ansible.builtin.set_fact:
+        edgeshell_log:
+          host: "{{ inventory_hostname }}"
+          path: "{{ log_path }}"
+          lines: "{{ log_content.stdout_lines | length | default(0) }}"
+          local_file: "{{ local_dest }}/{{ inventory_hostname }}/{{ log_path | basename }}.txt"
+      when: not list_only | bool

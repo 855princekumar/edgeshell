@@ -1,0 +1,71 @@
+{% extends "base.html" %}
+{% block title %}Email Settings{% endblock %}
+{% block content %}
+<div class="page-header">
+    <div>
+        <div class="page-title">Email Settings (useSend)</div>
+        <div class="page-subtitle">Admin only. Configure the useSend API used to notify reporters and admins about issues.</div>
+    </div>
+    <a href="{{ url_for('issues.index') }}" class="btn btn-outline"><i class="bi bi-arrow-left"></i> Back to Issues</a>
+</div>
+
+<div class="card" style="max-width:720px">
+    <div class="card-body">
+        <form method="POST">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+            <div class="form-group" style="display:flex;align-items:center;gap:10px;margin-bottom:16px">
+                <input type="checkbox" id="email_enabled" name="email_enabled" {% if cfg.enabled %}checked{% endif %}>
+                <label for="email_enabled" class="form-label" style="margin:0">Enable email notifications</label>
+            </div>
+
+            <div class="form-group">
+                <label class="form-label">useSend base URL</label>
+                <input type="text" name="usesend_base_url" class="form-control"
+                       value="{{ cfg.base_url }}" placeholder="https://app.usesend.com">
+                <div class="form-text">Use the default for useSend cloud, or your self-hosted instance URL.</div>
+            </div>
+
+            <div class="form-group">
+                <label class="form-label">From address</label>
+                <input type="text" name="usesend_from" class="form-control"
+                       value="{{ cfg.from }}" placeholder="EdgeShell &lt;noreply@yourdomain.com&gt;">
+                <div class="form-text">Must be a verified sender/domain in useSend.</div>
+            </div>
+
+            <div class="form-group">
+                <label class="form-label">API key</label>
+                <input type="password" name="usesend_api_key" class="form-control" autocomplete="new-password"
+                       placeholder="{% if configured %}configured (leave blank to keep){% else %}us_...{% endif %}">
+                <div class="form-text">
+                    {% if configured %}A key is saved and encrypted. Enter a new one only to replace it.
+                    {% else %}Paste your useSend API key. Stored encrypted at rest.{% endif %}
+                </div>
+            </div>
+
+            <div class="flex gap-2" style="margin-top:16px">
+                <button type="submit" class="btn btn-primary"><i class="bi bi-save"></i> Save</button>
+                <button type="submit" name="send_test" value="1" class="btn btn-outline">
+                    <i class="bi bi-send"></i> Save and send test to me
+                </button>
+            </div>
+            <div class="form-text" style="margin-top:8px">
+                Status: {% if cfg.enabled and configured %}<span style="color:#059669">enabled and configured</span>
+                {% elif configured %}<span style="color:#d97706">configured but disabled</span>
+                {% else %}<span style="color:#64748b">not configured</span>{% endif %}
+            </div>
+        </form>
+    </div>
+</div>
+
+<div class="card" style="max-width:720px;margin-top:16px">
+    <div class="card-body">
+        <div class="fw-semibold mb-2">How notifications work</div>
+        <div class="text-sm text-muted">
+            New issue notifies all admins and confirms to the reporter. An admin reply emails the reporter.
+            A reporter reply emails the admins. A status change emails the reporter. Recipients come from
+            user account emails, so make sure admins and reporters have an email set.
+        </div>
+    </div>
+</div>
+{% endblock %}

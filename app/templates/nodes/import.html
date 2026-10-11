@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% block title %}Import Nodes{% endblock %}
+{% block content %}
+<div class="page-header">
+    <div>
+        <div class="page-title">Bulk Import Nodes</div>
+        <div class="page-subtitle">Upload a CSV, TXT, or JSON file (including a Pi Fleet Emulator export). The schema is detected automatically and shown for you to verify before anything is created.</div>
+    </div>
+    <a href="{{ url_for('nodes.index') }}" class="btn btn-outline"><i class="bi bi-arrow-left"></i> Back</a>
+</div>
+
+<div class="card" style="max-width:720px">
+    <div class="card-body">
+        <form method="POST" enctype="multipart/form-data">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <div class="form-group">
+                <label class="form-label">CSV, TXT, or JSON file</label>
+                <input type="file" name="file" accept=".csv,.txt,.tsv,.json" class="form-control" required>
+            </div>
+            <p class="text-sm text-muted">
+                Any delimiter (comma, semicolon, tab, pipe) is accepted. A header row is optional:
+                an IP-shaped column is detected even when unlabeled. Recognized columns include
+                ip, name, user, password, port, tags, environment, location, type, nodered_port, orgui_port.
+                JSON may be a list of node objects or a <code>pi-fleet-nodes.json</code> export from
+                <a href="https://github.com/855princekumar/pi-fleet-emulator" target="_blank" rel="noopener">Pi Fleet Emulator</a>.
+            </p>
+            <div class="card mb-4" style="background:var(--gray-50)">
+                <div class="card-body" style="padding:12px 16px">
+                    <div class="text-xs text-muted" style="font-family:monospace;white-space:pre">ip,name,user,password,port,tags
+10.0.0.21,pi-line1,pi,raspberry,22,nodered;docker
+10.0.0.22,pi-line2,pi,raspberry,22,plc</div>
+                </div>
+            </div>
+            <button type="submit" class="btn btn-primary"><i class="bi bi-search"></i> Analyze File</button>
+        </form>
+    </div>
+</div>
+{% endblock %}

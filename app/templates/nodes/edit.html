@@ -1,0 +1,89 @@
+{% extends "base.html" %}
+{% block title %}Edit {{ node.name }}{% endblock %}
+{% block content %}
+<div class="page-header">
+    <div>
+        <div class="page-title">Edit Node</div>
+        <div class="page-subtitle">{{ node.name }}</div>
+    </div>
+    <a href="{{ url_for('nodes.index') }}" class="btn btn-outline"><i class="bi bi-arrow-left"></i> Back</a>
+</div>
+
+<div class="card" style="max-width:720px">
+    <form method="POST">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <div class="card-body">
+            <div class="form-row">
+                <div class="form-group">
+                    <label class="form-label">Node Name</label>
+                    <input type="text" name="name" class="form-control" value="{{ node.name }}" required>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">IP Address</label>
+                    <input type="text" name="ip_address" class="form-control" value="{{ node.ip_address }}" required>
+                </div>
+            </div>
+            <div class="form-row">
+                <div class="form-group">
+                    <label class="form-label">SSH Port</label>
+                    <input type="number" name="ssh_port" class="form-control" value="{{ node.ssh_port }}">
+                </div>
+                <div class="form-group">
+                    <label class="form-label">SSH Username</label>
+                    <input type="text" name="username" class="form-control" value="{{ node.username }}" required>
+                </div>
+            </div>
+            <div class="form-group">
+                <label class="form-label">New Password (leave blank to keep current)</label>
+                <input type="password" name="password" class="form-control" placeholder="••••••••">
+            </div>
+            <div class="form-row">
+                <div class="form-group">
+                    <label class="form-label">Environment</label>
+                    <select name="environment" class="form-control form-select">
+                        <option value="">Select...</option>
+                        {% for env in ['production','staging','development'] %}
+                        <option {% if node.environment == env %}selected{% endif %}>{{ env }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Node Type</label>
+                    <select name="node_type" class="form-control form-select">
+                        <option value="">Select...</option>
+                        {% for t in ['edge','gateway','sensor','server','iot'] %}
+                        <option {% if node.node_type == t %}selected{% endif %}>{{ t }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+            </div>
+            <div class="form-group">
+                <label class="form-label">Location</label>
+                <input type="text" name="location" class="form-control" value="{{ node.location or '' }}">
+            </div>
+            <div class="form-group">
+                <label class="form-label">Tags</label>
+                <input type="text" name="tags" class="form-control" value="{{ node.tags or '' }}">
+            </div>
+            <div class="grid grid-cols-2 gap-4">
+                <div class="form-group">
+                    <label class="form-label">Node-RED Port</label>
+                    <input type="number" name="nodered_port" class="form-control" value="{{ node.nodered_port or 1880 }}" min="1" max="65535">
+                </div>
+                <div class="form-group">
+                    <label class="form-label">OpenRemoteGUI Port</label>
+                    <input type="number" name="orgui_port" class="form-control" value="{{ node.orgui_port or 6080 }}" min="1" max="65535">
+                </div>
+            </div>
+            <div class="form-group">
+                <label class="form-label">Description</label>
+                <textarea name="description" class="form-control" rows="3">{{ node.description or '' }}</textarea>
+            </div>
+        </div>
+        <div class="card-footer flex justify-between">
+            <a href="{{ url_for('nodes.index') }}" class="btn btn-outline">Cancel</a>
+            <button type="submit" class="btn btn-primary"><i class="bi bi-check"></i> Save Changes</button>
+        </div>
+    </form>
+</div>
+{% endblock %}

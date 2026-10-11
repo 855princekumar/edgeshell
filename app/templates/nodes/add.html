@@ -1,0 +1,132 @@
+{% extends "base.html" %}
+{% block title %}Add Node{% endblock %}
+{% block content %}
+<div class="page-header">
+    <div>
+        <div class="page-title">Add Node</div>
+        <div class="page-subtitle">Register a new edge node to your fleet</div>
+    </div>
+    <a href="{{ url_for('nodes.index') }}" class="btn btn-outline">
+        <i class="bi bi-arrow-left"></i> Back
+    </a>
+</div>
+
+<div class="card" style="max-width:720px">
+    <div class="card-header">
+        <div class="card-title">Node Configuration</div>
+    </div>
+    <form method="POST">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <div class="card-body">
+            <div class="form-group" style="background:var(--gray-50);border:1px solid var(--gray-200);border-radius:8px;padding:12px 14px;margin-bottom:16px">
+                <label style="display:flex;align-items:center;gap:10px;margin:0;cursor:pointer">
+                    <input type="checkbox" name="quick_mode" id="quickMode" onchange="applyMode()">
+                    <span>
+                        <span class="fw-semibold">Quick test node</span>
+                        <span class="text-sm text-muted" style="display:block">SSH details only (IP, username, password). Turn off to require full node details for identification.</span>
+                    </span>
+                </label>
+            </div>
+            <div class="form-row">
+                <div class="form-group">
+                    <label class="form-label">Node Name <span style="color:var(--danger)">*</span></label>
+                    <input type="text" name="name" id="f_name" class="form-control" placeholder="edge-node-01" required>
+                    <div class="form-hint">Unique identifier for this node</div>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">IP Address <span style="color:var(--danger)">*</span></label>
+                    <input type="text" name="ip_address" class="form-control" placeholder="192.168.1.100" required>
+                </div>
+            </div>
+            <div class="form-row">
+                <div class="form-group">
+                    <label class="form-label">SSH Port</label>
+                    <input type="number" name="ssh_port" class="form-control" value="22" min="1" max="65535">
+                </div>
+                <div class="form-group">
+                    <label class="form-label">SSH Username <span style="color:var(--danger)">*</span></label>
+                    <input type="text" name="username" class="form-control" placeholder="ubuntu" required>
+                </div>
+            </div>
+            <div class="form-group">
+                <label class="form-label">SSH Password <span class="req" style="color:var(--danger)">*</span></label>
+                <input type="password" name="password" id="f_password" class="form-control" placeholder="Stored encrypted" required>
+                <div class="form-hint">Credentials are stored with encryption</div>
+            </div>
+            <div class="form-row">
+                <div class="form-group">
+                    <label class="form-label">Environment <span class="req" style="color:var(--danger)">*</span></label>
+                    <select name="environment" id="f_environment" class="form-control form-select" required>
+                        <option value="">Select...</option>
+                        <option>production</option>
+                        <option>staging</option>
+                        <option>development</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Node Type <span class="req" style="color:var(--danger)">*</span></label>
+                    <select name="node_type" id="f_node_type" class="form-control form-select" required>
+                        <option value="">Select...</option>
+                        <option>edge</option>
+                        <option>gateway</option>
+                        <option>sensor</option>
+                        <option>server</option>
+                        <option>iot</option>
+                    </select>
+                </div>
+            </div>
+            <div class="form-group">
+                <label class="form-label">Location <span class="req" style="color:var(--danger)">*</span></label>
+                <input type="text" name="location" id="f_location" class="form-control" placeholder="Warehouse A / Floor 2" required>
+            </div>
+            <div class="form-group">
+                <label class="form-label">Tags</label>
+                <input type="text" name="tags" class="form-control" placeholder="nodered, docker, plc (comma-separated)">
+            </div>
+            <div class="grid grid-cols-2 gap-4">
+                <div class="form-group">
+                    <label class="form-label">Node-RED Port</label>
+                    <input type="number" name="nodered_port" class="form-control" value="1880" min="1" max="65535">
+                </div>
+                <div class="form-group">
+                    <label class="form-label">OpenRemoteGUI Port</label>
+                    <input type="number" name="orgui_port" class="form-control" value="6080" min="1" max="65535">
+                </div>
+            </div>
+            <div class="form-group">
+                <label class="form-label">Description</label>
+                <textarea name="description" class="form-control" rows="3" placeholder="Optional description..."></textarea>
+            </div>
+        </div>
+        <div class="card-footer">
+            <div class="flex gap-2 justify-between">
+                <a href="{{ url_for('nodes.index') }}" class="btn btn-outline">Cancel</a>
+                <button type="submit" class="btn btn-primary">
+                    <i class="bi bi-plus"></i> Add Node
+                </button>
+            </div>
+        </div>
+    </form>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+// Fields that are mandatory only in full mode (quick test node relaxes them).
+const FULL_ONLY = ['f_name', 'f_environment', 'f_node_type', 'f_location'];
+function applyMode() {
+  const quick = document.getElementById('quickMode').checked;
+  FULL_ONLY.forEach(id => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.required = !quick;
+    const label = el.closest('.form-group')?.querySelector('.req');
+    if (label) label.style.display = quick ? 'none' : '';
+  });
+  // In quick mode a blank name is allowed; the server derives it from the IP.
+  const name = document.getElementById('f_name');
+  if (name) name.placeholder = quick ? '(optional - derived from IP)' : 'edge-node-01';
+}
+document.addEventListener('DOMContentLoaded', applyMode);
+</script>
+{% endblock %}

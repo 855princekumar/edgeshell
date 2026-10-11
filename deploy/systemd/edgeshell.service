@@ -1,0 +1,40 @@
+# Installed by run.py. Placeholders @@...@@ are filled at install time.
+[Unit]
+Description=EdgeShell Fleet Manager (Gunicorn, loopback only)
+Documentation=file://@@APP_DIR@@/docs/DEPLOY-EC2.md
+After=network-online.target mariadb.service tailscaled.service
+Wants=network-online.target tailscaled.service
+Requires=mariadb.service
+StartLimitIntervalSec=300
+StartLimitBurst=10
+
+[Service]
+Type=simple
+User=edgeshell
+Group=edgeshell
+WorkingDirectory=@@APP_DIR@@
+Environment=PYTHONUNBUFFERED=1
+Environment=HOME=/var/lib/edgeshell
+# run.py --serve records the start event in the DB, then execs Gunicorn.
+ExecStart=@@APP_DIR@@/venv/bin/python @@APP_DIR@@/run.py --serve
+# Records the stop and its systemd result (clean, crash, OOM, shutdown).
+ExecStopPost=-@@APP_DIR@@/venv/bin/python @@APP_DIR@@/run.py --event stop
+Restart=always
+RestartSec=5
+TimeoutStopSec=40
+StateDirectory=edgeshell
+StateDirectoryMode=0750
+
+# Hardening (compatible with SSH/Ansible to nodes and the tailscale CLI)
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+
+[Install]
+WantedBy=multi-user.target

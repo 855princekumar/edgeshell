@@ -1,0 +1,325 @@
+{% extends "base.html" %}
+{% block title %}Deploy Files - EdgeShell{% endblock %}
+
+{% block content %}
+<div class="d-flex align-items-center justify-content-between mb-4">
+  <div>
+    <h4 class="fw-bold mb-0">File Deployment</h4>
+    <small class="text-muted">Upload any file and deploy it to one or many nodes via SSH</small>
+  </div>
+</div>
+
+<div class="row g-4">
+
+  <!-- Left: Upload + config -->
+  <div class="col-12 col-lg-7">
+    <div class="card border-0 shadow-sm mb-4">
+      <div class="card-header bg-white border-bottom py-3">
+        <span class="fw-semibold"><i class="bi bi-cloud-upload me-2 text-primary"></i>Upload File</span>
+      </div>
+      <div class="card-body p-4">
+
+        <!-- Drop zone -->
+        <div id="dropZone"
+             style="border:2px dashed #d1d5db;border-radius:10px;padding:36px;text-align:center;cursor:pointer;transition:all .2s;background:#f9fafb"
+             onclick="document.getElementById('fileInput').click()"
+             ondragover="dzOver(event)" ondragleave="dzOut()" ondrop="dzDrop(event)">
+          <i class="bi bi-cloud-arrow-up-fill fs-1 d-block mb-2" style="color:#d1d5db" id="dzIcon"></i>
+          <div class="fw-semibold text-muted mb-1">Drop files here, or click to browse (multiple allowed)</div>
+          <div class="small text-muted">Any format accepted - binary, scripts, configs, archives, blobs</div>
+          <input type="file" id="fileInput" multiple style="display:none" onchange="pickFiles(this.files)">
+        </div>
+
+        <!-- Selected file info -->
+        <div id="fileInfo" class="alert alert-primary d-none mt-3 d-flex align-items-center gap-3 py-2">
+          <i class="bi bi-file-earmark-fill fs-4 flex-shrink-0"></i>
+          <div class="flex-grow-1 min-w-0">
+            <div class="fw-semibold text-truncate" id="fName"></div>
+            <div class="small text-muted" id="fMeta"></div>
+          </div>
+          <button class="btn btn-sm btn-outline-secondary" onclick="clearFile()">
+            <i class="bi bi-x"></i>
+          </button>
+        </div>
+
+        <!-- Target path -->
+        <div class="mt-3">
+          <label class="form-label fw-medium">Target Path on Node</label>
+          <input type="text" id="targetPath" class="form-control font-monospace" value="/tmp/"
+                 placeholder="/opt/myapp/">
+          <div class="form-text">
+            EdgeShell stages to <code>/tmp/</code> first, then <code>sudo cp</code> to your target - so
+            <code>/opt/</code>, <code>/etc/</code>, <code>/usr/local/bin/</code> all work.
+          </div>
+        </div>
+
+        <!-- Quick path buttons -->
+        <div class="d-flex flex-wrap gap-2 mt-2 mb-4">
+          {% for p in ['/tmp/', '/opt/', '/home/pi/', '/var/lib/', '/etc/', '/usr/local/bin/'] %}
+          <button class="btn btn-sm btn-outline-secondary font-monospace"
+                  onclick="document.getElementById('targetPath').value='{{ p }}'">{{ p }}</button>
+          {% endfor %}
+        </div>
+
+        <!-- Deploy button -->
+        <button class="btn btn-primary w-100 py-2" id="deployBtn" onclick="startDeploy()" disabled>
+          <i class="bi bi-send me-2"></i>Deploy to Selected Nodes
+        </button>
+
+        <!-- Progress -->
+        <div id="progWrap" class="d-none mt-3">
+          <div class="d-flex justify-content-between small mb-1">
+            <span class="text-muted">Deploying…</span>
+            <span id="progPct" class="fw-medium">0%</span>
+          </div>
+          <div class="progress" style="height:6px;border-radius:4px">
+            <div id="progBar" class="progress-bar progress-bar-striped progress-bar-animated"
+                 style="width:0%"></div>
+          </div>
+        </div>
+
+        <!-- Results -->
+        <div id="results" class="d-none mt-3"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Right: Node selector -->
+  <div class="col-12 col-lg-5">
+    <div class="card border-0 shadow-sm h-100">
+      <div class="card-header bg-white border-bottom py-2 d-flex align-items-center justify-content-between">
+        <span class="fw-semibold small"><i class="bi bi-server me-2 text-info"></i>Target Nodes</span>
+        <div class="d-flex gap-1">
+          <button class="btn btn-xs btn-outline-secondary" onclick="selAll(true)">All</button>
+          <button class="btn btn-xs btn-outline-secondary" onclick="selAll(false)">None</button>
+          <button class="btn btn-xs btn-outline-primary"   onclick="selTag('32bit')">32-bit</button>
+          <button class="btn btn-xs btn-outline-info"      onclick="selTag('64bit')">64-bit</button>
+        </div>
+      </div>
+      <div style="overflow-y:auto;max-height:320px">
+        {% for node in nodes %}
+        <label class="d-flex align-items-center gap-3 px-3 py-2 border-bottom node-row"
+               data-tags="{{ node.tags or '' }}" style="cursor:pointer">
+          <input type="checkbox" class="node-chk form-check-input mt-0 flex-shrink-0"
+                 name="node_ids" value="{{ node.id }}" checked>
+          <div class="flex-grow-1 min-w-0">
+            <div class="fw-medium small text-truncate">{{ node.name }}</div>
+            <div class="font-monospace text-muted" style="font-size:.7rem">{{ node.ip_address }}</div>
+          </div>
+          <div class="d-flex align-items-center gap-1 flex-shrink-0">
+            {% if node.tags and '32bit' in node.tags %}
+            <span class="badge bg-primary bg-opacity-10 text-primary" style="font-size:.6rem">32</span>
+            {% elif node.tags and '64bit' in node.tags %}
+            <span class="badge bg-info bg-opacity-10 text-info" style="font-size:.6rem">64</span>
+            {% endif %}
+            <span style="width:8px;height:8px;border-radius:50%;flex-shrink:0;background:{{ '#059669' if node.status=='online' else '#dc2626' if node.status=='offline' else '#9ca3af' }}"></span>
+          </div>
+        </label>
+        {% else %}
+        <div class="text-center text-muted small py-4">No active nodes configured.</div>
+        {% endfor %}
+      </div>
+      <div class="px-3 py-2 border-top bg-light">
+        <small class="text-muted" id="selCount">{{ nodes|length }} nodes selected</small>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Deployment History -->
+<div class="card border-0 shadow-sm mt-4">
+  <div class="card-header bg-white border-bottom py-2 d-flex align-items-center justify-content-between">
+    <span class="fw-semibold small"><i class="bi bi-clock-history me-2"></i>Deployment History</span>
+  </div>
+  <div class="table-responsive">
+    <table class="table table-hover align-middle mb-0 small">
+      <thead class="table-light">
+        <tr>
+          <th class="ps-3">Time</th>
+          <th>File</th>
+          <th>Target</th>
+          <th>Nodes</th>
+          <th>Status</th>
+          <th>Results</th>
+          <th class="pe-3">By</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for d in deployments %}
+        <tr>
+          <td class="ps-3 text-muted">{{ d.timestamp|localtime('%d %b %H:%M') if d.timestamp }}</td>
+          <td class="fw-medium font-monospace">{{ d.filename }}</td>
+          <td class="font-monospace text-muted">{{ d.target_path }}</td>
+          <td class="text-muted">{{ d.nodes|replace('[','')|replace(']','')|replace('"','')|truncate(35) }}</td>
+          <td>
+            <span class="badge bg-{{ 'success' if d.status=='success' else 'danger' if d.status=='failed' else 'warning' }} bg-opacity-10 text-{{ 'success' if d.status=='success' else 'danger' if d.status=='failed' else 'warning' }} border border-{{ 'success' if d.status=='success' else 'danger' if d.status=='failed' else 'warning' }} border-opacity-25">
+              {{ d.status }}
+            </span>
+          </td>
+          <td>
+            <span class="text-success">{{ d.success_count }} ok</span>
+            {% if d.failure_count %}<span class="text-danger ms-2">{{ d.failure_count }} fail</span>{% endif %}
+          </td>
+          <td class="pe-3 text-muted">{{ d.user }}</td>
+        </tr>
+        {% else %}
+        <tr><td colspan="7" class="text-center text-muted py-4">No deployments yet.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<style>
+.btn-xs { padding: 2px 8px; font-size: .72rem; }
+.node-row:hover { background: #f8faff; }
+.node-row:has(.node-chk:checked) { background: #eff6ff; border-left: 3px solid #1a56db; }
+</style>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let selectedFiles = [];
+
+// Drag & drop
+function dzOver(e) {
+  e.preventDefault();
+  document.getElementById('dropZone').style.borderColor = '#1a56db';
+  document.getElementById('dropZone').style.background  = '#eff6ff';
+  document.getElementById('dzIcon').style.color = '#1a56db';
+}
+function dzOut() {
+  document.getElementById('dropZone').style.borderColor = '#d1d5db';
+  document.getElementById('dropZone').style.background  = '#f9fafb';
+  document.getElementById('dzIcon').style.color = '#d1d5db';
+}
+function dzDrop(e) {
+  e.preventDefault(); dzOut();
+  if (e.dataTransfer.files.length) pickFiles(e.dataTransfer.files);
+}
+function pickFiles(fileList) {
+  selectedFiles = Array.from(fileList || []);
+  if (!selectedFiles.length) { clearFile(); return; }
+  const totalBytes = selectedFiles.reduce((a, f) => a + f.size, 0);
+  document.getElementById('fName').textContent =
+    selectedFiles.length === 1 ? selectedFiles[0].name
+    : selectedFiles.length + ' files selected';
+  document.getElementById('fMeta').textContent =
+    selectedFiles.map(f => f.name).join(', ').slice(0, 120) +
+    (selectedFiles.map(f => f.name).join(', ').length > 120 ? '…' : '') +
+    '  ·  ' + fmtBytes(totalBytes) + ' total';
+  document.getElementById('fileInfo').classList.remove('d-none');
+  updateSelCount();
+}
+function clearFile() {
+  selectedFiles = [];
+  document.getElementById('fileInfo').classList.add('d-none');
+  document.getElementById('fileInput').value = '';
+  document.getElementById('deployBtn').disabled = true;
+}
+function fmtBytes(b) {
+  if (b < 1024)       return b + ' B';
+  if (b < 1048576)    return (b/1024).toFixed(1) + ' KB';
+  if (b < 1073741824) return (b/1048576).toFixed(1) + ' MB';
+  return (b/1073741824).toFixed(2) + ' GB';
+}
+
+// Node selection
+function selAll(v) {
+  document.querySelectorAll('.node-chk').forEach(c => c.checked = v);
+  updateSelCount();
+}
+function selTag(tag) {
+  document.querySelectorAll('.node-row').forEach(row => {
+    const chk = row.querySelector('.node-chk');
+    chk.checked = (row.dataset.tags || '').includes(tag);
+  });
+  updateSelCount();
+}
+function updateSelCount() {
+  const n = document.querySelectorAll('.node-chk:checked').length;
+  document.getElementById('selCount').textContent =
+    n + ' node' + (n !== 1 ? 's' : '') + ' selected';
+  document.getElementById('deployBtn').disabled = !selectedFiles.length || n === 0;
+}
+document.querySelectorAll('.node-chk').forEach(c => c.addEventListener('change', updateSelCount));
+
+// Deploy
+async function startDeploy() {
+  if (!selectedFiles.length) return;
+  const nodeIds = [...document.querySelectorAll('.node-chk:checked')].map(c => c.value);
+  if (!nodeIds.length) { alert('Select at least one node.'); return; }
+  const target = document.getElementById('targetPath').value.trim() || '/tmp/';
+
+  const btn = document.getElementById('deployBtn');
+  btn.disabled = true; btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Deploying…';
+  document.getElementById('progWrap').classList.remove('d-none');
+  document.getElementById('results').classList.add('d-none');
+
+  // Fake progress bar while uploading
+  let pct = 0;
+  const prog = setInterval(() => {
+    pct = Math.min(pct + 3, 85);
+    document.getElementById('progBar').style.width = pct + '%';
+    document.getElementById('progPct').textContent = pct + '%';
+  }, 300);
+
+  const fd = new FormData();
+  selectedFiles.forEach(f => fd.append('files', f));
+  nodeIds.forEach(id => fd.append('node_ids', id));
+  fd.append('target_path', target);
+
+  try {
+    const resp = await fetch('/files/upload', { method: 'POST', body: fd });
+    const data = await resp.json();
+    clearInterval(prog);
+    document.getElementById('progBar').style.width = '100%';
+    document.getElementById('progPct').textContent = '100%';
+
+    // Render results (results is { filename: { node: {success,message} } })
+    const res = data.results || {};
+    let html = '<div class="list-group">';
+    for (const [fname, nodes] of Object.entries(res)) {
+      html += `<div class="list-group-item bg-light fw-semibold small py-1 border-0 border-bottom">
+        <i class="bi bi-file-earmark me-1"></i>${fname}</div>`;
+      for (const [node, r] of Object.entries(nodes)) {
+        const ok  = r.success;
+        const col = ok ? 'success' : 'danger';
+        const icon= ok ? 'bi-check-circle-fill' : 'bi-x-circle-fill';
+        html += `<div class="list-group-item d-flex align-items-center gap-3 py-2 border-0 border-bottom">
+          <i class="bi ${icon} text-${col} fs-5 flex-shrink-0"></i>
+          <div class="flex-grow-1 min-w-0">
+            <div class="fw-medium small">${node}</div>
+            <div class="text-muted" style="font-size:.72rem">${r.message || ''}</div>
+          </div>
+          <span class="badge bg-${col} bg-opacity-10 text-${col}">${ok ? 'Success' : 'Failed'}</span>
+        </div>`;
+      }
+    }
+    html += '</div>';
+    const summary = data.success_count + ' succeeded' +
+      (data.failure_count ? ', ' + data.failure_count + ' failed' : '') +
+      ' (' + (data.duration || 0).toFixed(1) + 's)';
+    html = `<div class="alert alert-${data.failure_count ? 'warning' : 'success'} py-2 mb-2 small">
+      <i class="bi bi-info-circle me-2"></i>${summary}</div>` + html;
+
+    document.getElementById('results').innerHTML = html;
+    document.getElementById('results').classList.remove('d-none');
+
+    if (data.failure_count === 0) clearFile();
+  } catch(err) {
+    clearInterval(prog);
+    document.getElementById('results').innerHTML =
+      `<div class="alert alert-danger small">Network error: ${err.message}</div>`;
+    document.getElementById('results').classList.remove('d-none');
+  }
+
+  btn.disabled = false;
+  btn.innerHTML = '<i class="bi bi-send me-2"></i>Deploy to Selected Nodes';
+  setTimeout(() => {
+    document.getElementById('progWrap').classList.add('d-none');
+    document.getElementById('progBar').style.width = '0%';
+  }, 2000);
+}
+</script>
+{% endblock %}

@@ -1,0 +1,79 @@
+{% extends "base.html" %}
+{% block title %}Verify Import{% endblock %}
+{% block content %}
+<div class="page-header">
+    <div>
+        <div class="page-title">Verify Before Creating</div>
+        <div class="page-subtitle">{{ total }} row(s) detected. Confirm the column mapping, then create the fleet. Nothing is saved until you confirm.</div>
+    </div>
+    <a href="{{ url_for('nodes.bulk_import') }}" class="btn btn-outline"><i class="bi bi-arrow-left"></i> Re-upload</a>
+</div>
+
+<form method="POST" action="{{ url_for('nodes.bulk_import_commit') }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+    <div class="card mb-6">
+        <div class="card-header"><strong>Column Mapping</strong> <span class="text-muted text-sm">(auto-detected, adjust if wrong)</span></div>
+        <div class="card-body">
+            <div class="grid grid-cols-3 gap-4">
+                {% for h in headers %}
+                <div class="form-group">
+                    <label class="form-label">{{ h }}</label>
+                    <select name="map__{{ h }}" class="form-control form-select">
+                        <option value="">(ignore)</option>
+                        {% for f in fields %}
+                        <option value="{{ f }}" {% if mapping[h] == f %}selected{% endif %}>{{ f }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                {% endfor %}
+            </div>
+            <p class="text-sm text-muted" style="margin-top:8px">
+                <i class="bi bi-info-circle"></i> A valid IP address or hostname is required per row. Rows without one are skipped and reported.
+                Missing names default to the address with dots as dashes; missing user defaults to <code>pi</code>.
+            </p>
+        </div>
+    </div>
+
+    <div class="card mb-6">
+        <div class="card-header"><strong>Options</strong></div>
+        <div class="card-body">
+            <div class="form-group">
+                <label class="form-label" for="defaultPassword">Default SSH password</label>
+                <input type="password" name="default_password" id="defaultPassword" class="form-control" autocomplete="new-password"
+                       placeholder="Used for rows without a password (e.g. raspberry for Pi Fleet Emulator)">
+            </div>
+            <div class="form-group">
+                <label class="form-label" for="hostOverride">Replace <code>host.docker.internal</code> with</label>
+                <input type="text" name="host_override" id="hostOverride" class="form-control"
+                       placeholder="Leave empty if EdgeShell runs in Docker. Use 127.0.0.1 if it runs on the host.">
+            </div>
+        </div>
+    </div>
+
+    <div class="card mb-6">
+        <div class="card-header"><strong>Preview</strong> <span class="text-muted text-sm">(first {{ rows|length }} of {{ total }})</span></div>
+        <div class="card-body" style="overflow-x:auto">
+            <table class="table table-sm">
+                <thead><tr>{% for h in headers %}<th>{{ h }}</th>{% endfor %}</tr></thead>
+                <tbody>
+                    {% for row in rows %}
+                    <tr>{% for h in headers %}<td class="text-xs">{{ row[h] }}</td>{% endfor %}</tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <div class="flex gap-2">
+        <button type="submit" class="btn btn-primary">
+            <i class="bi bi-check-lg"></i> Confirm and Create {{ total }} Node(s)
+        </button>
+        <a href="{{ url_for('nodes.index') }}" class="btn btn-outline">Cancel</a>
+    </div>
+    <p class="text-sm text-muted" style="margin-top:10px">
+        On confirm, each node is created, then pinged and SSH-tested, and OpenRemoteGUI presence is checked.
+        You will get a summary of how many are reachable and how many have OpenRemoteGUI.
+    </p>
+</form>
+{% endblock %}

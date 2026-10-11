@@ -1,0 +1,88 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 300" font-family="Segoe UI,Roboto,Helvetica,Arial,sans-serif" role="img" aria-labelledby="vt vd">
+  <title id="vt">Validate before you deploy</title>
+  <desc id="vd">Step 1: emulate a realistic mixed fleet in a sandbox with the Fleet Emulator. Step 2: validate EdgeShell operations against it: commands, OTA updates, monitoring, and data push and pull. Step 3: roll out to the real fleet with confidence.</desc>
+  <defs>
+    <marker id="va" markerWidth="10" markerHeight="10" refX="8" refY="4" orient="auto">
+      <path d="M0,0 L8,4 L0,8 Z" fill="#334155"/>
+    </marker>
+    <style>
+      .tt{font-size:15px;font-weight:700;fill:#0f172a}
+      .t{font-size:12px;font-weight:600;fill:#0f172a}
+      .lbl{font-size:11px;fill:#475569}
+      .mut{font-size:11px;fill:#64748b}
+      .num{font-size:13px;font-weight:800;fill:#fff}
+      .tag{font-size:10.5px;font-weight:600}
+    </style>
+  </defs>
+
+  <rect width="900" height="300" fill="#f8fafc"/>
+  <text x="30" y="34" class="tt" font-size="18">Validate before you deploy</text>
+  <text x="30" y="53" class="mut">Prove every fleet-wide action in a sandbox first, then roll it out to real hardware.</text>
+
+  <!-- Stage 1: Emulate -->
+  <rect x="30" y="76" width="250" height="196" rx="12" fill="#fff" stroke="#10b981" stroke-width="1.8"/>
+  <circle cx="56" cy="102" r="13" fill="#10b981"/><text x="56" y="107" class="num" text-anchor="middle">1</text>
+  <text x="78" y="99" class="tt" font-size="14">Emulate</text>
+  <text x="78" y="115" class="mut">Fleet Emulator sandbox</text>
+
+  <g>
+    <rect x="48" y="132" width="66" height="44" rx="7" fill="#f0fdf4" stroke="#86efac"/>
+    <text x="81" y="151" class="t" font-size="11" text-anchor="middle">armv7</text>
+    <text x="81" y="166" class="lbl" font-size="9.5" text-anchor="middle">32-bit</text>
+    <rect x="122" y="132" width="66" height="44" rx="7" fill="#eff6ff" stroke="#93c5fd"/>
+    <text x="155" y="151" class="t" font-size="11" text-anchor="middle">aarch64</text>
+    <text x="155" y="166" class="lbl" font-size="9.5" text-anchor="middle">64-bit</text>
+    <rect x="196" y="132" width="66" height="44" rx="7" fill="#fff" stroke="#94a3b8" stroke-dasharray="4 3"/>
+    <text x="229" y="158" class="t" font-size="11" text-anchor="middle" style="fill:#475569">+ more</text>
+  </g>
+
+  <text x="48" y="200" class="t" font-size="11">Old to new OS releases</text>
+  <rect x="48" y="208" width="214" height="8" rx="4" fill="#e2e8f0"/>
+  <rect x="48" y="208" width="214" height="8" rx="4" fill="url(#osg)"/>
+  <defs><linearGradient id="osg" x1="0" x2="1"><stop offset="0" stop-color="#94a3b8"/><stop offset="1" stop-color="#10b981"/></linearGradient></defs>
+  <text x="48" y="230" class="lbl" font-size="10">legacy</text>
+  <text x="262" y="230" class="lbl" font-size="10" text-anchor="end">latest</text>
+  <text x="48" y="256" class="lbl">Real-like SSH, services, and metrics</text>
+
+  <line x1="282" y1="174" x2="318" y2="174" stroke="#334155" stroke-width="2" marker-end="url(#va)"/>
+
+  <!-- Stage 2: Validate -->
+  <rect x="325" y="76" width="250" height="196" rx="12" fill="#fff" stroke="#3b82f6" stroke-width="1.8"/>
+  <circle cx="351" cy="102" r="13" fill="#3b82f6"/><text x="351" y="107" class="num" text-anchor="middle">2</text>
+  <text x="373" y="99" class="tt" font-size="14">Validate</text>
+  <text x="373" y="115" class="mut">EdgeShell against the sandbox</text>
+
+  <g class="t">
+    <rect x="343" y="132" width="214" height="26" rx="6" fill="#eff6ff"/>
+    <text x="355" y="149">Fleet-wide commands</text>
+    <text x="545" y="149" text-anchor="end" style="fill:#10b981">✓</text>
+    <rect x="343" y="164" width="214" height="26" rx="6" fill="#eff6ff"/>
+    <text x="355" y="181">OTA updates and rollouts</text>
+    <text x="545" y="181" text-anchor="end" fill="#10b981">✓</text>
+    <rect x="343" y="196" width="214" height="26" rx="6" fill="#eff6ff"/>
+    <text x="355" y="213">Monitoring and alerts</text>
+    <text x="545" y="213" text-anchor="end" fill="#10b981">✓</text>
+    <rect x="343" y="228" width="214" height="26" rx="6" fill="#eff6ff"/>
+    <text x="355" y="245">Data push and pull</text>
+    <text x="545" y="245" text-anchor="end" fill="#10b981">✓</text>
+  </g>
+
+  <line x1="577" y1="174" x2="613" y2="174" stroke="#334155" stroke-width="2" marker-end="url(#va)"/>
+
+  <!-- Stage 3: Deploy -->
+  <rect x="620" y="76" width="250" height="196" rx="12" fill="#0f172a"/>
+  <circle cx="646" cy="102" r="13" fill="#fff"/><text x="646" y="107" class="num" text-anchor="middle" style="fill:#0f172a">3</text>
+  <text x="668" y="99" class="tt" font-size="14" style="fill:#fff">Deploy</text>
+  <text x="668" y="115" class="mut" style="fill:#94a3b8">Real fleet, with confidence</text>
+
+  <g>
+    <rect x="640" y="134" width="44" height="44" rx="8" fill="#111c30" stroke="#1f6b52"/><circle cx="674" cy="144" r="3" fill="#22c55e"/>
+    <rect x="692" y="134" width="44" height="44" rx="8" fill="#111c30" stroke="#1f6b52"/><circle cx="726" cy="144" r="3" fill="#22c55e"/>
+    <rect x="744" y="134" width="44" height="44" rx="8" fill="#111c30" stroke="#1f6b52"/><circle cx="778" cy="144" r="3" fill="#22c55e"/>
+    <rect x="796" y="134" width="44" height="44" rx="8" fill="#111c30" stroke="#1f6b52"/><circle cx="830" cy="144" r="3" fill="#22c55e"/>
+  </g>
+  <text x="640" y="208" font-size="12" font-weight="600" fill="#e2e8f0">Same playbooks, same commands</text>
+  <text x="640" y="228" font-size="11" fill="#94a3b8">Only the node list changes</text>
+  <rect x="640" y="240" width="210" height="20" rx="10" fill="#10b981" fill-opacity="0.15" stroke="#10b981" stroke-opacity="0.5"/>
+  <text x="745" y="254" class="tag" fill="#34d399" text-anchor="middle">fewer surprises in the field</text>
+</svg>

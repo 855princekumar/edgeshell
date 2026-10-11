@@ -1,0 +1,14 @@
+{
+  "nodes": [
+    {"name": "bookworm64", "arch": "aarch64", "debian": "bookworm"},
+    {"name": "bookworm32", "arch": "armv7l",  "debian": "bookworm"},
+    {"name": "bullseye64", "arch": "aarch64", "debian": "bullseye"},
+    {"name": "bullseye32", "arch": "armv7l",  "debian": "bullseye"},
+    {"name": "buster64",   "arch": "aarch64", "debian": "buster"},
+    {"name": "buster32",   "arch": "armv7l",  "debian": "buster"}
+  ],
+  "network": "10.31.0",
+  "base_ssh_port": 3100,
+  "base_nr_port": 4100,
+  "edgeshell_network": "edgeshell_sandbox"
+}

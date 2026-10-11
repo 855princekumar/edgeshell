@@ -1,0 +1,13 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "EdgeShell release manifest",
+  "type": "object",
+  "required": ["version", "release", "git_sha", "timestamp"],
+  "properties": {
+    "version":          {"type": "string"},
+    "release":          {"type": "string", "description": "timestamp id"},
+    "git_sha":          {"type": "string"},
+    "timestamp":        {"type": "string", "format": "date-time"},
+    "requirements_sha": {"type": "string"}
+  }
+}

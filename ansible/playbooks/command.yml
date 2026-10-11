@@ -1,0 +1,37 @@
+---
+# EdgeShell - Remote Command Execution Playbook
+# Usage: ansible-playbook command.yml -i inventory/hosts.ini -e "cmd='your command'"
+
+- name: Execute Remote Command
+  hosts: target_nodes
+  gather_facts: false
+  become: "{{ use_sudo | default(false) }}"
+  vars:
+    cmd: "echo 'No command specified'"
+    use_sudo: false
+
+  tasks:
+    - name: Execute command on node
+      ansible.builtin.shell: "{{ cmd }}"
+      register: cmd_result
+      ignore_errors: true
+      no_log: false
+
+    - name: Print stdout
+      ansible.builtin.debug:
+        msg: "STDOUT: {{ cmd_result.stdout }}"
+      when: cmd_result.stdout | length > 0
+
+    - name: Print stderr
+      ansible.builtin.debug:
+        msg: "STDERR: {{ cmd_result.stderr }}"
+      when: cmd_result.stderr | length > 0
+
+    - name: Capture result fact
+      ansible.builtin.set_fact:
+        edgeshell_result:
+          host: "{{ inventory_hostname }}"
+          stdout: "{{ cmd_result.stdout }}"
+          stderr: "{{ cmd_result.stderr }}"
+          rc: "{{ cmd_result.rc }}"
+          command: "{{ cmd }}"

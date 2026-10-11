@@ -1,0 +1,55 @@
+---
+# EdgeShell - File Deployment Playbook
+# Usage: ansible-playbook deploy.yml -i inventory/hosts.ini
+#   -e "src=/path/to/file dest=/remote/path/ owner=ubuntu mode='0644'"
+
+- name: Deploy File to Edge Nodes
+  hosts: target_nodes
+  gather_facts: false
+  become: "{{ use_sudo | default(false) }}"
+  vars:
+    src: ""
+    dest: "/tmp/"
+    owner: "{{ ansible_user | default('ubuntu') }}"
+    group: "{{ ansible_user | default('ubuntu') }}"
+    file_mode: "0644"
+    use_sudo: false
+
+  pre_tasks:
+    - name: Validate source file is set
+      ansible.builtin.fail:
+        msg: "Variable 'src' is required and must point to a valid file."
+      when: src == ""
+
+    - name: Ensure destination directory exists
+      ansible.builtin.file:
+        path: "{{ dest }}"
+        state: directory
+        mode: "0755"
+      become: true
+      ignore_errors: true
+
+  tasks:
+    - name: Copy file to remote node
+      ansible.builtin.copy:
+        src: "{{ src }}"
+        dest: "{{ dest }}"
+        owner: "{{ owner }}"
+        group: "{{ group }}"
+        mode: "{{ file_mode }}"
+        backup: true
+      register: deploy_result
+
+    - name: Confirm deployment
+      ansible.builtin.debug:
+        msg: "File deployed to {{ inventory_hostname }}:{{ dest }} - checksum: {{ deploy_result.checksum | default('n/a') }}"
+
+  post_tasks:
+    - name: Record deployment fact
+      ansible.builtin.set_fact:
+        edgeshell_deploy:
+          host: "{{ inventory_hostname }}"
+          src: "{{ src }}"
+          dest: "{{ dest }}"
+          changed: "{{ deploy_result.changed }}"
+          checksum: "{{ deploy_result.checksum | default('') }}"

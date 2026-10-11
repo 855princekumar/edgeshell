@@ -1,0 +1,56 @@
+# EdgeShell single-host stack (SQLite by default).
+#
+#   cp .env.example .env     # then set SECRET_KEY and CREDENTIAL_KEY
+#   docker compose up -d     # pulls devprincekumar/edgeshell (amd64 or arm64)
+#   docker compose up -d --build   # or build from this checkout
+#
+# Open http://localhost:5000 and sign in as admin / admin123 (forced change).
+# Put a TLS reverse proxy in front and set SESSION_COOKIE_SECURE=true for
+# anything beyond a trusted LAN. VPN options: docs/VPN-NETWORK.md.
+services:
+  edgeshell:
+    image: devprincekumar/edgeshell:${EDGESHELL_TAG:-latest}
+    build: .
+    container_name: edgeshell
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      FLASK_ENV: production
+    ports:
+      - "5000:5000"
+    volumes:
+      - edgeshell_instance:/app/instance
+      - edgeshell_uploads:/app/uploads
+    # Lets EdgeShell reach services published on the host, such as a
+    # Pi Fleet Emulator fleet on host.docker.internal:3000+ (Linux included).
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+    # VPN when containerized
+    # Option A (recommended): run Tailscale/WireGuard on the HOST and reach
+    #   nodes over the host network. Simplest, keeps the mesh out of the app.
+    #   network_mode: host        # then drop the ports: mapping above
+    #
+    # Option B: give the container mesh access with a WireGuard sidecar.
+    #   cap_add: [NET_ADMIN]
+    #   devices: ["/dev/net/tun"]
+    #   Set VPN_BACKEND=wireguard and mount the wg config.
+
+    # PostgreSQL instead of SQLite: uncomment db below, then set
+    #   DATABASE_URL=postgresql+psycopg2://edgeshell:<password>@db:5432/edgeshell
+    # depends_on: [db]
+
+  # db:
+  #   image: postgres:16-alpine
+  #   restart: unless-stopped
+  #   environment:
+  #     POSTGRES_USER: edgeshell
+  #     POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+  #     POSTGRES_DB: edgeshell
+  #   volumes:
+  #     - edgeshell_pg:/var/lib/postgresql/data
+
+volumes:
+  edgeshell_instance:
+  edgeshell_uploads:
+  # edgeshell_pg:

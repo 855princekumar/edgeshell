@@ -1,0 +1,198 @@
+{% extends "base.html" %}
+{% block title %}Add User - EdgeShell{% endblock %}
+
+{% block content %}
+<div class="d-flex align-items-center gap-3 mb-4">
+  <a href="{{ url_for('users.index') }}" class="btn btn-sm btn-outline-secondary">
+    <i class="bi bi-arrow-left"></i>
+  </a>
+  <div>
+    <h4 class="fw-bold mb-0">Add User</h4>
+    <small class="text-muted">Create a new platform user account</small>
+  </div>
+</div>
+
+<div class="row justify-content-center">
+  <div class="col-12 col-md-8 col-lg-6">
+    <div class="card border-0 shadow-sm">
+      <div class="card-body p-4">
+        {% with messages = get_flashed_messages(with_categories=true) %}
+        {% for cat, msg in messages %}
+        <div class="alert alert-{{ 'danger' if cat == 'error' else cat }} alert-dismissible fade show">
+          {{ msg }}<button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+        </div>
+        {% endfor %}
+        {% endwith %}
+
+        <form method="POST" action="{{ url_for('users.add') }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+          <div class="mb-3">
+            <label class="form-label fw-medium">Username <span class="text-danger">*</span></label>
+            <input type="text" class="form-control" name="username" id="usernameInput" required autocomplete="off"
+              placeholder="e.g. john_doe" pattern="[a-zA-Z0-9_\-]+" title="Letters, numbers, underscores and hyphens only">
+            <div class="form-text" id="usernameFeedback">Letters, numbers, underscores and hyphens only.</div>
+          </div>
+
+          <div class="mb-3">
+            <label class="form-label fw-medium">Email <span class="text-danger">*</span></label>
+            <input type="email" class="form-control" name="email" id="emailInput" required placeholder="user@example.com">
+            <div class="form-text" id="emailFeedback">Must be unique. Used for issue notifications.</div>
+          </div>
+
+          <div class="mb-3">
+            <label class="form-label fw-medium">Role <span class="text-danger">*</span></label>
+            <select class="form-select" name="role" required>
+              <option value="">Select role…</option>
+              <option value="administrator">Administrator - Full access</option>
+              <option value="operator">Operator - Execute commands, upload files</option>
+              <option value="monitor">Monitor - Read-only access</option>
+            </select>
+          </div>
+
+          <div class="mb-3">
+            <label class="form-label fw-medium" for="maxSessions">Concurrent sessions <span class="text-danger">*</span></label>
+            <select class="form-select" name="max_sessions" id="maxSessions" required>
+              {% for n in session_range %}
+              <option value="{{ n }}" {% if n == 1 %}selected{% endif %}>
+                {{ n }} device{{ 's' if n > 1 }}{% if n == 1 %} (recommended){% endif %}
+              </option>
+              {% endfor %}
+            </select>
+            <div class="form-text">How many devices (phone, tablet, laptop) may be signed in at once. Signing in on one more device signs out the oldest.</div>
+          </div>
+
+          <div class="mb-3">
+            <label class="form-label fw-medium">Password <span class="text-danger">*</span></label>
+            <div class="input-group">
+              <input type="password" class="form-control" name="password" id="password" required
+                minlength="8" placeholder="Minimum 8 characters">
+              <button class="btn btn-outline-secondary" type="button" onclick="togglePwd('password', this)">
+                <i class="bi bi-eye"></i>
+              </button>
+            </div>
+          </div>
+
+          <div class="mb-4">
+            <label class="form-label fw-medium">Confirm Password <span class="text-danger">*</span></label>
+            <div class="input-group">
+              <input type="password" class="form-control" name="confirm_password" id="confirm_password" required
+                placeholder="Repeat password">
+              <button class="btn btn-outline-secondary" type="button" onclick="togglePwd('confirm_password', this)">
+                <i class="bi bi-eye"></i>
+              </button>
+            </div>
+          </div>
+
+          <div class="mb-4">
+            <div class="form-check">
+              <input class="form-check-input" type="checkbox" name="must_change_password" id="mustChange" checked>
+              <label class="form-check-label" for="mustChange">
+                Require password change on first login
+              </label>
+            </div>
+          </div>
+
+          <!-- Role info cards -->
+          <div class="row g-2 mb-4">
+            <div class="col-4">
+              <div class="card border text-center p-2" style="font-size:.78rem">
+                <i class="bi bi-shield-fill text-danger mb-1"></i>
+                <strong>Admin</strong>
+                <div class="text-muted">Full access</div>
+              </div>
+            </div>
+            <div class="col-4">
+              <div class="card border text-center p-2" style="font-size:.78rem">
+                <i class="bi bi-tools text-primary mb-1"></i>
+                <strong>Operator</strong>
+                <div class="text-muted">Execute &amp; deploy</div>
+              </div>
+            </div>
+            <div class="col-4">
+              <div class="card border text-center p-2" style="font-size:.78rem">
+                <i class="bi bi-eye text-secondary mb-1"></i>
+                <strong>Monitor</strong>
+                <div class="text-muted">View only</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="d-flex gap-2">
+            <button type="submit" class="btn btn-primary flex-grow-1">
+              <i class="bi bi-person-plus me-1"></i>Create User
+            </button>
+            <a href="{{ url_for('users.index') }}" class="btn btn-outline-secondary">Cancel</a>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function togglePwd(id, btn) {
+  const inp = document.getElementById(id);
+  const isText = inp.type === 'text';
+  inp.type = isText ? 'password' : 'text';
+  btn.innerHTML = isText ? '<i class="bi bi-eye"></i>' : '<i class="bi bi-eye-slash"></i>';
+}
+document.querySelector('form').addEventListener('submit', function(e) {
+  const p = document.getElementById('password').value;
+  const c = document.getElementById('confirm_password').value;
+  if (p !== c) { e.preventDefault(); alert('Passwords do not match.'); return; }
+  if (usernameTaken || emailTaken) {
+    e.preventDefault();
+    alert('Please fix the highlighted fields: username or email is already taken.');
+  }
+});
+
+// ── Live availability check (username + email) ───────────────────────────────
+let usernameTaken = false, emailTaken = false;
+
+function setFeedback(el, state, msg) {
+  el.classList.remove('text-muted', 'text-success', 'text-danger');
+  el.classList.add(state === 'ok' ? 'text-success' : state === 'bad' ? 'text-danger' : 'text-muted');
+  el.innerHTML = msg;
+  const input = el.previousElementSibling;
+  input.classList.remove('is-valid', 'is-invalid');
+  if (state === 'ok') input.classList.add('is-valid');
+  if (state === 'bad') input.classList.add('is-invalid');
+}
+
+function debounce(fn, ms) {
+  let t; return function (...a) { clearTimeout(t); t = setTimeout(() => fn(...a), ms); };
+}
+
+async function checkAvailability() {
+  const u = document.getElementById('usernameInput').value.trim();
+  const em = document.getElementById('emailInput').value.trim();
+  const params = new URLSearchParams();
+  if (u) params.set('username', u);
+  if (em) params.set('email', em);
+  if (![...params].length) return;
+  try {
+    const r = await fetch('/users/check?' + params.toString());
+    const d = await r.json();
+    if ('username_taken' in d) {
+      usernameTaken = d.username_taken;
+      setFeedback(document.getElementById('usernameFeedback'),
+        d.username_taken ? 'bad' : 'ok',
+        d.username_taken ? 'That username is already taken.' : 'Username is available.');
+    }
+    if ('email_taken' in d) {
+      emailTaken = d.email_taken;
+      setFeedback(document.getElementById('emailFeedback'),
+        d.email_taken ? 'bad' : 'ok',
+        d.email_taken ? 'That email is already registered.' : 'Email is available.');
+    }
+  } catch (e) { /* silent: server-side validation still applies */ }
+}
+
+const debouncedCheck = debounce(checkAvailability, 350);
+document.getElementById('usernameInput').addEventListener('input', debouncedCheck);
+document.getElementById('emailInput').addEventListener('input', debouncedCheck);
+</script>
+{% endblock %}

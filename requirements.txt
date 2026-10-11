@@ -1,0 +1,36 @@
+# EdgeShell dependencies (Python 3.10 to 3.14)
+
+# Web
+Flask>=3.0.3
+Flask-Login>=0.6.3
+Flask-SQLAlchemy>=3.1.1
+Flask-Bcrypt>=1.0.1
+Flask-Limiter>=3.7.0
+Flask-WTF>=1.2.1
+SQLAlchemy>=2.0.36
+WTForms>=3.1.2
+Werkzeug>=3.0.3
+PyJWT>=2.8.0
+
+# Fleet / SSH / Ansible
+paramiko>=3.4.0
+ansible-runner>=2.4.0
+ansible-core>=2.16            # ansible-playbook binary that ansible-runner drives
+PyYAML>=6.0.1
+
+# Crypto / config
+cryptography>=42.0.8
+python-dotenv>=1.0.1
+
+# Serving / utils
+gunicorn>=22.0.0
+psutil>=5.9.8
+requests>=2.32.2
+jsonschema>=4.22.0
+
+# Database: MariaDB via Oracle's official pure-Python connector
+mysql-connector-python>=9.1.0
+tzdata>=2024.1                # zoneinfo data (Windows dev boxes lack it)
+
+# Optional: PostgreSQL
+# psycopg2-binary>=2.9.9

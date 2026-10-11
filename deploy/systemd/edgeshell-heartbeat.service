@@ -1,0 +1,8 @@
+[Unit]
+Description=EdgeShell VPN heartbeat sample (driven by timer)
+After=edgeshell.service
+
+[Service]
+Type=oneshot
+User=edgeshell
+ExecStart=/usr/bin/curl -fsS -o /dev/null -X POST --max-time 20 http://127.0.0.1:@@PORT@@/vpn/heartbeat

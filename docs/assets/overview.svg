@@ -1,0 +1,120 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 420" font-family="Segoe UI,Roboto,Helvetica,Arial,sans-serif" role="img" aria-labelledby="title desc">
+  <title id="title">EdgeShell overview</title>
+  <desc id="desc">Operators sign in over HTTPS to EdgeShell on an EC2 host. EdgeShell reaches the edge fleet over SSH and Ansible through a private Tailscale mesh that stays on the server.</desc>
+  <defs>
+    <linearGradient id="hdr" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#1a56db"/><stop offset="1" stop-color="#0f172a"/>
+    </linearGradient>
+    <linearGradient id="mesh" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#0f172a"/><stop offset="1" stop-color="#1e293b"/>
+    </linearGradient>
+    <marker id="ab" markerWidth="10" markerHeight="10" refX="8" refY="4" orient="auto">
+      <path d="M0,0 L8,4 L0,8 Z" fill="#1a56db"/>
+    </marker>
+    <marker id="ag" markerWidth="10" markerHeight="10" refX="8" refY="4" orient="auto">
+      <path d="M0,0 L8,4 L0,8 Z" fill="#059669"/>
+    </marker>
+    <style>
+      .tt{font-size:15px;font-weight:700;fill:#0f172a}
+      .t{font-size:13px;font-weight:700;fill:#0f172a}
+      .lbl{font-size:11px;fill:#475569}
+      .mut{font-size:11px;fill:#64748b}
+      .pill{font-size:12px;font-weight:600}
+    </style>
+  </defs>
+
+  <rect width="900" height="420" fill="#f8fafc"/>
+  <text x="30" y="36" class="tt" font-size="18">How EdgeShell works</text>
+  <text x="30" y="55" class="mut">One portal for the whole fleet. Users need a browser, not a VPN account.</text>
+
+  <!-- Column labels -->
+  <text x="120" y="88" class="mut" text-anchor="middle" font-weight="700" letter-spacing="1">USERS</text>
+  <text x="450" y="88" class="mut" text-anchor="middle" font-weight="700" letter-spacing="1">CONTROL PLANE</text>
+  <text x="770" y="88" class="mut" text-anchor="middle" font-weight="700" letter-spacing="1">EDGE FLEET</text>
+
+  <!-- Users -->
+  <rect x="30" y="100" width="180" height="210" rx="12" fill="#fff" stroke="#cbd5e1"/>
+  <text x="120" y="128" class="t" text-anchor="middle">Operators</text>
+  <text x="120" y="146" class="mut" text-anchor="middle">any browser, anywhere</text>
+
+  <rect x="50" y="162" width="140" height="34" rx="17" fill="#fef2f2" stroke="#fecaca"/>
+  <text x="120" y="184" class="pill" fill="#b91c1c" text-anchor="middle">administrator</text>
+  <rect x="50" y="206" width="140" height="34" rx="17" fill="#eff6ff" stroke="#bfdbfe"/>
+  <text x="120" y="228" class="pill" fill="#1d4ed8" text-anchor="middle">operator</text>
+  <rect x="50" y="250" width="140" height="34" rx="17" fill="#f0fdf4" stroke="#bbf7d0"/>
+  <text x="120" y="272" class="pill" fill="#15803d" text-anchor="middle">monitor</text>
+
+  <!-- HTTPS arrow -->
+  <line x1="212" y1="205" x2="292" y2="205" stroke="#1a56db" stroke-width="2.5" marker-end="url(#ab)"/>
+  <text x="252" y="195" class="lbl" text-anchor="middle" font-weight="700">HTTPS</text>
+  <text x="252" y="224" class="mut" text-anchor="middle">fleet.domain</text>
+
+  <!-- EC2 control plane -->
+  <rect x="300" y="100" width="300" height="210" rx="12" fill="#fff" stroke="#1a56db" stroke-width="2"/>
+  <rect x="300" y="100" width="300" height="40" rx="12" fill="url(#hdr)"/>
+  <rect x="300" y="128" width="300" height="12" fill="#163a8f"/>
+  <text x="450" y="126" font-size="14" font-weight="700" fill="#fff" text-anchor="middle">EdgeShell on EC2</text>
+
+  <rect x="318" y="152" width="264" height="40" rx="8" fill="#eff6ff" stroke="#bfdbfe"/>
+  <text x="332" y="170" class="t" font-size="12">Nginx + Let's Encrypt</text>
+  <text x="332" y="185" class="lbl" font-size="10">TLS, HSTS, domain only</text>
+
+  <rect x="318" y="198" width="264" height="40" rx="8" fill="#f0fdf4" stroke="#bbf7d0"/>
+  <text x="332" y="216" class="t" font-size="12">Gunicorn + Flask app</text>
+  <text x="332" y="231" class="lbl" font-size="10">RBAC, CSRF, SSH, Ansible, monitoring</text>
+
+  <rect x="318" y="244" width="128" height="52" rx="8" fill="#fff7ed" stroke="#fed7aa"/>
+  <text x="332" y="265" class="t" font-size="12">MariaDB</text>
+  <text x="332" y="281" class="lbl" font-size="10">encrypted creds</text>
+
+  <rect x="454" y="244" width="128" height="52" rx="8" fill="#faf5ff" stroke="#e9d5ff"/>
+  <text x="468" y="265" class="t" font-size="12">systemd</text>
+  <text x="468" y="281" class="lbl" font-size="10">auto-start, watchdog</text>
+
+  <!-- Mesh arrow -->
+  <line x1="602" y1="205" x2="652" y2="205" stroke="#059669" stroke-width="2.5" marker-end="url(#ag)"/>
+
+  <!-- Fleet -->
+  <rect x="660" y="100" width="220" height="210" rx="12" fill="#fff" stroke="#059669" stroke-width="1.5"/>
+  <rect x="660" y="100" width="220" height="34" rx="12" fill="url(#mesh)"/>
+  <rect x="660" y="122" width="220" height="12" fill="#172033"/>
+  <text x="770" y="122" font-size="12" font-weight="700" fill="#fff" text-anchor="middle">Tailscale mesh · SSH / Ansible</text>
+
+  <g>
+    <rect x="676" y="146" width="90" height="70" rx="8" fill="#f0fdf4" stroke="#86efac"/>
+    <circle cx="690" cy="161" r="4" fill="#22c55e"/>
+    <text x="700" y="165" class="t" font-size="12">Pi 01</text>
+    <text x="688" y="186" class="lbl" font-size="10">Node-RED</text>
+    <text x="688" y="202" class="lbl" font-size="10">ARMv7</text>
+  </g>
+  <g>
+    <rect x="774" y="146" width="90" height="70" rx="8" fill="#f0fdf4" stroke="#86efac"/>
+    <circle cx="788" cy="161" r="4" fill="#22c55e"/>
+    <text x="798" y="165" class="t" font-size="12">Pi 02</text>
+    <text x="786" y="186" class="lbl" font-size="10">Docker</text>
+    <text x="786" y="202" class="lbl" font-size="10">ARM64</text>
+  </g>
+  <g>
+    <rect x="676" y="226" width="90" height="70" rx="8" fill="#f0fdf4" stroke="#86efac"/>
+    <circle cx="690" cy="241" r="4" fill="#22c55e"/>
+    <text x="700" y="245" class="t" font-size="12">Pi 03</text>
+    <text x="688" y="266" class="lbl" font-size="10">Remote GUI</text>
+    <text x="688" y="282" class="lbl" font-size="10">sensors</text>
+  </g>
+  <g>
+    <rect x="774" y="226" width="90" height="70" rx="8" fill="#fff" stroke="#94a3b8" stroke-dasharray="4 3"/>
+    <text x="819" y="258" class="t" font-size="13" text-anchor="middle" fill="#475569">+ N nodes</text>
+    <text x="819" y="276" class="lbl" font-size="10" text-anchor="middle">bulk import</text>
+  </g>
+
+  <!-- Bottom value strip -->
+  <rect x="30" y="334" width="840" height="60" rx="12" fill="#0f172a"/>
+  <g font-size="12" fill="#e2e8f0">
+    <circle cx="58" cy="364" r="5" fill="#60a5fa"/>
+    <text x="72" y="368"><tspan font-weight="700" fill="#fff">No per-user VPN</tspan> mesh stays on the server</text>
+    <circle cx="338" cy="364" r="5" fill="#34d399"/>
+    <text x="352" y="368"><tspan font-weight="700" fill="#fff">Role-scoped access</tspan> enforced on every route</text>
+    <circle cx="628" cy="364" r="5" fill="#fbbf24"/>
+    <text x="642" y="368"><tspan font-weight="700" fill="#fff">Self-healing</tspan> boot, crash, watchdog</text>
+  </g>
+</svg>

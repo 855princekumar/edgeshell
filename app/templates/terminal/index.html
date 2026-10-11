@@ -1,0 +1,411 @@
+{% extends "base.html" %}
+{% block title %}Terminal - EdgeShell{% endblock %}
+
+{% block content %}
+<div class="d-flex align-items-center justify-content-between mb-3">
+  <div>
+    <h4 class="fw-bold mb-0">Remote Terminal</h4>
+    <small class="text-muted">Execute commands across your fleet with real-time output</small>
+  </div>
+</div>
+
+<div class="row g-0" style="height:calc(100vh - 150px);min-height:500px">
+
+  <!-- ── Node Panel ─────────────────────────────────── -->
+  <div class="col-auto" style="width:260px;display:flex;flex-direction:column;border-right:1px solid #e5e7eb;background:#fff;border-radius:12px 0 0 12px;overflow:hidden">
+
+    <!-- Search -->
+    <div class="p-2 border-bottom">
+      <input type="search" class="form-control form-control-sm" placeholder="Search nodes…"
+             id="nodeSearch" oninput="filterNodeList()">
+    </div>
+
+    <!-- Select buttons -->
+    <div class="px-2 py-1 border-bottom d-flex gap-1 flex-wrap">
+      <button class="btn btn-xs btn-outline-secondary" onclick="selectGroup('all')">All</button>
+      <button class="btn btn-xs btn-outline-secondary" onclick="selectGroup('none')">None</button>
+      <button class="btn btn-xs btn-outline-primary"   onclick="selectGroup('32bit')">32-bit</button>
+      <button class="btn btn-xs btn-outline-info"      onclick="selectGroup('64bit')">64-bit</button>
+      <button class="btn btn-xs btn-outline-success"   onclick="selectGroup('online')">Online</button>
+    </div>
+
+    <!-- Node list -->
+    <div style="flex:1;overflow-y:auto" id="nodeList">
+      {% for node in nodes %}
+      <label class="node-item d-flex align-items-center gap-2 px-3 py-2"
+             data-id="{{ node.id }}"
+             data-status="{{ node.status }}"
+             data-tags="{{ node.tags or '' }}"
+             data-arch="{{ node.tags or '' }}">
+        <input type="checkbox" class="node-chk form-check-input mt-0 flex-shrink-0" value="{{ node.id }}"
+               {% if loop.first %}checked{% endif %}>
+        <div class="flex-grow-1 min-w-0">
+          <div class="fw-medium small text-truncate" title="{{ node.name }}">{{ node.name }}</div>
+          <div class="d-flex gap-1 align-items-center mt-1">
+            <span class="text-muted font-monospace" style="font-size:.65rem">{{ node.ip_address }}</span>
+          </div>
+        </div>
+        <div class="d-flex flex-column align-items-end gap-1 flex-shrink-0">
+          <span class="status-dot" style="width:7px;height:7px;border-radius:50%;background:{{ '#059669' if node.status=='online' else '#dc2626' if node.status=='offline' else '#9ca3af' }};display:inline-block"></span>
+          {% if node.tags and '32bit' in node.tags %}
+          <span style="font-size:.6rem;background:#eff6ff;color:#1a56db;border-radius:4px;padding:0 4px">32</span>
+          {% elif node.tags and '64bit' in node.tags %}
+          <span style="font-size:.6rem;background:#e0f2fe;color:#0284c7;border-radius:4px;padding:0 4px">64</span>
+          {% endif %}
+        </div>
+      </label>
+      {% else %}
+      <div class="text-center text-muted small py-4">
+        No nodes. <a href="/nodes/add">Add one</a>.
+      </div>
+      {% endfor %}
+    </div>
+
+    <!-- Selected count -->
+    <div class="px-3 py-2 border-top bg-light">
+      <small class="text-muted" id="selCount">
+        <span id="selNum">1</span> node selected
+      </small>
+    </div>
+
+    <!-- Quick commands -->
+    <div class="border-top p-2" style="background:#f9fafb">
+      <div class="d-flex align-items-center justify-content-between mb-1 px-1">
+        <div class="small text-muted fw-semibold">Quick Commands</div>
+        <button class="btn btn-xs btn-outline-secondary" onclick="addCustomCmd()" title="Add your own">
+          <i class="bi bi-plus-lg"></i> Add
+        </button>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:3px">
+        {% for cmd, label in [
+          ('uptime','Uptime'), ('free -h','Memory'),
+          ('df -h /','Disk'), ('cat /proc/loadavg','Load'),
+          ('uname -m','Arch'), ('ps aux --sort=-%cpu | head -6','Top CPU'),
+          ('ip addr show','Network'), ('cat /etc/os-release | head -4','OS Info'),
+          ('vcgencmd measure_temp 2>/dev/null || cat /tmp/fake_temp 2>/dev/null','Temp'),
+          ('systemctl is-active node-red','Node-RED'),
+          ('docker ps','Docker'), ('cat /var/log/syslog | tail -10','Syslog'),
+        ] %}
+        <button class="btn btn-xs btn-outline-secondary text-start text-truncate"
+                onclick="setCmd('{{ cmd }}')" title="{{ cmd }}"
+                style="font-size:.68rem;font-family:var(--bs-font-monospace,monospace)">
+          {{ label }}
+        </button>
+        {% endfor %}
+      </div>
+      <!-- Custom (saved in this browser) -->
+      <div id="customCmds" style="display:grid;grid-template-columns:1fr 1fr;gap:3px;margin-top:3px"></div>
+    </div>
+  </div>
+
+  <!-- ── Terminal ───────────────────────────────────── -->
+  <div class="col" style="display:flex;flex-direction:column;background:#0d1117;border-radius:0 12px 12px 0;overflow:hidden">
+
+    <!-- Terminal title bar -->
+    <div style="background:#161b22;border-bottom:1px solid #21262d;padding:8px 16px;display:flex;align-items:center;gap:10px;flex-shrink:0">
+      <div style="display:flex;gap:6px">
+        <div style="width:12px;height:12px;border-radius:50%;background:#ff5f57"></div>
+        <div style="width:12px;height:12px;border-radius:50%;background:#febc2e"></div>
+        <div style="width:12px;height:12px;border-radius:50%;background:#28c840"></div>
+      </div>
+      <div style="flex:1;text-align:center;color:#8b949e;font-size:12px;font-family:monospace" id="termTitle">
+        EdgeShell Terminal
+      </div>
+      <div class="d-flex gap-2">
+        <button onclick="clearTerm()" style="background:transparent;border:none;color:#8b949e;font-size:12px;cursor:pointer" title="Clear">
+          <i class="bi bi-trash"></i>
+        </button>
+        <button onclick="copyOutput()" style="background:transparent;border:none;color:#8b949e;font-size:12px;cursor:pointer" title="Copy all">
+          <i class="bi bi-clipboard" id="copyIcon"></i>
+        </button>
+      </div>
+    </div>
+
+    <!-- Output -->
+    <div id="termOut" style="flex:1;overflow-y:auto;padding:14px 18px;font-family:'JetBrains Mono',monospace;font-size:12.5px;line-height:1.65;color:#c9d1d9;scroll-behavior:smooth">
+      <div style="color:#30363d;user-select:none">
+╔══════════════════════════════════════════════════╗<br>
+║        EdgeShell Remote Terminal  v1.0           ║<br>
+╚══════════════════════════════════════════════════╝<br>
+Select nodes on the left → type a command → Enter<br>
+Use ↑ ↓ arrow keys to navigate command history<br>
+<br></div>
+    </div>
+
+    <!-- Input bar -->
+    <div style="background:#161b22;border-top:1px solid #21262d;padding:10px 16px;flex-shrink:0">
+      <div class="d-flex align-items-center gap-3">
+        <div style="display:flex;align-items:center;gap:8px;flex:1;background:#0d1117;border:1px solid #30363d;border-radius:8px;padding:8px 12px">
+          <span style="color:#3fb950;font-family:monospace;font-weight:700;flex-shrink:0">❯</span>
+          <input type="text" id="cmdInput"
+                 style="flex:1;background:transparent;border:none;outline:none;color:#c9d1d9;font-family:'JetBrains Mono',monospace;font-size:12.5px"
+                 placeholder="Type command here…"
+                 autocomplete="off" autocorrect="off" spellcheck="false">
+        </div>
+        <div class="form-check form-switch d-flex align-items-center gap-2 mb-0 flex-shrink-0">
+          <input class="form-check-input" type="checkbox" id="sudoToggle" style="margin:0">
+          <label class="form-check-label" for="sudoToggle" style="color:#8b949e;font-size:12px;cursor:pointer">sudo</label>
+        </div>
+        <button id="sendBtn" onclick="sendCmd()"
+                style="background:#238636;color:#fff;border:none;border-radius:8px;padding:8px 20px;font-size:13px;font-weight:600;cursor:pointer;flex-shrink:0;transition:background .15s"
+                onmouseover="this.style.background='#2ea043'" onmouseout="this.style.background='#238636'">
+          Send
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<style>
+.btn-xs { padding: 2px 7px !important; font-size: .7rem !important; }
+.node-item { cursor:pointer; border-bottom:1px solid #f3f4f6; transition:background .1s; }
+.node-item:hover { background:#f8faff; }
+.node-item:has(.node-chk:checked) { background:#eff6ff; border-left:3px solid #1a56db; }
+
+/* Terminal output classes */
+.t-sep   { color:#21262d; }
+.t-cmd   { color:#8b949e; }
+.t-node  { color:#58a6ff; font-weight:600; margin-top:10px; }
+.t-out   { color:#c9d1d9; white-space:pre-wrap; }
+.t-err   { color:#f85149; white-space:pre-wrap; }
+.t-meta  { color:#484f58; font-size:11px; }
+.t-ok    { color:#3fb950; }
+.t-fail  { color:#f85149; }
+.t-spin  { color:#58a6ff; animation:blink .9s infinite; }
+@keyframes blink { 0%,100%{opacity:1} 50%{opacity:.2} }
+</style>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const inp = document.getElementById('cmdInput');
+const out = document.getElementById('termOut');
+let cmdHistory = [], histIdx = -1;
+
+// ── Pre-select node from dashboard modal ─────────────────────
+(function() {
+  const preselectId = sessionStorage.getItem('preselectNodeId');
+  if (preselectId) {
+    sessionStorage.removeItem('preselectNodeId');
+    // Uncheck all, check only the preselected
+    document.querySelectorAll('.node-chk').forEach(c => c.checked = false);
+    const target = document.querySelector(`.node-chk[value="${preselectId}"]`);
+    if (target) { target.checked = true; }
+    updateSelCount();
+    updateTitle();
+  }
+})();
+
+// ── Node selection ───────────────────────────────────────────
+function getSelected() {
+  return [...document.querySelectorAll('.node-chk:checked')].map(c => parseInt(c.value));
+}
+function getSelectedNames() {
+  return [...document.querySelectorAll('.node-chk:checked')]
+    .map(c => c.closest('.node-item').querySelector('.fw-medium').textContent.trim());
+}
+
+function selectGroup(type) {
+  document.querySelectorAll('.node-item').forEach(item => {
+    const chk    = item.querySelector('.node-chk');
+    const status = item.dataset.status;
+    const tags   = item.dataset.tags || '';
+    if (type === 'all')    chk.checked = true;
+    else if (type === 'none')   chk.checked = false;
+    else if (type === 'online') chk.checked = status === 'online';
+    else if (type === '32bit')  chk.checked = tags.includes('32bit');
+    else if (type === '64bit')  chk.checked = tags.includes('64bit');
+  });
+  updateSelCount(); updateTitle();
+}
+
+function filterNodeList() {
+  const q = document.getElementById('nodeSearch').value.toLowerCase();
+  document.querySelectorAll('.node-item').forEach(item => {
+    const txt = item.textContent.toLowerCase();
+    item.style.display = txt.includes(q) ? '' : 'none';
+  });
+}
+
+function updateSelCount() {
+  const n = getSelected().length;
+  document.getElementById('selNum').textContent = n;
+  document.getElementById('selCount').querySelector('span:last-child') &&
+    (document.getElementById('selCount').lastChild.textContent = n === 1 ? ' node selected' : ' nodes selected');
+}
+
+function updateTitle() {
+  const names = getSelectedNames();
+  const title = names.length === 0 ? 'No nodes selected' :
+                names.length === 1 ? `▸ ${names[0]}` :
+                `▸ Broadcasting to ${names.length} nodes`;
+  document.getElementById('termTitle').textContent = title;
+}
+
+document.querySelectorAll('.node-chk').forEach(c => {
+  c.addEventListener('change', () => { updateSelCount(); updateTitle(); });
+});
+updateTitle(); updateSelCount();
+
+// ── Terminal helpers ─────────────────────────────────────────
+function append(html) {
+  out.insertAdjacentHTML('beforeend', html);
+  out.scrollTop = out.scrollHeight;
+}
+function clearTerm() {
+  out.innerHTML = '<div class="t-meta">── Terminal cleared ─────────────────────────────</div><br>';
+}
+function copyOutput() {
+  navigator.clipboard.writeText(out.innerText).then(() => {
+    const icon = document.getElementById('copyIcon');
+    icon.className = 'bi bi-check2'; setTimeout(()=> icon.className='bi bi-clipboard', 1800);
+  });
+}
+function setCmd(cmd) { inp.value = cmd; inp.focus(); }
+
+// ── Custom quick commands (saved in this browser) ────────────
+const CUSTOM_KEY = 'edgeshell_custom_cmds';
+function loadCustomCmds() {
+  try { return JSON.parse(localStorage.getItem(CUSTOM_KEY) || '[]'); }
+  catch (e) { return []; }
+}
+function saveCustomCmds(list) {
+  localStorage.setItem(CUSTOM_KEY, JSON.stringify(list));
+}
+function renderCustomCmds() {
+  const box = document.getElementById('customCmds');
+  const list = loadCustomCmds();
+  box.innerHTML = list.map((c, i) => `
+    <div style="display:flex;gap:2px">
+      <button class="btn btn-xs btn-outline-primary text-start text-truncate flex-grow-1"
+              onclick="setCmd('${esc(c.cmd).replace(/'/g, "\\'")}')" title="${esc(c.cmd)}"
+              style="font-size:.68rem;font-family:var(--bs-font-monospace,monospace)">
+        ${esc(c.label)}
+      </button>
+      <button class="btn btn-xs btn-outline-danger" onclick="delCustomCmd(${i})" title="Remove"
+              style="font-size:.6rem;padding:2px 5px">&times;</button>
+    </div>`).join('');
+}
+function addCustomCmd() {
+  const label = prompt('Button label (short):');
+  if (!label) return;
+  const cmd = prompt('Command to run:');
+  if (!cmd) return;
+  const list = loadCustomCmds();
+  list.push({ label: label.trim(), cmd: cmd.trim() });
+  saveCustomCmds(list);
+  renderCustomCmds();
+}
+function delCustomCmd(i) {
+  const list = loadCustomCmds();
+  list.splice(i, 1);
+  saveCustomCmds(list);
+  renderCustomCmds();
+}
+renderCustomCmds();
+
+// ── Keyboard history ─────────────────────────────────────────
+inp.addEventListener('keydown', e => {
+  if (e.key === 'Enter') { e.preventDefault(); sendCmd(); return; }
+  if (e.key === 'ArrowUp') {
+    e.preventDefault();
+    if (histIdx < cmdHistory.length - 1) inp.value = cmdHistory[++histIdx];
+  }
+  if (e.key === 'ArrowDown') {
+    e.preventDefault();
+    histIdx > 0 ? inp.value = cmdHistory[--histIdx] : (histIdx=-1, inp.value='');
+  }
+});
+
+// ── Send command ─────────────────────────────────────────────
+async function sendCmd() {
+  const raw = inp.value.trim();
+  if (!raw) return;
+  const nodeIds = getSelected();
+  if (!nodeIds.length) {
+    append('<div class="t-fail">⚠  No nodes selected - check at least one node in the panel.</div>');
+    return;
+  }
+
+  const cmd = (document.getElementById('sudoToggle').checked && !raw.startsWith('sudo'))
+    ? 'sudo ' + raw : raw;
+
+  cmdHistory.unshift(raw); if (cmdHistory.length > 100) cmdHistory.pop();
+  histIdx = -1; inp.value = '';
+
+  const names = getSelectedNames();
+  const ts    = new Date().toLocaleTimeString();
+
+  // Show command line
+  append(`<div class="t-cmd">❯ ${esc(cmd)}<span class="t-meta">  [${ts}] → ${esc(names.join(', '))}</span></div>`);
+
+  // Spinner placeholders per node
+  const spinIds = {};
+  nodeIds.forEach((id, i) => {
+    const sid = `spin_${id}_${Date.now()}`;
+    spinIds[id] = sid;
+    append(`<div id="${sid}" class="t-node">▸ ${esc(names[i])}  <span class="t-spin">executing…</span></div>`);
+  });
+
+  const btn = document.getElementById('sendBtn');
+  btn.disabled = true; btn.textContent = 'Running…';
+
+  try {
+    const resp = await fetch('/terminal/execute', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ command: cmd, node_ids: nodeIds })
+    });
+    const data = await resp.json();
+
+    if (data.error) {
+      nodeIds.forEach(id => { const el=document.getElementById(spinIds[id]); if(el) el.remove(); });
+      append(`<div class="t-fail">✘  ${esc(data.error)}</div>`);
+    } else {
+      // Match results back to node ids
+      const idToName = {};
+      nodeIds.forEach((id,i) => idToName[id] = names[i]);
+
+      Object.entries(data.results).forEach(([nodeName, r]) => {
+        // Find the node id that matches this name
+        const id = nodeIds.find((_,i) => names[i] === nodeName);
+        const sid = spinIds[id];
+        const el  = sid ? document.getElementById(sid) : null;
+
+        const icon  = r.success ? '✔' : '✘';
+        const cls   = r.success ? 't-ok' : 't-fail';
+        const dur   = r.duration != null ? ` · ${r.duration}s` : '';
+        const cwd   = r.cwd ? ` · ${esc(r.cwd)}` : '';
+        const stdout = (r.stdout||'').trimEnd();
+        const stderr = (r.stderr||'').trimEnd();
+
+        let html = `<div>
+          <div class="t-node">▸ ${esc(nodeName)}</div>`;
+        if (stdout) html += `<div class="t-out">${esc(stdout)}</div>`;
+        if (stderr) html += `<div class="t-err">${esc(stderr)}</div>`;
+        if (!stdout && !stderr) html += `<div class="t-meta">(no output)</div>`;
+        html += `<div class="t-meta ${cls}">${icon}  exit ${r.exit_code ?? '?'}${dur}${cwd}</div>
+          </div>`;
+
+        if (el) el.outerHTML = html;
+        else    append(html);
+      });
+    }
+  } catch(err) {
+    nodeIds.forEach(id => { const el=document.getElementById(spinIds[id]); if(el) el.remove(); });
+    append(`<div class="t-fail">✘  Network error: ${esc(err.message)}</div>`);
+  }
+
+  append('<div class="t-sep">──────────────────────────────────────────────────────</div>');
+  btn.disabled = false; btn.textContent = 'Send';
+  out.scrollTop = out.scrollHeight;
+  inp.focus();
+}
+
+function esc(s) {
+  return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+inp.focus();
+</script>
+{% endblock %}

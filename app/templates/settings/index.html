@@ -1,0 +1,230 @@
+{% extends "base.html" %}
+{% block title %}Settings - EdgeShell{% endblock %}
+
+{% block content %}
+<div class="mb-4">
+  <h4 class="fw-bold mb-0">Platform Settings</h4>
+  <small class="text-muted">System-wide configuration for EdgeShell</small>
+</div>
+
+{% with messages = get_flashed_messages(with_categories=true) %}
+{% for cat, msg in messages %}
+<div class="alert alert-{{ 'danger' if cat == 'error' else cat }} alert-dismissible fade show">
+  {{ msg }}<button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+</div>
+{% endfor %}
+{% endwith %}
+
+<div class="row g-4">
+  <!-- General Settings -->
+  <div class="col-12 col-lg-8">
+    <div class="card border-0 shadow-sm mb-4">
+      <div class="card-header bg-white border-bottom py-3">
+        <div class="fw-semibold"><i class="bi bi-gear me-2 text-primary"></i>General</div>
+      </div>
+      <div class="card-body p-4">
+        <form method="POST" action="{{ url_for('settings.index') }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <input type="hidden" name="section" value="general">
+
+          <div class="row g-3">
+            <div class="col-12 col-md-6">
+              <label class="form-label fw-medium">Platform Name</label>
+              <input type="text" class="form-control" name="platform_name"
+                value="{{ settings.get('platform_name', 'EdgeShell') }}">
+            </div>
+            <div class="col-12 col-md-6">
+              <label class="form-label fw-medium">Platform URL</label>
+              <input type="url" class="form-control" name="platform_url"
+                value="{{ settings.get('platform_url', '') }}" placeholder="https://edgeshell.example.com">
+            </div>
+            <div class="col-12 col-md-6">
+              <label class="form-label fw-medium">Session Timeout (minutes)</label>
+              <input type="number" class="form-control" name="session_timeout"
+                value="{{ settings.get('session_timeout', '60') }}" min="5" max="1440">
+            </div>
+            <div class="col-12 col-md-6">
+              <label class="form-label fw-medium">Default SSH Port</label>
+              <input type="number" class="form-control" name="default_ssh_port"
+                value="{{ settings.get('default_ssh_port', '22') }}" min="1" max="65535">
+            </div>
+            <div class="col-12 col-md-6">
+              <label class="form-label fw-medium">SSH Connect Timeout (seconds)</label>
+              <input type="number" class="form-control" name="ssh_timeout"
+                value="{{ settings.get('ssh_timeout', '10') }}" min="1" max="120">
+            </div>
+            <div class="col-12 col-md-6">
+              <label class="form-label fw-medium">Metrics Refresh Interval (seconds)</label>
+              <input type="number" class="form-control" name="metrics_interval"
+                value="{{ settings.get('metrics_interval', '30') }}" min="10" max="3600">
+            </div>
+          </div>
+
+          <div class="mt-3">
+            <button type="submit" class="btn btn-primary btn-sm">
+              <i class="bi bi-save me-1"></i>Save General Settings
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <!-- Security Settings -->
+    <div class="card border-0 shadow-sm mb-4">
+      <div class="card-header bg-white border-bottom py-3">
+        <div class="fw-semibold"><i class="bi bi-shield-lock me-2 text-danger"></i>Security</div>
+      </div>
+      <div class="card-body p-4">
+        <form method="POST" action="{{ url_for('settings.index') }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <input type="hidden" name="section" value="security">
+
+          <div class="row g-3">
+            <div class="col-12 col-md-6">
+              <label class="form-label fw-medium">Max Login Attempts</label>
+              <input type="number" class="form-control" name="max_login_attempts"
+                value="{{ settings.get('max_login_attempts', '10') }}" min="3" max="50">
+            </div>
+            <div class="col-12 col-md-6">
+              <label class="form-label fw-medium">Login Rate Limit (per minute)</label>
+              <input type="number" class="form-control" name="login_rate_limit"
+                value="{{ settings.get('login_rate_limit', '10') }}" min="1" max="60">
+            </div>
+            <div class="col-12">
+              <label class="form-label fw-medium">Blocked Commands (one per line)</label>
+              <textarea class="form-control font-monospace" name="blocked_commands" rows="4"
+                placeholder="rm -rf /&#10;mkfs&#10;:(){ :|:& };:">{{ settings.get('blocked_commands', 'rm -rf /\nmkfs\n:(){ :|:& };:') }}</textarea>
+              <div class="form-text">These commands will be rejected in the terminal.</div>
+            </div>
+            <div class="col-12">
+              <div class="form-check form-switch">
+                <input class="form-check-input" type="checkbox" name="require_sudo_confirm" id="sudoConfirm"
+                  {{ 'checked' if settings.get('require_sudo_confirm') == 'true' else '' }}>
+                <label class="form-check-label" for="sudoConfirm">Require confirmation for sudo commands</label>
+              </div>
+            </div>
+            <div class="col-12">
+              <div class="form-check form-switch">
+                <input class="form-check-input" type="checkbox" name="audit_all_commands" id="auditAll"
+                  {{ 'checked' if settings.get('audit_all_commands', 'true') == 'true' else '' }}>
+                <label class="form-check-label" for="auditAll">Log all executed commands to audit trail</label>
+              </div>
+            </div>
+          </div>
+
+          <div class="mt-3">
+            <button type="submit" class="btn btn-primary btn-sm">
+              <i class="bi bi-save me-1"></i>Save Security Settings
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <!-- Ansible / SSH Settings -->
+    <div class="card border-0 shadow-sm mb-4">
+      <div class="card-header bg-white border-bottom py-3">
+        <div class="fw-semibold"><i class="bi bi-terminal me-2 text-success"></i>Ansible &amp; SSH</div>
+      </div>
+      <div class="card-body p-4">
+        <form method="POST" action="{{ url_for('settings.index') }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <input type="hidden" name="section" value="ansible">
+
+          <div class="row g-3">
+            <div class="col-12 col-md-6">
+              <label class="form-label fw-medium">Ansible Playbooks Dir</label>
+              <input type="text" class="form-control font-monospace" name="ansible_playbooks_dir"
+                value="{{ settings.get('ansible_playbooks_dir', 'ansible/playbooks') }}">
+            </div>
+            <div class="col-12 col-md-6">
+              <label class="form-label fw-medium">Ansible Inventory Dir</label>
+              <input type="text" class="form-control font-monospace" name="ansible_inventory_dir"
+                value="{{ settings.get('ansible_inventory_dir', 'ansible/inventory') }}">
+            </div>
+            <div class="col-12 col-md-6">
+              <label class="form-label fw-medium">Default Remote User</label>
+              <input type="text" class="form-control" name="default_remote_user"
+                value="{{ settings.get('default_remote_user', 'ubuntu') }}">
+            </div>
+            <div class="col-12 col-md-6">
+              <label class="form-label fw-medium">Upload Staging Directory</label>
+              <input type="text" class="form-control font-monospace" name="upload_staging_dir"
+                value="{{ settings.get('upload_staging_dir', '/tmp/edgeshell_staging') }}">
+            </div>
+            <div class="col-12">
+              <div class="form-check form-switch">
+                <input class="form-check-input" type="checkbox" name="ansible_enabled" id="ansibleEnabled"
+                  {{ 'checked' if settings.get('ansible_enabled', 'true') == 'true' else '' }}>
+                <label class="form-check-label" for="ansibleEnabled">Use Ansible when available (falls back to SSH)</label>
+              </div>
+            </div>
+          </div>
+
+          <div class="mt-3">
+            <button type="submit" class="btn btn-primary btn-sm">
+              <i class="bi bi-save me-1"></i>Save Ansible Settings
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- Sidebar info -->
+  <div class="col-12 col-lg-4">
+    <!-- System Info -->
+    <div class="card border-0 shadow-sm mb-4">
+      <div class="card-header bg-white border-bottom py-3">
+        <div class="fw-semibold"><i class="bi bi-info-circle me-2 text-info"></i>System Info</div>
+      </div>
+      <div class="card-body p-3">
+        <table class="table table-sm table-borderless mb-0 small">
+          <tr><td class="text-muted">Version</td><td class="fw-medium">EdgeShell 1.0.0</td></tr>
+          <tr><td class="text-muted">Python</td><td class="fw-medium" id="py-ver"> n/a </td></tr>
+          <tr><td class="text-muted">Flask</td><td class="fw-medium" id="flask-ver"> n/a </td></tr>
+          <tr><td class="text-muted">Database</td><td class="fw-medium">SQLite</td></tr>
+          <tr><td class="text-muted">Total Users</td><td class="fw-medium">{{ total_users }}</td></tr>
+          <tr><td class="text-muted">Total Nodes</td><td class="fw-medium">{{ total_nodes }}</td></tr>
+          <tr><td class="text-muted">Activity Logs</td><td class="fw-medium">{{ total_logs }}</td></tr>
+        </table>
+      </div>
+    </div>
+
+    <!-- Danger Zone -->
+    <div class="card border-0 shadow-sm border border-danger border-opacity-25">
+      <div class="card-header bg-white border-bottom py-3">
+        <div class="fw-semibold text-danger"><i class="bi bi-exclamation-triangle me-2"></i>Danger Zone</div>
+      </div>
+      <div class="card-body p-3">
+        <p class="small text-muted">These actions are irreversible. Proceed with caution.</p>
+        <form method="POST" action="{{ url_for('settings.index') }}" class="mb-2">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <input type="hidden" name="section" value="clear_logs">
+          <button type="submit" class="btn btn-outline-danger btn-sm w-100"
+            onclick="return confirm('Clear ALL activity logs? This cannot be undone.')">
+            <i class="bi bi-trash me-1"></i>Clear Activity Logs
+          </button>
+        </form>
+        <form method="POST" action="{{ url_for('settings.index') }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <input type="hidden" name="section" value="clear_node_logs">
+          <button type="submit" class="btn btn-outline-danger btn-sm w-100"
+            onclick="return confirm('Clear ALL node logs? This cannot be undone.')">
+            <i class="bi bi-trash me-1"></i>Clear Node Logs
+          </button>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+fetch('/api/v1/status').then(r=>r.json()).then(d=>{
+  document.getElementById('py-ver').textContent = d.python_version || 'n/a';
+  document.getElementById('flask-ver').textContent = d.flask_version || 'n/a';
+}).catch(()=>{});
+</script>
+{% endblock %}

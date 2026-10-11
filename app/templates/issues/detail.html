@@ -1,0 +1,91 @@
+{% extends "base.html" %}
+{% block title %}Issue #{{ issue.id }}{% endblock %}
+{% block content %}
+<div class="page-header">
+    <div>
+        <div class="page-title">{{ issue.subject }}</div>
+        <div class="page-subtitle">
+            #{{ issue.id }} &middot; raised by {{ issue.reporter.username if issue.reporter else 'unknown' }}
+            {% if issue.created_at %}&middot; {{ issue.created_at|localtime('%d %b %Y %H:%M') }}{% endif %}
+            {% if issue.category %}&middot; {{ issue.category }}{% endif %}
+        </div>
+    </div>
+    <a href="{{ url_for('issues.index') }}" class="btn btn-outline"><i class="bi bi-arrow-left"></i> Back</a>
+</div>
+
+<div class="grid" style="grid-template-columns: 1fr 260px; gap:20px; align-items:start">
+    <!-- Conversation thread (the registry) -->
+    <div>
+        <div class="card mb-4">
+            <div class="card-body" style="display:flex;flex-direction:column;gap:14px">
+                {% for m in issue.messages %}
+                <div style="display:flex;{% if m.is_staff %}flex-direction:row-reverse;{% endif %}gap:10px">
+                    <div style="flex-shrink:0;width:34px;height:34px;border-radius:50%;
+                                display:flex;align-items:center;justify-content:center;color:#fff;
+                                background:{% if m.is_staff %}#059669{% else %}#1a56db{% endif %};font-size:13px;font-weight:700">
+                        {{ (m.author_name or '?')[0]|upper }}
+                    </div>
+                    <div style="max-width:80%;background:{% if m.is_staff %}#f0fdf4{% else %}#eff6ff{% endif %};
+                                border:1px solid {% if m.is_staff %}#bbf7d0{% else %}#bfdbfe{% endif %};
+                                border-radius:10px;padding:10px 12px">
+                        <div class="text-xs text-muted" style="margin-bottom:4px">
+                            <strong style="color:#0f172a">{{ m.author_name }}</strong>
+                            {% if m.is_staff %}<span class="badge bg-success bg-opacity-10 text-success">support</span>{% endif %}
+                            &middot; {{ m.created_at|localtime('%d %b %H:%M') if m.created_at else '' }}
+                        </div>
+                        <div style="white-space:pre-wrap;color:#0f172a">{{ m.body }}</div>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+
+        {% if issue.status != 'closed' or is_admin %}
+        <div class="card">
+            <div class="card-body">
+                <form method="POST" action="{{ url_for('issues.reply', issue_id=issue.id) }}">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <div class="form-group">
+                        <label class="form-label">{% if is_admin %}Reply to reporter{% else %}Add a reply{% endif %}</label>
+                        <textarea name="body" class="form-control" rows="4" required
+                                  placeholder="Type your message"></textarea>
+                    </div>
+                    <button type="submit" class="btn btn-primary"><i class="bi bi-send"></i> Send Reply</button>
+                </form>
+            </div>
+        </div>
+        {% else %}
+        <div class="card"><div class="card-body text-muted text-center py-4">This issue is closed.</div></div>
+        {% endif %}
+    </div>
+
+    <!-- Sidebar: status + meta -->
+    <div class="card">
+        <div class="card-body">
+            {% set sc = {'open':'primary','in_progress':'warning','resolved':'success','closed':'secondary'} %}
+            <div class="text-xs text-muted">Status</div>
+            <div style="margin:4px 0 12px">
+                <span class="badge bg-{{ sc.get(issue.status,'secondary') }} bg-opacity-10 text-{{ sc.get(issue.status,'secondary') }}" style="font-size:.8rem">{{ issue.status.replace('_',' ') }}</span>
+            </div>
+            <div class="text-xs text-muted">Priority</div>
+            <div style="margin:4px 0 12px;text-transform:capitalize">{{ issue.priority }}</div>
+            <div class="text-xs text-muted">Reporter</div>
+            <div style="margin:4px 0 12px">{{ issue.reporter.username if issue.reporter else 'unknown' }}</div>
+
+            {% if is_admin %}
+            <hr>
+            <form method="POST" action="{{ url_for('issues.set_status', issue_id=issue.id) }}">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <label class="form-label text-xs">Change status</label>
+                <select name="status" class="form-control form-select mb-2">
+                    {% for s in statuses %}
+                    <option value="{{ s }}" {% if s == issue.status %}selected{% endif %}>{{ s.replace('_',' ') }}</option>
+                    {% endfor %}
+                </select>
+                <button type="submit" class="btn btn-outline btn-sm" style="width:100%">Update</button>
+            </form>
+            {% endif %}
+        </div>
+    </div>
+</div>
+{% endblock %}

@@ -1,0 +1,55 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 360" font-family="Segoe UI,Roboto,Arial,sans-serif">
+  <rect width="720" height="360" fill="#f8fafc"/>
+  <text x="30" y="36" font-size="18" font-weight="700" fill="#0f172a">RBAC capability matrix</text>
+  <text x="30" y="56" font-size="12" fill="#64748b">Sessions are isolated per user; roles decide what each may do.</text>
+  <g font-size="13" fill="#0f172a">
+    <!-- header -->
+    <rect x="30" y="76" width="300" height="40" fill="#0f172a"/>
+    <text x="44" y="101" fill="#fff" font-weight="700">Capability</text>
+    <rect x="330" y="76" width="130" height="40" fill="#64748b"/>
+    <text x="395" y="101" fill="#fff" text-anchor="middle" font-weight="700">Monitor</text>
+    <rect x="460" y="76" width="130" height="40" fill="#1a56db"/>
+    <text x="525" y="101" fill="#fff" text-anchor="middle" font-weight="700">Operator</text>
+    <rect x="590" y="76" width="100" height="40" fill="#059669"/>
+    <text x="640" y="101" fill="#fff" text-anchor="middle" font-weight="700">Admin</text>
+  </g>
+  <g font-size="13">
+    <!-- rows -->
+    <g>
+      <rect x="30" y="116" width="660" height="34" fill="#fff" stroke="#e2e8f0"/>
+      <text x="44" y="138" fill="#0f172a">View dashboards, monitoring, logs</text>
+      <text x="395" y="138" text-anchor="middle" fill="#059669">yes</text>
+      <text x="525" y="138" text-anchor="middle" fill="#059669">yes</text>
+      <text x="640" y="138" text-anchor="middle" fill="#059669">yes</text>
+    </g>
+    <g>
+      <rect x="30" y="150" width="660" height="34" fill="#f8fafc" stroke="#e2e8f0"/>
+      <text x="44" y="172" fill="#0f172a">Add / edit / delete nodes, run commands</text>
+      <text x="395" y="172" text-anchor="middle" fill="#cbd5e1">-</text>
+      <text x="525" y="172" text-anchor="middle" fill="#059669">yes</text>
+      <text x="640" y="172" text-anchor="middle" fill="#059669">yes</text>
+    </g>
+    <g>
+      <rect x="30" y="184" width="660" height="34" fill="#fff" stroke="#e2e8f0"/>
+      <text x="44" y="206" fill="#0f172a">Bulk import, OpenRemoteGUI fleet install</text>
+      <text x="395" y="206" text-anchor="middle" fill="#cbd5e1">-</text>
+      <text x="525" y="206" text-anchor="middle" fill="#059669">yes</text>
+      <text x="640" y="206" text-anchor="middle" fill="#059669">yes</text>
+    </g>
+    <g>
+      <rect x="30" y="218" width="660" height="34" fill="#f8fafc" stroke="#e2e8f0"/>
+      <text x="44" y="240" fill="#0f172a">Upload / deploy files to nodes</text>
+      <text x="395" y="240" text-anchor="middle" fill="#cbd5e1">-</text>
+      <text x="525" y="240" text-anchor="middle" fill="#059669">yes</text>
+      <text x="640" y="240" text-anchor="middle" fill="#059669">yes</text>
+    </g>
+    <g>
+      <rect x="30" y="252" width="660" height="34" fill="#fff" stroke="#e2e8f0"/>
+      <text x="44" y="274" fill="#0f172a">Manage users, VPN config, platform settings</text>
+      <text x="395" y="274" text-anchor="middle" fill="#cbd5e1">-</text>
+      <text x="525" y="274" text-anchor="middle" fill="#cbd5e1">-</text>
+      <text x="640" y="274" text-anchor="middle" fill="#059669">yes</text>
+    </g>
+  </g>
+  <text x="30" y="312" font-size="11" fill="#64748b">Enforced centrally in app/services/rbac.py. Login lockout after repeated failures.</text>
+</svg>

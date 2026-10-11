@@ -1,0 +1,14 @@
+[Unit]
+Description=EdgeShell health watchdog (restarts the app after repeated failed health checks)
+After=edgeshell.service
+
+[Service]
+Type=simple
+Environment=HEALTH_URL=http://127.0.0.1:@@PORT@@/healthz
+Environment=MARKER=/var/lib/edgeshell/restart-reason.json
+ExecStart=/bin/bash @@APP_DIR@@/deploy/watchdog.sh
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,468 @@
+{% extends "base.html" %}
+{% block title %}Node Fleet{% endblock %}
+{% block content %}
+<div class="page-header">
+    <div>
+        <div class="page-title">Node Fleet</div>
+        <div class="page-subtitle">{{ nodes|length }} node(s) registered</div>
+    </div>
+    <div class="flex gap-2">
+        {% if current_user.can_execute() %}
+        <button class="btn btn-outline" id="testAllBtn">
+            <i class="bi bi-wifi"></i> Test All
+        </button>
+        {% endif %}
+        <button class="btn btn-outline" type="button" data-bs-toggle="offcanvas" data-bs-target="#recycleBin">
+            <i class="bi bi-trash"></i> Recycle Bin
+            {% if deleted %}<span class="node-tag">{{ deleted|length }}</span>{% endif %}
+        </button>
+        {% if current_user.can_execute() %}
+        <button class="btn btn-outline" id="orguiScanBtn" onclick="scanFleetOrgui()">
+            <i class="bi bi-display"></i> Check OpenRemoteGUI
+            <span class="node-tag" id="orguiCount" style="display:none"></span>
+        </button>
+        {% endif %}
+        {% if current_user.can_execute() %}
+        <button class="btn btn-outline" type="button" data-bs-toggle="offcanvas" data-bs-target="#fleetSetup" onclick="scanCapabilities()">
+            <i class="bi bi-boxes"></i> Fleet Setup
+        </button>
+        <button class="btn btn-outline" id="orguiInstallAllBtn" onclick="installFleetOrgui()">
+            <i class="bi bi-cloud-download"></i> Install on Fleet
+        </button>
+        <a href="{{ url_for('nodes.bulk_import') }}" class="btn btn-outline">
+            <i class="bi bi-upload"></i> Import CSV
+        </a>
+        <a href="{{ url_for('nodes.add') }}" class="btn btn-primary">
+            <i class="bi bi-plus"></i> Add Node
+        </a>
+        {% endif %}
+    </div>
+</div>
+
+<!-- Filter/Search Bar -->
+<div class="card mb-6">
+    <div class="card-body" style="padding:14px 18px">
+        <div class="flex gap-3 items-center flex-wrap">
+            <div class="flex items-center gap-2">
+                <input type="checkbox" id="selectAll" onchange="selectAllNodes(this.checked)" style="width:16px;height:16px;accent-color:var(--primary)">
+                <label for="selectAll" style="font-size:13px;font-weight:500;cursor:pointer">Select All</label>
+            </div>
+            <input type="text" id="nodeSearch" placeholder="Search nodes..." class="form-control" style="max-width:220px" oninput="filterNodes()">
+            <select class="form-control form-select" id="envFilter" style="max-width:160px" onchange="filterNodes()">
+                <option value="">All Environments</option>
+                <option>production</option>
+                <option>staging</option>
+                <option>development</option>
+            </select>
+            <select class="form-control form-select" id="statusFilter" style="max-width:140px" onchange="filterNodes()">
+                <option value="">All Status</option>
+                <option>online</option>
+                <option>offline</option>
+                <option>warning</option>
+                <option>unknown</option>
+            </select>
+            <select class="form-control form-select" id="archFilter" style="max-width:130px" onchange="filterNodes()">
+                <option value="">All Arch</option>
+                <option value="64">64-bit</option>
+                <option value="32">32-bit</option>
+            </select>
+            <div class="flex gap-2" style="margin-left:auto">
+                <button class="btn btn-outline" onclick="testSelectedNodes()">
+                    <i class="bi bi-wifi"></i> Test Selected
+                </button>
+                <button class="btn btn-danger btn-sm" onclick="restartSelected()">
+                    <i class="bi bi-arrow-counterclockwise"></i> Restart Selected
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Node Grid -->
+{% if nodes %}
+<div class="node-grid" id="nodeGrid">
+    {% for node in nodes %}
+    <div class="node-card" data-name="{{ node.name|lower }}" data-env="{{ node.environment|lower }}" data-status="{{ node.status }}" data-arch="{{ node.arch_bits }}" id="node-{{ node.id }}">
+        <input type="checkbox" class="node-checkbox" value="{{ node.id }}" style="position:absolute;top:14px;right:14px;width:16px;height:16px;accent-color:var(--primary)">
+
+        <div class="node-card-header">
+            <span class="node-status-dot dot-{{ node.status or 'unknown' }}" id="dot-{{ node.id }}"></span>
+            <div style="flex:1; min-width:0">
+                <div class="node-name" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ node.name }}</div>
+                <div class="node-meta">{{ node.ip_address }}:{{ node.ssh_port }}</div>
+            </div>
+        </div>
+
+        <div class="node-metrics">
+            <div class="metric-item">
+                <div class="metric-label">CPU</div>
+                <div class="metric-value" id="cpu-{{ node.id }}">{{ '%.0f'|format(node.cpu_percent or 0) }}%</div>
+                <div class="metric-bar">
+                    <div class="metric-bar-fill {% if (node.cpu_percent or 0) > 80 %}bar-crit{% elif (node.cpu_percent or 0) > 60 %}bar-warn{% else %}bar-ok{% endif %}"
+                         style="width:{{ node.cpu_percent or 0 }}%" id="cpubar-{{ node.id }}"></div>
+                </div>
+            </div>
+            <div class="metric-item">
+                <div class="metric-label">RAM</div>
+                <div class="metric-value" id="ram-{{ node.id }}">{{ '%.0f'|format(node.ram_percent or 0) }}%</div>
+                <div class="metric-bar">
+                    <div class="metric-bar-fill {% if (node.ram_percent or 0) > 85 %}bar-crit{% elif (node.ram_percent or 0) > 70 %}bar-warn{% else %}bar-ok{% endif %}"
+                         style="width:{{ node.ram_percent or 0 }}%" id="rambar-{{ node.id }}"></div>
+                </div>
+            </div>
+            <div class="metric-item">
+                <div class="metric-label">DISK</div>
+                <div class="metric-value" id="disk-{{ node.id }}">{{ '%.0f'|format(node.disk_percent or 0) }}%</div>
+                <div class="metric-bar">
+                    <div class="metric-bar-fill {% if (node.disk_percent or 0) > 90 %}bar-crit{% elif (node.disk_percent or 0) > 75 %}bar-warn{% else %}bar-ok{% endif %}"
+                         style="width:{{ node.disk_percent or 0 }}%" id="diskbar-{{ node.id }}"></div>
+                </div>
+            </div>
+        </div>
+
+        <div class="flex items-center gap-2 mt-4">
+            <span class="status-badge status-{{ node.status or 'unknown' }}" id="badge-{{ node.id }}">
+                {{ (node.status or 'Unknown').capitalize() }}
+            </span>
+            {% if node.environment %}
+            <span class="node-tag">{{ node.environment }}</span>
+            {% endif %}
+            {% if node.node_type %}
+            <span class="node-tag">{{ node.node_type }}</span>
+            {% endif %}
+            {% if node.arch_bits %}
+            <span class="node-tag" style="background:#eef2ff;color:#3730a3">{{ node.arch_bits }}-bit</span>
+            {% endif %}
+            {% if node.last_seen %}
+            <span class="text-xs text-muted" style="margin-left:auto">{{ node.last_seen|localtime('%d %b %H:%M') }}</span>
+            {% endif %}
+        </div>
+
+        {% if node.location or node.tags %}
+        <div class="node-tags" style="margin-top:10px">
+            {% if node.location %}<span class="node-tag"><i class="bi bi-geo-alt"></i> {{ node.location }}</span>{% endif %}
+            {% if node.tags %}{% for tag in node.tags.split(',')[:3] %}<span class="node-tag">{{ tag.strip() }}</span>{% endfor %}{% endif %}
+        </div>
+        {% endif %}
+
+        {% if current_user.can_execute() %}
+        <div class="flex gap-2 mt-4" style="border-top:1px solid var(--gray-100);padding-top:12px">
+            <button class="btn btn-outline btn-xs" onclick="testNode({{ node.id }})">
+                <span class="spinner" id="spinner-{{ node.id }}" style="display:none;width:12px;height:12px"></span>
+                <i class="bi bi-wifi" id="wifiicon-{{ node.id }}"></i> Test
+            </button>
+            <button class="btn btn-outline btn-xs" title="Open Node-RED"
+                    onclick="window.open('http://{{ node.ip_address }}:{{ node.nodered_port or NODERED_DEFAULT_PORT }}','_blank')">
+                <i class="bi bi-diagram-3"></i>
+            </button>
+            <button class="btn btn-outline btn-xs orgui-btn" id="orgui-{{ node.id }}"
+                    title="Open Remote Desktop (OpenRemoteGUI)"
+                    data-ip="{{ node.ip_address }}" data-port="{{ node.orgui_port or ORGUI_DEFAULT_PORT }}"
+                    data-installed="{{ 'yes' if node.orgui_installed else ('no' if node.orgui_installed == false else 'unknown') }}"
+                    onclick="openRemoteGui({{ node.id }})">
+                <i class="bi bi-display"></i> Remote
+            </button>
+            <a href="{{ url_for('nodes.edit', node_id=node.id) }}" class="btn btn-outline btn-xs">
+                <i class="bi bi-pencil"></i>
+            </a>
+            <button class="btn btn-outline btn-xs" onclick="toggleNode({{ node.id }}, this)" data-active="{{ node.is_active|lower }}">
+                {% if node.is_active %}<i class="bi bi-pause"></i>{% else %}<i class="bi bi-play"></i>{% endif %}
+            </button>
+            <form method="POST" action="{{ url_for('nodes.delete', node_id=node.id) }}" style="margin-left:auto" onsubmit="return confirm('Move node {{ node.name }} to the recycle bin?')">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <button type="submit" class="btn btn-danger btn-xs"><i class="bi bi-trash"></i></button>
+            </form>
+        </div>
+        {% endif %}
+    </div>
+    {% endfor %}
+</div>
+{% else %}
+<div class="card">
+    <div class="card-body" style="text-align:center; padding:60px">
+        <i class="bi bi-hdd-network" style="font-size:48px; color:var(--gray-300); display:block; margin-bottom:16px"></i>
+        <div style="font-size:18px; font-weight:600; color:var(--gray-600)">No nodes yet</div>
+        <div class="text-sm text-muted mt-4">Add your first edge node to start managing your fleet</div>
+        {% if current_user.can_execute() %}
+        <a href="{{ url_for('nodes.add') }}" class="btn btn-primary mt-4">
+            <i class="bi bi-plus"></i> Add First Node
+        </a>
+        {% endif %}
+    </div>
+</div>
+{% endif %}
+
+<!-- Recycle Bin (soft-deleted nodes) -->
+<div class="offcanvas offcanvas-end" tabindex="-1" id="recycleBin" style="width:420px">
+  <div class="offcanvas-header border-bottom">
+    <h5 class="offcanvas-title"><i class="bi bi-trash me-2"></i>Recycle Bin</h5>
+    <button type="button" class="btn-close" data-bs-dismiss="offcanvas"></button>
+  </div>
+  <div class="offcanvas-body">
+    {% if deleted %}
+    <p class="text-muted text-sm">Deleted nodes keep their details here. Revive puts a node back in the fleet in one click.</p>
+    {% for node in deleted %}
+    <div class="card mb-3">
+      <div class="card-body" style="padding:12px 14px">
+        <div class="flex items-center gap-2" style="justify-content:space-between">
+          <div style="min-width:0">
+            <div class="fw-semibold" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ node.name }}</div>
+            <div class="node-meta text-muted">{{ node.ip_address }}:{{ node.ssh_port }}</div>
+          </div>
+          {% if node.deleted_at %}<span class="text-xs text-muted">{{ node.deleted_at|localtime('%d %b %H:%M') }}</span>{% endif %}
+        </div>
+        <div class="text-xs text-muted" style="margin-top:8px">
+          {% if node.username %}<div>User: {{ node.username }}</div>{% endif %}
+          {% if node.environment %}<div>Env: {{ node.environment }}</div>{% endif %}
+          {% if node.node_type %}<div>Type: {{ node.node_type }}</div>{% endif %}
+          {% if node.location %}<div>Location: {{ node.location }}</div>{% endif %}
+          {% if node.tags %}<div>Tags: {{ node.tags }}</div>{% endif %}
+        </div>
+        {% if current_user.can_execute() %}
+        <div class="flex gap-2" style="margin-top:10px">
+          <form method="POST" action="{{ url_for('nodes.restore', node_id=node.id) }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button type="submit" class="btn btn-primary btn-xs"><i class="bi bi-arrow-counterclockwise"></i> Revive Node</button>
+          </form>
+          {% if current_user.is_admin() %}
+          <form method="POST" action="{{ url_for('nodes.purge', node_id=node.id) }}" style="margin-left:auto"
+                onsubmit="return confirm('Permanently delete {{ node.name }}? This cannot be undone.')">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button type="submit" class="btn btn-danger btn-xs" title="Delete forever"><i class="bi bi-x-octagon"></i></button>
+          </form>
+          {% endif %}
+        </div>
+        {% endif %}
+      </div>
+    </div>
+    {% endfor %}
+    {% else %}
+    <div class="text-center text-muted py-5">
+      <i class="bi bi-trash fs-1 d-block mb-3"></i>
+      The recycle bin is empty.
+    </div>
+    {% endif %}
+  </div>
+</div>
+
+<!-- Fleet Setup: capability scan + install (operator+) -->
+{% if current_user.can_execute() %}
+<div class="offcanvas offcanvas-end" tabindex="-1" id="fleetSetup" style="width:460px">
+  <div class="offcanvas-header border-bottom">
+    <h5 class="offcanvas-title"><i class="bi bi-boxes me-2"></i>Fleet Setup</h5>
+    <div class="flex gap-2" style="margin-left:auto">
+      <button class="btn btn-outline btn-xs" onclick="scanCapabilities()"><i class="bi bi-arrow-repeat"></i> Rescan</button>
+      <button type="button" class="btn-close" data-bs-dismiss="offcanvas"></button>
+    </div>
+  </div>
+  <div class="offcanvas-body">
+    <p class="text-muted text-sm">Which nodes have Docker, Node-RED, and OpenRemoteGUI. Install on the ones that are missing, in one click. Unreachable nodes are reported, not skipped silently.</p>
+    <div id="capLoading" class="text-center text-muted py-4"><div class="spinner-border spinner-border-sm"></div> Scanning fleet...</div>
+    <div id="capBody" style="display:none">
+      {% for cap, label, icon in [('docker','Docker','bi-box-seam'),('nodered','Node-RED','bi-diagram-3'),('orgui','OpenRemoteGUI','bi-display')] %}
+      <div class="card mb-3" data-cap="{{ cap }}">
+        <div class="card-body" style="padding:12px 14px">
+          <div class="flex items-center gap-2" style="justify-content:space-between">
+            <div class="fw-semibold"><i class="bi {{ icon }} me-1"></i>{{ label }}</div>
+            <div class="text-sm"><span class="cap-count" data-cap="{{ cap }}">0/0</span></div>
+          </div>
+          <div class="cap-missing text-xs text-muted" data-cap="{{ cap }}" style="margin-top:6px"></div>
+          <div class="flex gap-2" style="margin-top:10px">
+            <button class="btn btn-primary btn-xs cap-install" data-cap="{{ cap }}" onclick="installCapability('{{ cap }}','{{ label }}')" disabled>
+              <i class="bi bi-cloud-download"></i> Install on missing
+            </button>
+          </div>
+        </div>
+      </div>
+      {% endfor %}
+      <p class="text-xs text-muted">Docker and Node-RED installs run vendor scripts over SSH and can take several minutes per node. Validate on one node before running fleet-wide.</p>
+    </div>
+  </div>
+</div>
+{% endif %}
+
+{% endblock %}
+
+{% block extra_js %}
+<script>
+function testNode(id) {
+    document.getElementById(`spinner-${id}`).style.display = 'inline-block';
+    document.getElementById(`wifiicon-${id}`).style.display = 'none';
+
+    apiPost(`/nodes/${id}/test`, {})
+        .then(r => r.json())
+        .then(d => {
+            const dot = document.getElementById(`dot-${id}`);
+            const badge = document.getElementById(`badge-${id}`);
+            document.getElementById(`spinner-${id}`).style.display = 'none';
+            document.getElementById(`wifiicon-${id}`).style.display = 'inline';
+            if (d.success) {
+                dot.className = 'node-status-dot dot-online';
+                badge.className = 'status-badge status-online';
+                badge.textContent = 'Online';
+                showToast(d.message, 'success');
+            } else {
+                dot.className = 'node-status-dot dot-offline';
+                badge.className = 'status-badge status-offline';
+                badge.textContent = 'Offline';
+                showToast(d.message, 'danger');
+            }
+        });
+}
+
+function toggleNode(id, btn) {
+    apiPost(`/nodes/${id}/toggle`, {})
+        .then(r => r.json())
+        .then(d => {
+            if (d.success) {
+                btn.innerHTML = d.active ? '<i class="bi bi-pause"></i>' : '<i class="bi bi-play"></i>';
+                showToast(d.active ? 'Node enabled' : 'Node disabled', 'info');
+            }
+        });
+}
+
+function testSelectedNodes() {
+    const ids = getSelectedNodeIds();
+    if (!ids.length) { showToast('Select at least one node', 'danger'); return; }
+    ids.forEach(id => testNode(id));
+}
+
+function restartSelected() {
+    const ids = getSelectedNodeIds();
+    if (!ids.length) { showToast('Select at least one node', 'danger'); return; }
+    if (!confirm(`Restart ${ids.length} node(s)?`)) return;
+    apiPost('/terminal/restart', { node_ids: ids })
+        .then(r => r.json())
+        .then(d => showToast(`Restart command sent to ${Object.keys(d.results).length} node(s)`, 'info'));
+}
+
+// ── OpenRemoteGUI ────────────────────────────────────────────────────────────
+function openRemoteGui(id) {
+    const btn = document.getElementById('orgui-' + id);
+    const ip = btn.dataset.ip, port = btn.dataset.port;
+    const installed = btn.dataset.installed;
+    if (installed === 'yes') { window.open(`http://${ip}:${port}`, '_blank'); return; }
+    // Check live before deciding.
+    showToast('Checking OpenRemoteGUI on ' + ip + '...', 'info');
+    fetch(`/nodes/${id}/orgui/status`, { method: 'POST' })
+        .then(r => r.json()).then(d => {
+            if (d.installed) {
+                btn.dataset.installed = 'yes';
+                window.open(d.url, '_blank');
+            } else {
+                if (confirm(`OpenRemoteGUI is not installed on ${ip}.\nInstall it now? (git clone + sudo ./install.sh)`)) {
+                    installOrgui(id, ip);
+                }
+            }
+        }).catch(e => showToast('Check failed: ' + e.message, 'danger'));
+}
+
+function installOrgui(id, ip) {
+    showToast('Installing OpenRemoteGUI on ' + ip + '. This can take a few minutes...', 'info');
+    const btn = document.getElementById('orgui-' + id);
+    btn.disabled = true;
+    fetch(`/nodes/${id}/orgui/install`, { method: 'POST' })
+        .then(r => r.json()).then(d => {
+            btn.disabled = false;
+            if (d.success) {
+                btn.dataset.installed = 'yes';
+                showToast('OpenRemoteGUI installed on ' + ip, 'success');
+            } else {
+                showToast('Install failed on ' + ip + '. See activity log.', 'danger');
+            }
+        }).catch(e => { btn.disabled = false; showToast('Install error: ' + e.message, 'danger'); });
+}
+
+function scanFleetOrgui() {
+    const b = document.getElementById('orguiScanBtn');
+    b.disabled = true; b.querySelector('i').className = 'spinner';
+    fetch('/nodes/orgui/scan', { method: 'POST' })
+        .then(r => r.json()).then(d => {
+            b.disabled = false; b.querySelector('.spinner').className = 'bi bi-display';
+            const c = document.getElementById('orguiCount');
+            c.style.display = ''; c.textContent = `${d.installed}/${d.total} installed`;
+            d.nodes.forEach(n => {
+                const btn = document.getElementById('orgui-' + n.id);
+                if (btn) btn.dataset.installed = n.installed === true ? 'yes'
+                    : (n.installed === false ? 'no' : 'unknown');
+            });
+            showToast(`OpenRemoteGUI: ${d.installed} installed, ${d.missing} missing, ${d.unknown} unreachable`,
+                d.missing || d.unknown ? 'warning' : 'success');
+        }).catch(e => { b.disabled = false; showToast('Scan failed: ' + e.message, 'danger'); });
+}
+
+function installFleetOrgui() {
+    if (!confirm('Install OpenRemoteGUI on all nodes that do not have it?\nUnreachable nodes are handled by Ansible and logged.')) return;
+    const b = document.getElementById('orguiInstallAllBtn');
+    b.disabled = true; showToast('Fleet install running via Ansible...', 'info');
+    fetch('/nodes/orgui/install-all', { method: 'POST' })
+        .then(r => r.json()).then(d => {
+            b.disabled = false;
+            showToast(`Fleet install: ${d.ok} succeeded, ${d.failed} failed. Details in activity log.`,
+                d.failed ? 'warning' : 'success');
+        }).catch(e => { b.disabled = false; showToast('Install failed: ' + e.message, 'danger'); });
+}
+
+// ── Fleet Setup: capability scan + install ───────────────────────────────────
+function scanCapabilities() {
+    document.getElementById('capLoading').style.display = '';
+    document.getElementById('capBody').style.display = 'none';
+    fetch('/nodes/capabilities/scan', { method: 'POST' })
+        .then(r => r.json()).then(d => {
+            document.getElementById('capLoading').style.display = 'none';
+            document.getElementById('capBody').style.display = '';
+            ['docker', 'nodered', 'orgui'].forEach(cap => {
+                const c = d.counts[cap];
+                document.querySelector(`.cap-count[data-cap="${cap}"]`).textContent =
+                    `${c.installed}/${d.total} installed`;
+                const missing = d.nodes.filter(n => n[cap] === false).map(n => n.name);
+                const unknown = d.nodes.filter(n => n[cap] === null).map(n => n.name);
+                const box = document.querySelector(`.cap-missing[data-cap="${cap}"]`);
+                let txt = missing.length ? 'Missing: ' + missing.join(', ') : 'All reachable nodes have it.';
+                if (unknown.length) txt += ' · Unreachable: ' + unknown.join(', ');
+                box.textContent = txt;
+                const btn = document.querySelector(`.cap-install[data-cap="${cap}"]`);
+                btn.disabled = missing.length === 0;
+                btn.dataset.missing = missing.length;
+            });
+        }).catch(e => {
+            document.getElementById('capLoading').textContent = 'Scan failed: ' + e.message;
+        });
+}
+
+function installCapability(cap, label) {
+    const btn = document.querySelector(`.cap-install[data-cap="${cap}"]`);
+    const n = btn.dataset.missing || 0;
+    if (!confirm(`Install ${label} on ${n} node(s) that are missing it?\nThis runs over SSH and can take a few minutes per node.`)) return;
+    btn.disabled = true;
+    showToast(`Installing ${label} on ${n} node(s)...`, 'info');
+    fetch('/nodes/capabilities/install', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ capability: cap })
+    }).then(r => r.json()).then(d => {
+        showToast(`${label}: ${d.ok} succeeded, ${d.failed} failed. Rescanning...`,
+            d.failed ? 'warning' : 'success');
+        scanCapabilities();
+    }).catch(e => { btn.disabled = false; showToast('Install failed: ' + e.message, 'danger'); });
+}
+
+document.getElementById('testAllBtn').addEventListener('click', () => {
+    document.querySelectorAll('.node-checkbox').forEach(cb => { testNode(parseInt(cb.value)); });
+});
+
+function filterNodes() {
+    const search = document.getElementById('nodeSearch').value.toLowerCase();
+    const env = document.getElementById('envFilter').value.toLowerCase();
+    const status = document.getElementById('statusFilter').value;
+    const arch = document.getElementById('archFilter').value;
+    document.querySelectorAll('.node-card').forEach(card => {
+        const match = (!search || card.dataset.name.includes(search)) &&
+                      (!env || card.dataset.env === env) &&
+                      (!status || card.dataset.status === status) &&
+                      (!arch || card.dataset.arch === arch);
+        card.style.display = match ? '' : 'none';
+    });
+}
+</script>
+{% endblock %}

@@ -1,0 +1,197 @@
+{% extends "base.html" %}
+{% block title %}User Management - EdgeShell{% endblock %}
+
+{% block content %}
+<div class="d-flex align-items-center justify-content-between mb-4">
+  <div>
+    <h4 class="fw-bold mb-0">User Management</h4>
+    <small class="text-muted">Manage platform access and roles</small>
+  </div>
+  <a href="{{ url_for('users.add') }}" class="btn btn-primary btn-sm">
+    <i class="bi bi-person-plus me-1"></i>Add User
+  </a>
+</div>
+
+{% with messages = get_flashed_messages(with_categories=true) %}
+{% for cat, msg in messages %}
+<div class="alert alert-{{ 'danger' if cat == 'error' else cat }} alert-dismissible fade show" role="alert">
+  {{ msg }}<button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+</div>
+{% endfor %}
+{% endwith %}
+
+<!-- Stats -->
+<div class="row g-3 mb-4">
+  <div class="col-6 col-md-3">
+    <div class="stat-card">
+      <div class="stat-value text-primary">{{ users | length }}</div>
+      <div class="stat-label">Total Users</div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="stat-card">
+      <div class="stat-value text-success">{{ users | selectattr('is_active') | list | length }}</div>
+      <div class="stat-label">Active</div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="stat-card">
+      <div class="stat-value text-warning">{{ users | rejectattr('is_active') | list | length }}</div>
+      <div class="stat-label">Disabled</div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="stat-card">
+      <div class="stat-value text-info">{{ users | selectattr('role', 'equalto', 'administrator') | list | length }}</div>
+      <div class="stat-label">Admins</div>
+    </div>
+  </div>
+</div>
+
+<!-- Users Table -->
+<div class="card border-0 shadow-sm">
+  <div class="card-header bg-white border-bottom py-3 d-flex align-items-center justify-content-between">
+    <span class="fw-semibold">Platform Users</span>
+    <input type="search" class="form-control form-control-sm w-auto" placeholder="Search…" id="userSearch" oninput="filterUsers()">
+  </div>
+  <div class="card-body p-0">
+    <div class="table-responsive">
+      <table class="table table-hover align-middle mb-0" id="usersTable">
+        <thead class="table-light">
+          <tr>
+            <th class="ps-3">User</th>
+            <th>Email</th>
+            <th>Role</th>
+            <th>Status</th>
+            <th title="Live sessions / allowed devices">Sessions</th>
+            <th>Last Login</th>
+            <th>Created</th>
+            <th class="text-end pe-3">Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for user in users %}
+          <tr class="user-row">
+            <td class="ps-3">
+              <div class="d-flex align-items-center gap-2">
+                <div class="avatar-circle" style="background:{{ loop.cycle('#1a56db','#0ea5e9','#059669','#d97706','#7c3aed') }}">
+                  {{ user.username[0].upper() }}
+                </div>
+                <div>
+                  <div class="fw-semibold">{{ user.username }}</div>
+                  {% if user.id == current_user.id %}
+                  <small class="text-muted">(you)</small>
+                  {% endif %}
+                  {% if user.must_change_password %}
+                  <small class="badge bg-warning text-dark">Must change pwd</small>
+                  {% endif %}
+                </div>
+              </div>
+            </td>
+            <td class="text-muted small">{{ user.email or 'n/a' }}</td>
+            <td>
+              <form method="POST" action="{{ url_for('users.set_role', user_id=user.id) }}" class="d-inline">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <select name="role" class="form-select form-select-sm d-inline w-auto"
+                        onchange="this.form.submit()" {% if user.id == current_user.id %}disabled title="You cannot change your own role"{% endif %}>
+                  <option value="administrator" {% if user.role == 'administrator' %}selected{% endif %}>Administrator</option>
+                  <option value="operator" {% if user.role == 'operator' %}selected{% endif %}>Operator</option>
+                  <option value="monitor" {% if user.role == 'monitor' %}selected{% endif %}>Monitor</option>
+                </select>
+              </form>
+            </td>
+            <td>
+              {% if user.is_active %}
+              <span class="status-badge status-online">Active</span>
+              {% else %}
+              <span class="status-badge status-offline">Disabled</span>
+              {% endif %}
+            </td>
+            <td class="text-nowrap">
+              <form method="POST" action="{{ url_for('users.set_sessions', user_id=user.id) }}" class="d-inline-flex align-items-center gap-1">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <span class="small text-muted" title="Signed in now">{{ live_counts.get(user.id, 0) }} /</span>
+                <select name="max_sessions" class="form-select form-select-sm w-auto"
+                        onchange="this.form.submit()" title="Devices allowed at once">
+                  {% for n in session_range %}
+                  <option value="{{ n }}" {% if n == user.max_sessions %}selected{% endif %}>{{ n }}</option>
+                  {% endfor %}
+                </select>
+              </form>
+            </td>
+            <td class="text-muted small">{{ user.last_login|localtime('%d %b %Y %H:%M') if user.last_login else 'n/a' }}</td>
+            <td class="text-muted small">{{ user.created_at|localtime('%d %b %Y') if user.created_at else 'n/a' }}</td>
+            <td class="text-end pe-3">
+              <div class="btn-group btn-group-sm">
+                <!-- Toggle Active -->
+                {% if user.id != current_user.id %}
+                <form method="POST" action="{{ url_for('users.toggle', user_id=user.id) }}" class="d-inline">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                  <button type="submit" class="btn btn-outline-{{ 'warning' if user.is_active else 'success' }}"
+                    title="{{ 'Disable' if user.is_active else 'Enable' }} user"
+                    onclick="return confirm('{{ 'Disable' if user.is_active else 'Enable' }} user {{ user.username }}?')">
+                    <i class="bi bi-{{ 'slash-circle' if user.is_active else 'check-circle' }}"></i>
+                  </button>
+                </form>
+                <!-- Sign out everywhere -->
+                <form method="POST" action="{{ url_for('users.sign_out_all', user_id=user.id) }}" class="d-inline">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                  <button type="submit" class="btn btn-outline-secondary" title="Sign out all sessions"
+                    onclick="return confirm('Sign {{ user.username }} out of every device?')">
+                    <i class="bi bi-box-arrow-right"></i>
+                  </button>
+                </form>
+                <!-- Reset Password -->
+                <form method="POST" action="{{ url_for('users.reset_password', user_id=user.id) }}" class="d-inline">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                  <button type="submit" class="btn btn-outline-secondary" title="Reset password"
+                    onclick="return confirm('Reset password for {{ user.username }}? They will be prompted to set a new password.')">
+                    <i class="bi bi-key"></i>
+                  </button>
+                </form>
+                <!-- Delete -->
+                <form method="POST" action="{{ url_for('users.delete', user_id=user.id) }}" class="d-inline">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                  <button type="submit" class="btn btn-outline-danger" title="Delete user"
+                    onclick="return confirm('Permanently delete user {{ user.username }}? This cannot be undone.')">
+                    <i class="bi bi-trash"></i>
+                  </button>
+                </form>
+                {% else %}
+                <a href="{{ url_for('auth.change_password') }}" class="btn btn-outline-primary" title="Change your password">
+                  <i class="bi bi-shield-lock"></i>
+                </a>
+                {% endif %}
+              </div>
+            </td>
+          </tr>
+          {% else %}
+          <tr>
+            <td colspan="8" class="text-center text-muted py-4">No users found.</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<style>
+.avatar-circle {
+  width: 34px; height: 34px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  color: #fff; font-weight: 700; font-size: .85rem; flex-shrink: 0;
+}
+</style>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function filterUsers() {
+  const q = document.getElementById('userSearch').value.toLowerCase();
+  document.querySelectorAll('.user-row').forEach(row => {
+    row.style.display = row.textContent.toLowerCase().includes(q) ? '' : 'none';
+  });
+}
+</script>
+{% endblock %}

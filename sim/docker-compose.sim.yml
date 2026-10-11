@@ -1,0 +1,240 @@
+version: '3.9'
+
+# ============================================================
+#  EdgeShell Fleet Simulation
+#  6 nodes: 3 × 32-bit (armv7) + 3 × 64-bit (aarch64/amd64)
+#  All on edgenet 10.10.0.0/24 (simulated VPN LAN)
+#
+#  Start:  docker compose -f docker-compose.sim.yml up --build -d
+#  Seed:   python scripts/seed-nodes.py
+#  Stop:   docker compose -f docker-compose.sim.yml down
+# ============================================================
+
+networks:
+  edgenet:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 10.10.0.0/24
+          gateway: 10.10.0.1
+
+volumes:
+  edgeshell_db:
+  edgeshell_uploads:
+  portainer_data:
+
+services:
+
+  # ── EdgeShell Control Plane ──────────────────────────────────
+  edgeshell:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    container_name: edgeshell
+    hostname: edgeshell-control
+    restart: unless-stopped
+    ports:
+      - "5000:5000"
+    environment:
+      FLASK_ENV: development
+      SECRET_KEY: "sim-secret-key-edgeshell-dev-only!"
+      CREDENTIAL_KEY: "sim-cred-key-edgeshell-dev-only!!"
+      DATABASE_URL: "sqlite:////app/instance/edgeshell.db"
+    volumes:
+      - edgeshell_db:/app/instance
+      - edgeshell_uploads:/app/uploads
+      - ../ansible:/app/ansible
+    networks:
+      edgenet:
+        ipv4_address: 10.10.0.10
+    depends_on:
+      - node-32bit-1
+      - node-32bit-2
+      - node-32bit-3
+      - node-64bit-1
+      - node-64bit-2
+      - node-64bit-3
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:5000/api/v1/status"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  # ══════════════════════════════════════════════════════════════
+  #  32-BIT NODES  (simulate ARMv7 / armhf Raspberry Pi OS)
+  #  Ubuntu 22.04 runs natively on x86 but reports armv7l arch
+  # ══════════════════════════════════════════════════════════════
+
+  node-32bit-1:
+    build:
+      context: ./node-base
+      args:
+        NODE_NAME: pi-factory-01
+        NODE_USER: pi
+        NODE_PASSWORD: raspberry
+        NODE_ARCH: armv7l
+        NODE_OS: "Raspberry Pi OS Lite (32-bit) bookworm"
+    container_name: node-32bit-1
+    hostname: pi-factory-01
+    restart: unless-stopped
+    environment:
+      NODE_NAME: pi-factory-01
+      NODE_USER: pi
+      SIM_ARCH: armv7l
+      SIM_OS: "Raspberry Pi OS Lite 32-bit"
+    ports:
+      - "2221:22"
+      - "1881:1880"
+    networks:
+      edgenet:
+        ipv4_address: 10.10.0.21
+    cap_add:
+      - SYS_PTRACE
+
+  node-32bit-2:
+    build:
+      context: ./node-base
+      args:
+        NODE_NAME: pi-warehouse-02
+        NODE_USER: pi
+        NODE_PASSWORD: raspberry
+        NODE_ARCH: armv7l
+        NODE_OS: "Raspberry Pi OS Lite (32-bit) bookworm"
+    container_name: node-32bit-2
+    hostname: pi-warehouse-02
+    restart: unless-stopped
+    environment:
+      NODE_NAME: pi-warehouse-02
+      NODE_USER: pi
+      SIM_ARCH: armv7l
+      SIM_OS: "Raspberry Pi OS Lite 32-bit"
+    ports:
+      - "2222:22"
+      - "1882:1880"
+    networks:
+      edgenet:
+        ipv4_address: 10.10.0.22
+    cap_add:
+      - SYS_PTRACE
+
+  node-32bit-3:
+    build:
+      context: ./node-base
+      args:
+        NODE_NAME: pi-outdoor-03
+        NODE_USER: pi
+        NODE_PASSWORD: raspberry
+        NODE_ARCH: armv7l
+        NODE_OS: "Raspberry Pi OS Lite (32-bit) bookworm"
+    container_name: node-32bit-3
+    hostname: pi-outdoor-03
+    restart: unless-stopped
+    environment:
+      NODE_NAME: pi-outdoor-03
+      NODE_USER: pi
+      SIM_ARCH: armv7l
+      SIM_OS: "Raspberry Pi OS Lite 32-bit"
+    ports:
+      - "2223:22"
+      - "1883:1880"
+    networks:
+      edgenet:
+        ipv4_address: 10.10.0.23
+    cap_add:
+      - SYS_PTRACE
+
+  # ══════════════════════════════════════════════════════════════
+  #  64-BIT NODES  (simulate ARM64 / aarch64 - Pi 4/5 or x86_64)
+  # ══════════════════════════════════════════════════════════════
+
+  node-64bit-1:
+    build:
+      context: ./node-base
+      args:
+        NODE_NAME: pi64-control-04
+        NODE_USER: pi
+        NODE_PASSWORD: raspberry
+        NODE_ARCH: aarch64
+        NODE_OS: "Raspberry Pi OS Lite (64-bit) bookworm"
+    container_name: node-64bit-1
+    hostname: pi64-control-04
+    restart: unless-stopped
+    environment:
+      NODE_NAME: pi64-control-04
+      NODE_USER: pi
+      SIM_ARCH: aarch64
+      SIM_OS: "Raspberry Pi OS Lite 64-bit"
+    ports:
+      - "2224:22"
+      - "1884:1880"
+    networks:
+      edgenet:
+        ipv4_address: 10.10.0.24
+    cap_add:
+      - SYS_PTRACE
+
+  node-64bit-2:
+    build:
+      context: ./node-base
+      args:
+        NODE_NAME: pi64-gateway-05
+        NODE_USER: pi
+        NODE_PASSWORD: raspberry
+        NODE_ARCH: aarch64
+        NODE_OS: "Raspberry Pi OS Lite (64-bit) bookworm"
+    container_name: node-64bit-2
+    hostname: pi64-gateway-05
+    restart: unless-stopped
+    environment:
+      NODE_NAME: pi64-gateway-05
+      NODE_USER: pi
+      SIM_ARCH: aarch64
+      SIM_OS: "Raspberry Pi OS Lite 64-bit"
+    ports:
+      - "2225:22"
+      - "1885:1880"
+    networks:
+      edgenet:
+        ipv4_address: 10.10.0.25
+    cap_add:
+      - SYS_PTRACE
+
+  node-64bit-3:
+    build:
+      context: ./node-base
+      args:
+        NODE_NAME: pi64-edge-06
+        NODE_USER: pi
+        NODE_PASSWORD: raspberry
+        NODE_ARCH: aarch64
+        NODE_OS: "Raspberry Pi OS Lite (64-bit) bookworm"
+    container_name: node-64bit-3
+    hostname: pi64-edge-06
+    restart: unless-stopped
+    environment:
+      NODE_NAME: pi64-edge-06
+      NODE_USER: pi
+      SIM_ARCH: aarch64
+      SIM_OS: "Raspberry Pi OS Lite 64-bit"
+    ports:
+      - "2226:22"
+      - "1886:1880"
+    networks:
+      edgenet:
+        ipv4_address: 10.10.0.26
+    cap_add:
+      - SYS_PTRACE
+
+  # ── Portainer ────────────────────────────────────────────────
+  portainer:
+    image: portainer/portainer-ce:latest
+    container_name: portainer
+    restart: unless-stopped
+    ports:
+      - "9000:9000"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - portainer_data:/data
+    networks:
+      - edgenet

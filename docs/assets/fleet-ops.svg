@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 820 250" font-family="Segoe UI,Roboto,Arial,sans-serif">
+  <rect width="820" height="250" fill="#f8fafc"/>
+  <text x="30" y="34" font-size="17" font-weight="700" fill="#0f172a">OpenRemoteGUI fleet flow</text>
+  <g font-size="12">
+    <rect x="30" y="60" width="150" height="70" rx="10" fill="#eff6ff" stroke="#1a56db"/>
+    <text x="105" y="90" text-anchor="middle" font-weight="700" fill="#0f172a">Check all</text>
+    <text x="105" y="110" text-anchor="middle" fill="#475569">SSH scan, counts</text>
+
+    <rect x="230" y="60" width="150" height="70" rx="10" fill="#fff" stroke="#cbd5e1"/>
+    <text x="305" y="86" text-anchor="middle" font-weight="700" fill="#0f172a">Installed?</text>
+    <text x="305" y="106" text-anchor="middle" fill="#059669">yes: open :6080</text>
+    <text x="305" y="122" text-anchor="middle" fill="#d97706">no: prompt install</text>
+
+    <rect x="430" y="60" width="170" height="70" rx="10" fill="#f0fdf4" stroke="#059669"/>
+    <text x="515" y="86" text-anchor="middle" font-weight="700" fill="#0f172a">Install on fleet</text>
+    <text x="515" y="106" text-anchor="middle" fill="#475569">Ansible playbook</text>
+    <text x="515" y="122" text-anchor="middle" fill="#475569">git clone + install.sh</text>
+
+    <rect x="650" y="60" width="150" height="70" rx="10" fill="#fff7ed" stroke="#d97706"/>
+    <text x="725" y="86" text-anchor="middle" font-weight="700" fill="#0f172a">Per-host result</text>
+    <text x="725" y="106" text-anchor="middle" fill="#475569">ok / failed logged</text>
+    <text x="725" y="122" text-anchor="middle" fill="#475569">Deployment row</text>
+  </g>
+  <defs><marker id="b" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0,0 L7,3 L0,6 Z" fill="#334155"/></marker></defs>
+  <line x1="180" y1="95" x2="230" y2="95" stroke="#334155" stroke-width="2" marker-end="url(#b)"/>
+  <line x1="380" y1="95" x2="430" y2="95" stroke="#334155" stroke-width="2" marker-end="url(#b)"/>
+  <line x1="600" y1="95" x2="650" y2="95" stroke="#334155" stroke-width="2" marker-end="url(#b)"/>
+  <text x="30" y="175" font-size="12" fill="#64748b">Unreachable nodes are handled by Ansible and reported per host, never silently dropped.</text>
+  <rect x="30" y="190" width="770" height="40" rx="8" fill="#fff" stroke="#e2e8f0"/>
+  <text x="44" y="215" font-size="12" fill="#0f172a" font-family="monospace">git clone https://github.com/855princekumar/OpenRemoteGUI.git &amp;&amp; cd OpenRemoteGUI &amp;&amp; sudo ./install.sh</text>
+</svg>

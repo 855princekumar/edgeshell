@@ -1,0 +1,18 @@
+# Allowlist: ignore everything, then admit only what the image needs.
+# Anything not listed here (.env, *.db, venv, keys, snapshots, uploads,
+# generated inventories, docs, tests) can never enter the build context.
+*
+
+!app/
+!ansible/playbooks/
+!ansible/inventory/hosts.ini
+!config.py
+!wsgi.py
+!manage.py
+!requirements.txt
+!VERSION
+
+# Never ship bytecode or editor junk that slipped inside the allowed dirs.
+**/__pycache__
+**/*.py[cod]
+**/.DS_Store

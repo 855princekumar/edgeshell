@@ -1,0 +1,163 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+  workflow_call:          # the release workflow runs the full suite first
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  lint:
+    name: Lint and static checks
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Syntax errors and undefined names (ruff)
+        run: |
+          pip install ruff==0.6.9
+          ruff check --select E9,F63,F7,F82 --output-format=github .
+      - name: Shell scripts parse
+        run: for f in deploy/*.sh sandbox/*.sh; do bash -n "$f"; done
+      - name: Compose files are valid
+        run: |
+          cp .env.example .env
+          docker compose config --quiet
+          SANDBOX_SECRET_KEY=x SANDBOX_CREDENTIAL_KEY=x docker compose -f sandbox/docker-compose.yml config --quiet
+
+  secrets:
+    name: Secret scan (full history)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: gitleaks
+        run: |
+          docker run --rm -v "$PWD:/repo" zricethezav/gitleaks:v8.21.2 \
+            detect --source /repo --no-banner --redact --verbose
+
+  test:
+    name: Unit tests (Python ${{ matrix.python }})
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.11", "3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+          cache: pip
+      - run: pip install -r requirements.txt pytest
+      - name: pytest
+        env:
+          FLASK_ENV: testing
+        run: pytest -q -W ignore
+
+  image:
+    name: Image build (amd64 + arm64) and hardening audit
+    needs: [lint, secrets]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+      - name: Build both architectures
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          build-args: |
+            VERSION=ci
+            REVISION=${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          push: false
+      - name: Load amd64 for inspection
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64
+          cache-from: type=gha
+          load: true
+          tags: edgeshell:audit
+      - name: Nothing secret or local in the image
+        run: |
+          set -e
+          test "$(docker run --rm --entrypoint id edgeshell:audit -u)" = 10001
+          docker run --rm --entrypoint sh edgeshell:audit -c '
+            set -e
+            test ! -e /app/.env
+            test ! -e /app/venv
+            test ! -d /app/tests && test ! -d /app/docs && test ! -d /app/sim
+            found=$(find / -xdev \( -name "*.db" -o -name ".env" -o -name "*.pem" -o -name "*.key" \
+                     -o -name "id_rsa*" -o -name "id_ed25519*" -o -name "snapshot*.json" -o -name "wg*.conf" \) \
+                     -not -path "/proc/*" -not -path "/usr/*" -not -path "/opt/venv/*" 2>/dev/null || true)
+            [ -z "$found" ] || { echo "Unexpected files in image:"; echo "$found"; exit 1; }
+            echo "image clean"'
+          docker history --no-trunc edgeshell:audit | grep -iE "SECRET_KEY=|CREDENTIAL_KEY=|PASSWORD=|TOKEN=" \
+            && { echo "secret-looking value in image history"; exit 1; } || echo "history clean"
+      - name: Refuses to start in production without keys
+        run: |
+          out="$(docker run --rm edgeshell:audit python -c 'import wsgi' 2>&1 || true)"
+          echo "$out" | grep -q "Refusing to start in production"
+      - name: Vulnerability scan (Trivy)
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: edgeshell:audit
+          format: sarif
+          output: trivy.sarif
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+      - name: Upload scan to the Security tab
+        if: always() && github.event_name != 'pull_request'
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: trivy.sarif
+
+  sandbox:
+    name: Sandbox E2E on ${{ matrix.arch }} (EdgeShell + Pi Fleet Emulator)
+    needs: [test, image]
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-24.04
+          - arch: arm64            # native Arm, like AWS Graviton or Ampere Altra
+            runner: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: Build EdgeShell natively for ${{ matrix.arch }}
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          load: true
+          tags: edgeshell:sandbox
+          build-args: |
+            VERSION=ci
+            REVISION=${{ github.sha }}
+          cache-from: type=gha,scope=sandbox-${{ matrix.arch }}
+          cache-to: type=gha,mode=max,scope=sandbox-${{ matrix.arch }}
+      - name: 6-node mixed fleet, end-to-end suite, Ansible, hardening, restart
+        env:
+          EDGESHELL_IMAGE: edgeshell:sandbox
+        run: bash sandbox/run.sh
