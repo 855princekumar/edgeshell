@@ -16,7 +16,7 @@ PyJWT>=2.8.0
 paramiko>=3.4.0
 ansible-runner>=2.4.0
 ansible-core>=2.16            # ansible-playbook binary that ansible-runner drives
-PyYAML>=6.0.1
+PyYAML>=6.0.3
 
 # Crypto / config
 cryptography>=42.0.8
