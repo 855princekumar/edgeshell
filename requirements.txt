@@ -20,7 +20,7 @@ PyYAML>=6.0.1
 
 # Crypto / config
 cryptography>=42.0.8
-python-dotenv>=1.0.1
+python-dotenv>=1.2.4
 
 # Serving / utils
 gunicorn>=22.0.0
