@@ -355,6 +355,12 @@ flowchart LR
 > Never open `5000` (app), `3306` (MariaDB), or `8080` (phpMyAdmin). They are
 > bound to loopback or the tailnet by design. Leave outbound traffic open.
 
+`run.py` cannot change the AWS security group, so set it as above. On the
+instance itself it enables a matching host firewall (ufw): inbound is allowed
+only for your SSH port, 80, 443, 41641/udp and the Tailscale interface. After
+start-up it audits every listening port and warns about anything else.
+Set `EDGESHELL_FIREWALL=off` in the environment to skip the firewall step.
+
 ### Step 3: Join the instance to Tailscale
 
 EdgeShell reads Tailscale status but does not install or configure it, so do this first:
