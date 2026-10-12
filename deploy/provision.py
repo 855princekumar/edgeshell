@@ -40,11 +40,17 @@ SOCK = '/run/mysqld/mysqld.sock'
 TPL = os.path.join(SRC, 'deploy', 'templates')
 ACME_ROOT = '/var/www/letsencrypt'
 NO_SYSTEMD = os.environ.get('EDGESHELL_NO_SYSTEMD') == '1'   # sandbox testing only
+# Host firewall. 'ufw' (default) allows only ssh, 80, 443, Tailscale and the
+# tailnet interface; 'off' leaves the host firewall alone (security group only).
+FIREWALL = os.environ.get('EDGESHELL_FIREWALL', 'ufw').strip().lower()
+TAILSCALE_UDP = 41641
+# Public listeners that are expected: web, Tailscale direct, DHCP clients.
+ALLOWED_PUBLIC = {('tcp', 80), ('tcp', 443), ('udp', TAILSCALE_UDP), ('udp', 68), ('udp', 546)}
 
 APT_BASE = ['python3-venv', 'python3-pip', 'rsync', 'curl', 'git', 'openssh-client',
             'sshpass', 'mariadb-server', 'nginx', 'php-fpm', 'php-mysql',
             'php-mbstring', 'php-zip', 'php-gd', 'php-curl', 'php-xml', 'php-bz2',
-            'phpmyadmin', 'ca-certificates']
+            'phpmyadmin', 'ca-certificates', 'ufw', 'iproute2']
 APT_TLS = ['certbot']
 
 MANAGED_ENV_ORDER = [
@@ -606,6 +612,87 @@ def setup_nginx(cfg):
        else 'Public: http://<ec2-ip>')
 
 
+def ssh_ports():
+    """Ports sshd listens on, so the firewall can never lock the admin out."""
+    if not shutil.which('sshd'):
+        return [22]
+    r = sh(['sshd', '-T'], check=False, capture=True)
+    ports = {int(l.split()[1]) for l in (r.stdout or '').splitlines()
+             if l.startswith('port ') and l.split()[1].isdigit()}
+    return sorted(ports) or [22]
+
+
+def setup_firewall(cfg):
+    step('Host firewall')
+    cfg['firewall'] = False
+    if FIREWALL == 'off':
+        warn('EDGESHELL_FIREWALL=off: host firewall left unchanged; the security group is the only filter.')
+        return
+    if not shutil.which('ufw'):
+        warn('ufw is not available; host firewall not configured. Rely on the security group.')
+        return
+    ssh = ssh_ports()
+    rules = [['default', 'deny', 'incoming'], ['default', 'allow', 'outgoing'],
+             *[['allow', f'{p}/tcp', 'comment', 'ssh'] for p in ssh],
+             ['allow', '80/tcp', 'comment', 'http: certificates and redirect'],
+             ['allow', '443/tcp', 'comment', 'EdgeShell https'],
+             ['allow', f'{TAILSCALE_UDP}/udp', 'comment', 'tailscale direct'],
+             ['allow', 'in', 'on', 'tailscale0', 'comment', 'tailnet: phpMyAdmin, admin']]
+    for rule in rules:
+        sh(['ufw', *rule], check=False, quiet=True)
+    r = sh(['ufw', '--force', 'enable'], check=False, quiet=True)
+    if r.returncode != 0:
+        warn('ufw could not be enabled: ' + (r.stderr or r.stdout or '').strip()[-300:])
+        return
+    cfg['firewall'] = True
+    ok(f"ufw on: inbound allowed only for ssh {', '.join(map(str, ssh))}/tcp, 80/tcp, 443/tcp, "
+       f"{TAILSCALE_UDP}/udp and the tailscale0 interface. Everything else is denied.")
+
+
+def _private_bind(host):
+    """Loopback or Tailscale (CGNAT 100.64/10, fd7a:115c:a1e0::/48) addresses."""
+    import ipaddress
+    h = host.strip('[]').split('%')[0]
+    if h in ('', '*', '0.0.0.0', '::'):
+        return False
+    try:
+        ip = ipaddress.ip_address(h)
+    except ValueError:
+        return False
+    return (ip.is_loopback or ip in ipaddress.ip_network('100.64.0.0/10')
+            or ip in ipaddress.ip_network('fd7a:115c:a1e0::/48'))
+
+
+def audit_ports(cfg):
+    """List every listening socket and flag anything reachable beyond
+    loopback or the tailnet that is not ssh, http(s) or Tailscale."""
+    step('Exposure audit')
+    if not shutil.which('ss'):
+        warn('ss not found; exposure audit skipped.')
+        return
+    r = sh(['ss', '-H', '-tulpn'], check=False, capture=True)
+    ssh = set(ssh_ports())
+    exposed = set()
+    for line in (r.stdout or '').splitlines():
+        f = line.split()
+        if len(f) < 5 or f[0] not in ('tcp', 'udp'):
+            continue
+        host, _, port = f[4].rpartition(':')
+        if not port.isdigit() or _private_bind(host):
+            continue
+        port = int(port)
+        if (f[0], port) in ALLOWED_PUBLIC or (f[0] == 'tcp' and port in ssh):
+            continue
+        proc = re.search(r'users:\(\("([^"]+)"', line)
+        exposed.add(f"{f[0]}/{port} on {host or '*'} ({proc.group(1) if proc else 'unknown'})")
+    if exposed:
+        guard = 'ufw already denies them' if cfg.get('firewall') else 'block them in the security group'
+        warn('Listening beyond loopback/tailnet: ' + '; '.join(sorted(exposed)) + f' ({guard}).')
+    else:
+        ok(f"Only ssh, 80 and 443 (plus Tailscale) listen publicly. App {cfg['port']}, MariaDB 3306 "
+           f"and phpMyAdmin {cfg['pma_port']} are loopback or tailnet only.")
+
+
 def install_units(cfg):
     step('systemd services')
     if NO_SYSTEMD:
@@ -680,8 +767,10 @@ def report(cfg, sec, healthy):
     print(f"\n  {C['B']}{'Component':<12} {'Where':<44} Notes{C['x']}")
     for a, b, c in rows:
         print(f'  {a:<12} {b:<44} {c}')
-    print('\n  Security group: allow 80 + 443 from anywhere; 22 from your IP (or use Tailscale SSH);')
-    print(f"  do NOT open {cfg['port']}, {cfg['pma_port']} or 3306.")
+    print('\n  Security group (set in AWS; run.py cannot change it): allow 80 + 443 from anywhere,')
+    print(f"  22 from your IP only (or none with Tailscale SSH), optional {TAILSCALE_UDP}/udp.")
+    print(f"  Do NOT open {cfg['port']}, {cfg['pma_port']} or 3306."
+          + ('  The host firewall (ufw) enforces the same rules.' if cfg.get('firewall') else ''))
     warns = [m for t, m in STEPS if t == 'warn']
     if warns:
         print(f"\n  {C['y']}Warnings:{C['x']}")
@@ -707,9 +796,11 @@ def main(args=None):
     migrate_and_init()
     setup_phpmyadmin(cfg, sec)
     setup_nginx(cfg)
+    setup_firewall(cfg)
     write_env(cfg, sec, cookie_secure=cfg['tls'])
     install_units(cfg)
     healthy = wait_healthy(cfg)
+    audit_ports(cfg)
     report(cfg, sec, healthy)
 
 
