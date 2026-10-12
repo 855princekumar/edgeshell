@@ -6,6 +6,7 @@ All notable changes are documented here. Format loosely follows Keep a Changelog
 
 ### Added
 - `run.py` enables a host firewall (ufw) on EC2: inbound only for the sshd port(s), 80, 443, Tailscale 41641/udp and the `tailscale0` interface. The SSH port is read from `sshd -T`, so the admin cannot be locked out. `EDGESHELL_FIREWALL=off` skips it.
+- Production Docker Compose (`docker/compose.yaml`): EdgeShell, MariaDB 11.4 on an internal network and Caddy with automatic HTTPS; all state in a host `./data` folder; services start in health order and restart on reboot. Documented on the Docker Hub page.
 - Exposure audit at the end of `run.py`: every listening socket is checked and anything reachable beyond loopback or the tailnet is reported.
 
 ### Verified
