@@ -2,6 +2,15 @@
 
 All notable changes are documented here. Format loosely follows Keep a Changelog.
 
+## [Unreleased]
+
+### Added
+- `run.py` enables a host firewall (ufw) on EC2: inbound only for the sshd port(s), 80, 443, Tailscale 41641/udp and the `tailscale0` interface. The SSH port is read from `sshd -T`, so the admin cannot be locked out. `EDGESHELL_FIREWALL=off` skips it.
+- Exposure audit at the end of `run.py`: every listening socket is checked and anything reachable beyond loopback or the tailnet is reported.
+
+### Verified
+- Full `run.py` install on a fresh Ubuntu 24.04 with systemd: MariaDB, Nginx, phpMyAdmin, ufw, all services enabled; services return after a reboot and the app restarts within seconds after being killed.
+
 ## [1.2.0] - 2026-10-12
 
 Container-first release: multi-arch image, a full sandbox with Pi Fleet

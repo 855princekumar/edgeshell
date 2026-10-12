@@ -54,6 +54,8 @@ cd ~/edgeshell && python3 run.py
 | Nginx | App on the domain only, TLS + HSTS; raw IP and unknown hosts are dropped (444 / TLS rejected) |
 | phpMyAdmin | Bound to the Tailscale IP, basic auth + DB login, root login disabled |
 | systemd | App, watchdog and heartbeat enabled at boot; every start/stop logged to the DB |
+| Firewall | ufw: inbound only for the SSH port, 80, 443, 41641/udp and `tailscale0`; skip with `EDGESHELL_FIREWALL=off` |
+| Exposure audit | Lists every listening port after start-up and warns about anything beyond loopback or the tailnet |
 
 Credentials are printed once and saved to `/root/edgeshell-credentials.txt` (root only).
 
