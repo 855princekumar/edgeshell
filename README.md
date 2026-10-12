@@ -147,6 +147,7 @@ flowchart LR
 | I want to... | Use | Time |
 |---|---|---|
 | Run it anywhere in one command | [Docker](#1-docker-any-machine-amd64-or-arm64) | 1 min |
+| Run it in production with Docker (HTTPS + MariaDB) | [Production Compose](#production-compose-https--mariadb) | 5 min |
 | Keep it running with settings in a file | [Docker Compose](#2-docker-compose) | 3 min |
 | Develop on my PC | [Local](#3-local-windows-macos-linux) | 2 min |
 | Try it against a realistic fleet, no hardware | [Sandbox](#4-sandbox-edgeshell--an-emulated-fleet) | 5 min |
@@ -187,6 +188,26 @@ docker compose up -d --build    # or build from this checkout
 Data persists in the `edgeshell_instance` and `edgeshell_uploads` volumes. To
 reach nodes over a mesh from inside a container, see
 [docs/VPN-NETWORK.md](docs/VPN-NETWORK.md).
+
+### Production Compose (HTTPS + MariaDB)
+
+[`docker/compose.yaml`](docker/compose.yaml) runs EdgeShell with MariaDB and
+Caddy (automatic Let's Encrypt HTTPS). All data lives in a `./data` folder on
+the host, and nothing but ports 80 and 443 is exposed.
+
+```bash
+mkdir edgeshell && cd edgeshell
+base=https://raw.githubusercontent.com/855princekumar/edgeshell/main/docker
+curl -fsSLO $base/compose.yaml && curl -fsSLO $base/Caddyfile
+curl -fsSLo .env $base/.env.example && chmod 600 .env
+for k in SECRET_KEY CREDENTIAL_KEY DB_PASSWORD DB_ROOT_PASSWORD; do
+  sed -i "s|^$k=.*|$k=$(openssl rand -hex 32)|" .env; done
+nano .env                  # EDGESHELL_DOMAIN and ACME_EMAIL
+docker compose up -d
+```
+
+Backups, upgrades and every setting are documented on the
+[Docker Hub page](https://hub.docker.com/r/devprincekumar/edgeshell).
 
 ### 3. Local (Windows, macOS, Linux)
 
@@ -537,7 +558,7 @@ edgeshell/
 │   └── templates/        Jinja2 pages
 ├── ansible/              Playbooks for fleet-wide commands, deploys, log fetch, installs
 ├── deploy/               Production provisioner, systemd units, Nginx templates, scripts
-├── docker/               Docker Hub description
+├── docker/               Production Compose (EdgeShell + MariaDB + Caddy), Docker Hub page
 ├── docs/                 Guides, ADRs, and diagrams
 ├── sandbox/              EdgeShell + Pi Fleet Emulator stack and the end-to-end suite
 ├── sim/                  Older self-contained demo fleet (superseded by sandbox/)
