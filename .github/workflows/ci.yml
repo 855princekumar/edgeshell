@@ -75,10 +75,10 @@ jobs:
       security-events: write
     steps:
       - uses: actions/checkout@v5
-      - uses: docker/setup-qemu-action@v3
-      - uses: docker/setup-buildx-action@v3
+      - uses: docker/setup-qemu-action@v4
+      - uses: docker/setup-buildx-action@v4
       - name: Build both architectures
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           platforms: linux/amd64,linux/arm64
@@ -89,7 +89,7 @@ jobs:
           cache-to: type=gha,mode=max
           push: false
       - name: Load amd64 for inspection
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           platforms: linux/amd64
@@ -120,7 +120,7 @@ jobs:
         # Reports to the Security tab. The vulnerability DB download is
         # rate limited on shared runners, so a scan outage must not block CI.
         continue-on-error: true
-        uses: aquasecurity/trivy-action@b6643a29fecd7f34b3597bc6acb0a98b03d33ff8  # v0.33.1
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25  # v0.36.0 (pinned: tags were hijacked in Mar 2026)
         with:
           image-ref: edgeshell:audit
           format: sarif
@@ -130,7 +130,7 @@ jobs:
       - name: Upload scan to the Security tab
         if: always() && github.event_name != 'pull_request' && hashFiles('trivy.sarif') != ''
         continue-on-error: true
-        uses: github/codeql-action/upload-sarif@v3
+        uses: github/codeql-action/upload-sarif@v4
         with:
           sarif_file: trivy.sarif
 
@@ -149,9 +149,9 @@ jobs:
             runner: ubuntu-24.04-arm
     steps:
       - uses: actions/checkout@v5
-      - uses: docker/setup-buildx-action@v3
+      - uses: docker/setup-buildx-action@v4
       - name: Build EdgeShell natively for ${{ matrix.arch }}
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           load: true
