@@ -369,3 +369,15 @@ def test_ansible_inventory_names_are_safe():
                         username='pi', password='raspberry')
     host = next(iter(a.build_inventory([n])['all']['hosts']))
     assert ' ' not in host and '(' not in host and host.startswith('n7_')
+
+
+def test_fleet_summary_reports_average_temperature(app, client):
+    _login(app, client)
+    from app.models.node import Node
+    with app.app_context():
+        for i, t in enumerate((40.0, 60.0)):
+            db.session.add(Node(name=f'temp-{i}', ip_address=f'10.9.0.{i + 1}', username='pi',
+                                status='online', temperature=t))
+        db.session.commit()
+    d = client.get('/monitoring/fleet-summary').get_json()
+    assert d['avg_temp'] == 50.0

@@ -229,7 +229,7 @@ function pollNode(id) {
   document.getElementById('data-'+id).style.display = 'none';
   document.getElementById('error-'+id).style.display = 'none';
 
-  fetch('/monitoring/poll', {
+  return fetch('/monitoring/poll', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCSRF() },
     body: JSON.stringify({ node_ids: [id] })
@@ -242,7 +242,8 @@ function pollNode(id) {
     if (!r.success || !r.metrics) { showNodeError(id, 'Node offline or unreachable'); return; }
     renderNode(id, r.metrics);
   })
-  .catch(e => showNodeError(id, e.message));
+  .catch(e => showNodeError(id, e.message))
+  .finally(updateSummary);   // count from the rendered result, not before it arrives
 }
 
 function renderNode(id, m) {
@@ -315,9 +316,9 @@ function showNodeError(id, msg) {
 function pollAll() {
   if (!nodeIds.length) return;
   document.getElementById('last-refresh').textContent = 'Refreshing…';
-  nodeIds.forEach(id => pollNode(id));
-  updateSummary();
-  document.getElementById('last-refresh').textContent = 'Last: ' + new Date().toLocaleTimeString();
+  Promise.allSettled(nodeIds.map(id => pollNode(id))).then(() => {
+    document.getElementById('last-refresh').textContent = 'Last: ' + new Date().toLocaleTimeString();
+  });
 }
 
 function updateSummary() {

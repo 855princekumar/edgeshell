@@ -70,13 +70,14 @@ def fleet_summary():
         return jsonify({'total': total, 'online': 0, 'offline': total,
                         'sla_percent': 0, 'avg_cpu': 0, 'avg_mem': 0,
                         'avg_disk': 0, 'avg_load_1': 0, 'avg_load_5': 0,
-                        'avg_load_15': 0, 'nodes': []})
+                        'avg_load_15': 0, 'avg_temp': None, 'nodes': []})
 
     def avg(lst): return round(sum(lst) / len(lst), 1) if lst else 0
 
     cpus  = [n.cpu_percent  for n in online if n.cpu_percent  is not None]
     mems  = [n.ram_percent  for n in online if n.ram_percent  is not None]
     disks = [n.disk_percent for n in online if n.disk_percent is not None]
+    temps = [n.temperature  for n in online if n.temperature  is not None]
     loads = []
     for n in online:
         if n.load_average:
@@ -110,6 +111,7 @@ def fleet_summary():
         'avg_load_1':  avg([l[0] for l in loads]),
         'avg_load_5':  avg([l[1] for l in loads]),
         'avg_load_15': avg([l[2] for l in loads]),
+        'avg_temp':    avg(temps) if temps else None,
         'nodes': nodes_out,
     })
 

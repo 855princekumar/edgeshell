@@ -42,6 +42,7 @@ Monitor, control, and deploy to your whole edge fleet over SSH and Ansible, from
 <summary><b>Table of contents</b></summary>
 
 - [Why EdgeShell](#why-edgeshell)
+- [Screenshots](#screenshots)
 - [The ecosystem](#the-ecosystem)
 - [Features](#features)
   - [Fleet operations](#fleet-operations) · [Security and access](#security-and-access) · [Platform](#platform)
@@ -85,6 +86,23 @@ user's laptop.**
 **Built for:** IoT and industrial edge teams, labs and universities, makers
 running Pi clusters, and anyone who wants a self-hosted alternative to SaaS
 device-management tools.
+
+## Screenshots
+
+<table>
+<tr>
+<td width="50%"><img src="docs/assets/screenshots/dashboard.png" alt="Fleet health dashboard: availability, average CPU, memory, disk and temperature across the fleet"><br><sub><b>Fleet dashboard</b>: availability, fleet averages, node status</sub></td>
+<td width="50%"><img src="docs/assets/screenshots/terminal.png" alt="Remote terminal broadcasting one command to six nodes running Buster, Bullseye and Bookworm on armv7l and aarch64"><br><sub><b>Remote terminal</b>: one command, six nodes, each with its own OS and architecture</sub></td>
+</tr>
+<tr>
+<td width="50%"><img src="docs/assets/screenshots/nodes.png" alt="Node fleet cards with CPU, RAM, disk, status and 32/64-bit badges"><br><sub><b>Node fleet</b>: live status, 32/64-bit detection, one-click actions</sub></td>
+<td width="50%"><img src="docs/assets/screenshots/monitoring.png" alt="System monitoring with per-node metrics and Docker and Node-RED status"><br><sub><b>Monitoring</b>: per-node metrics, Docker and Node-RED state</sub></td>
+</tr>
+<tr>
+<td width="50%"><img src="docs/assets/screenshots/users.png" alt="User management with roles and per-user session limits"><br><sub><b>User management</b>: roles and per-user device limits</sub></td>
+<td width="50%" valign="middle"><sub>Captured from the <a href="#validate-before-you-deploy-sandbox-with-pi-fleet-emulator">sandbox</a>: EdgeShell 1.2.0 managing a 6-node <a href="https://github.com/855princekumar/pi-fleet-emulator">Pi Fleet Emulator</a> fleet. Node names and addresses are simulated.</sub></td>
+</tr>
+</table>
 
 ## The ecosystem
 
@@ -629,7 +647,8 @@ Dependabot keeps Python packages, the base image and Actions up to date.
 - [ ] **Mandatory two-factor authentication for all users** (separate build, in security testing)
 - [ ] WireGuard as a first-class backend (status reading works today)
 - [ ] Shared rate-limit store for multi-worker deployments
-- [ ] UI screenshots and demo video
+- [x] UI screenshots
+- [ ] Demo video
 
 Ideas and feature requests are welcome in
 [Issues](https://github.com/855princekumar/edgeshell/issues).

@@ -18,9 +18,10 @@ table is defined as a SQLAlchemy model, the process is engine-agnostic.
 # 1. On the current (SQLite) deployment
 python manage.py db-export snapshot.json
 
-# 2. Install the driver and point at the new DB
-pip install psycopg2-binary                       # or PyMySQL for MariaDB
-export DATABASE_URL=postgresql+psycopg2://user:pass@host:5432/edgeshell
+# 2. Point at the new DB (the MariaDB driver is already installed;
+#    for PostgreSQL install it first: pip install psycopg2-binary)
+export DATABASE_URL=mysql+mysqlconnector://user:pass@host:3306/edgeshell?charset=utf8mb4
+# or: export DATABASE_URL=postgresql+psycopg2://user:pass@host:5432/edgeshell
 
 # 3. Load into the new DB
 python manage.py db-import snapshot.json --wipe
@@ -50,10 +51,19 @@ SQLite and MariaDB do not need this step.
 |---|---|
 | SQLite | `sqlite:///instance/edgeshell.db` |
 | PostgreSQL | `postgresql+psycopg2://user:pass@host:5432/edgeshell` |
-| MariaDB / MySQL | `mysql+pymysql://user:pass@host:3306/edgeshell` |
+| MariaDB / MySQL (TCP) | `mysql+mysqlconnector://user:pass@host:3306/edgeshell?charset=utf8mb4` |
+| MariaDB (local socket, as `run.py` sets it) | `mysql+mysqlconnector://user:pass@localhost/edgeshell?unix_socket=/run/mysqld/mysqld.sock&charset=utf8mb4` |
 
 ## What the snapshot contains
 
-Users, nodes, settings, activity logs, node logs, deployments, system metrics,
-and VPN status, in a foreign-key-safe order. It is plain JSON; you can inspect
-it before importing.
+Users, nodes, settings, issues and their messages, activity logs, node logs,
+deployments, system metrics, VPN status and service events, in a
+foreign-key-safe order. Live sign-in sessions are not exported: everyone signs
+in again after a migration. It is plain JSON; you can inspect it before
+importing.
+
+## Automatic migration on EC2
+
+You rarely need the steps above on a server: `python3 run.py` finds an existing
+`instance/edgeshell.db`, copies it into MariaDB once (`manage.py migrate-sqlite`)
+and renames the file to `.migrated-<timestamp>`.
