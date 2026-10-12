@@ -2,16 +2,6 @@
 
 All notable changes are documented here. Format loosely follows Keep a Changelog.
 
-## [Unreleased]
-
-### Added
-- `run.py` enables a host firewall (ufw) on EC2: inbound only for the sshd port(s), 80, 443, Tailscale 41641/udp and the `tailscale0` interface. The SSH port is read from `sshd -T`, so the admin cannot be locked out. `EDGESHELL_FIREWALL=off` skips it.
-- Production Docker Compose (`docker/compose.yaml`): EdgeShell, MariaDB 11.4 on an internal network and Caddy with automatic HTTPS; all state in a host `./data` folder; services start in health order and restart on reboot. Documented on the Docker Hub page.
-- Exposure audit at the end of `run.py`: every listening socket is checked and anything reachable beyond loopback or the tailnet is reported.
-
-### Verified
-- Full `run.py` install on a fresh Ubuntu 24.04 with systemd: MariaDB, Nginx, phpMyAdmin, ufw, all services enabled; services return after a reboot and the app restarts within seconds after being killed.
-
 ## [1.2.0] - 2026-10-12
 
 Container-first release: multi-arch image, a full sandbox with Pi Fleet
@@ -23,6 +13,10 @@ Emulator, and stronger session security.
 - CI on every push: lint, secret scan of the full history, unit tests on Python 3.11 to 3.13, amd64 and arm64 image builds with a hardening audit and vulnerability scan, and the sandbox suite on native amd64 and arm64 runners. Tagged releases publish only after all of it passes.
 - Bulk import accepts JSON, including Pi Fleet Emulator's `pi-fleet-nodes.json`, plus a default SSH password and a `host.docker.internal` replacement option.
 - Node addresses may be hostnames (container names, `host.docker.internal`, `pi.local`), not only IPv4.
+- `run.py` enables a host firewall (ufw) on EC2: inbound only for the sshd port(s), 80, 443, Tailscale 41641/udp and the `tailscale0` interface. The SSH port is read from `sshd -T`, so the admin cannot be locked out. `EDGESHELL_FIREWALL=off` skips it.
+- Production Docker Compose (`docker/compose.yaml`): EdgeShell, MariaDB 11.4 on an internal network and Caddy with automatic HTTPS; all state in a host `./data` folder; services start in health order and restart on reboot. Documented on the Docker Hub page.
+- Exposure audit at the end of `run.py`: every listening socket is checked and anything reachable beyond loopback or the tailnet is reported.
+- README screenshots, CODE_OF_CONDUCT, issue forms, pull request template, and private vulnerability reporting.
 - Per-user session limits: each account allows 1 device by default (admins included). Administrators can set 1 to 4 when creating a user or later in User Management. Signing in past the limit asks to sign out the least recently active device.
 - Sessions are stored server-side in a new `user_sessions` table; the MariaDB view `v_user_sessions` now lists every session.
 - "Sign out everywhere" action per user in User Management.
@@ -39,7 +33,14 @@ Emulator, and stronger session security.
 - Ansible fleet operations failed in the container: `ansible-core` was missing and node names with spaces broke the inventory. Both fixed; without Ansible, EdgeShell now falls back to plain SSH instead of failing.
 - The login rate limit counted page loads, not just password attempts.
 - `/api/v1/status` reported version 1.0.0; it now reads `VERSION`.
+- Monitoring summary counted Docker and Node-RED as 0 because it ran before the node results arrived.
+- Dashboard "Fleet Avg Temp" always showed n/a: the fleet summary never computed it.
+- Getting Started, Migration and Architecture docs described the old installer, the wrong MariaDB driver and an outdated data model.
 - The Docker image ran two Gunicorn workers, which split the in-memory rate limits; it now matches the systemd deployment (one worker, threads).
+
+### Verified
+- Full `run.py` install on a fresh Ubuntu 24.04 with systemd: MariaDB, Nginx, phpMyAdmin, ufw, all services enabled; services return after a reboot and the app restarts within seconds after being killed.
+- Production Compose stack with the published image: HTTPS login, HSTS, HTTP to HTTPS redirect, and all data surviving removal and re-creation of every container.
 
 ### Upgrade notes
 - Docker users: the image name is now `devprincekumar/edgeshell`. Existing volumes keep working.

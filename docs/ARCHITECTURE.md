@@ -2,70 +2,97 @@
 
 EdgeShell is a Flask application built with the app-factory pattern. One control
 plane process manages many nodes over SSH and Ansible. State lives in a SQL
-database (SQLite with WAL by default).
+database: MariaDB in production (`run.py` on a server, or the production
+Compose stack), SQLite with WAL for local development and the single-container
+image.
 
 ## Components
 
 ```mermaid
 flowchart TB
-    subgraph Host[EC2 host on the mesh]
-        G[Gunicorn] --> APP[Flask factory]
-        APP --> RT[Routes: auth, dashboard, nodes, monitoring, vpn, users, files, logs, settings, api, health]
+    U[Users: browser over HTTPS] --> PX
+    subgraph Host[Control-plane host on the mesh]
+        PX[Nginx + Let's Encrypt<br/>or Caddy in Docker] --> G[Gunicorn 127.0.0.1:5000]
+        G --> APP[Flask factory]
+        APP --> RT[Routes: auth, dashboard, nodes, monitoring, terminal,<br/>files, logs, users, issues, settings, vpn, api, health]
         RT --> SV[Services]
         SV --> SSH[ssh_service]
         SV --> ANS[ansible_service]
         SV --> ORG[orgui_service]
         SV --> VPN[vpn_service]
+        SV --> SES[session_service]
         SV --> IMP[import_service]
         SV --> DBIO[dbio_service]
-        APP --> DB[(SQL: SQLite WAL / PG / MariaDB)]
+        APP --> DB[(MariaDB / SQLite WAL)]
+        SD[systemd: app, watchdog, heartbeat timer] -.-> G
+        FW[ufw: ssh, 80, 443, tailscale only] -.-> PX
     end
-    RT -->|SSH / Ansible| NODES[(Fleet of edge nodes)]
+    SSH -->|SSH / Ansible over Tailscale| NODES[(Fleet of edge nodes)]
 ```
 
 ## Data model
 
 ```mermaid
 erDiagram
-    USER ||--o{ ACTIVITYLOG : performs
-    NODE ||--o{ SYSTEMMETRICS : samples
-    NODE ||--o{ NODELOG : produces
+    USER ||--o{ USER_SESSION : "signs in on"
+    USER ||--o{ ISSUE : reports
+    ISSUE ||--o{ ISSUE_MESSAGE : contains
+    NODE ||--o{ SYSTEM_METRICS : samples
     USER {
       int id
       string username
       string role
+      int max_sessions
       int failed_logins
       datetime locked_until
+    }
+    USER_SESSION {
+      int id
+      int user_id
+      string token
+      string ip
+      string agent
+      datetime seen_at
+      datetime revoked_at
+      string revoked_reason
     }
     NODE {
       int id
       string name
       string ip_address
       int ssh_port
+      string arch
       int nodered_port
       bool orgui_installed
-      int orgui_port
-      string arch
+      bool is_deleted
     }
-    SYSTEMMETRICS {
+    SYSTEM_METRICS {
       int id
       int node_id
       float cpu_percent
       float ram_percent
       float disk_percent
     }
-    DEPLOYMENT {
+    ISSUE {
       int id
+      int reporter_id
+      string subject
+      string priority
       string status
-      int success_count
-      int failure_count
     }
-    VPNSTATUS {
+    ISSUE_MESSAGE {
       int id
-      bool connected
-      string backend_state
+      int issue_id
+      int author_id
+      text body
     }
 ```
+
+Stand-alone tables: `activity_logs` (audit of user actions), `node_logs`,
+`deployments` (per-node results of file deploys), `vpn_status` (heartbeat
+samples), `service_events` (every service start and stop with its reason) and
+`settings` (key/value). On MariaDB, the views `v_activity_local`,
+`v_service_events_local` and `v_user_sessions` show timestamps in `DISPLAY_TZ`.
 
 ## Key decisions
 

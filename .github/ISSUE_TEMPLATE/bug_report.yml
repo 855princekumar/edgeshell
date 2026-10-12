@@ -1,0 +1,58 @@
+name: Bug report
+description: Something does not work as documented
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting. **Security problems do not belong here**: use
+        *Security → Report a vulnerability* on this repository instead.
+        Remove passwords, keys, tokens and real IP addresses from anything you paste.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What you did, what you expected, and what happened instead.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Go to Nodes → Import
+        2. Upload a JSON export with 3 nodes
+        3. ...
+    validations:
+      required: true
+  - type: dropdown
+    id: install
+    attributes:
+      label: How do you run EdgeShell?
+      options:
+        - python3 run.py on a server (systemd, MariaDB)
+        - Docker, production Compose (docker/compose.yaml)
+        - Docker, single container
+        - Local development (python run.py --dev)
+        - Sandbox (sandbox/run.sh)
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: EdgeShell version
+      description: From the VERSION file, the image tag, or /api/v1/status.
+      placeholder: 1.2.0
+    validations:
+      required: true
+  - type: input
+    id: platform
+    attributes:
+      label: Host OS and architecture
+      placeholder: Ubuntu 24.04, arm64 (Graviton)
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant logs
+      description: "`journalctl -u edgeshell -n 100 --no-pager` or `docker compose logs edgeshell`, with secrets removed."
+      render: text

@@ -1,6 +1,10 @@
 # EdgeShell Fleet Simulation
 
-A fully self-contained local test environment that emulates a 3-node Raspberry Pi fleet connected via a simulated VPN/LAN network - all running in Docker on your Windows machine.
+> **Superseded.** For realistic testing use the [sandbox](../sandbox/) with
+> [Pi Fleet Emulator](https://github.com/855princekumar/pi-fleet-emulator):
+> `bash sandbox/run.sh`. This older demo is kept for reference.
+
+A self-contained local test environment that emulates a 6-node Raspberry Pi fleet (3 × 32-bit, 3 × 64-bit, all Raspberry Pi OS Bookworm) on a simulated VPN/LAN network, running in Docker.
 
 ## What's Included
 
@@ -10,6 +14,9 @@ A fully self-contained local test environment that emulates a 3-node Raspberry P
 | `edge-node-1` | Factory Pi 01 | 10.10.0.21 | SSH:2221, Node-RED:1881 |
 | `edge-node-2` | Warehouse GW 02 | 10.10.0.22 | SSH:2222, Node-RED:1882 |
 | `edge-node-3` | Outdoor Hub 03 | 10.10.0.23 | SSH:2223, Node-RED:1883 |
+| `node-64bit-1` | Control 04 (64-bit) | 10.10.0.24 | SSH:2224, Node-RED:1884 |
+| `node-64bit-2` | Gateway 05 (64-bit) | 10.10.0.25 | SSH:2225, Node-RED:1885 |
+| `node-64bit-3` | Edge 06 (64-bit) | 10.10.0.26 | SSH:2226, Node-RED:1886 |
 | `portainer` | Container dashboard | - | 9000 |
 
 All containers share the `edgenet` network (`10.10.0.0/24`) - simulating a Tailscale/WireGuard VPN LAN.

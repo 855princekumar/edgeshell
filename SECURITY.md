@@ -1,25 +1,57 @@
 # Security Policy
 
-## Reporting
+## Supported versions
 
-Report vulnerabilities privately to the maintainer (see the GitHub profile
-`855princekumar`). Please do not open public issues for security reports.
+| Version | Supported |
+|---|---|
+| 1.2.x | Yes |
+| 1.1.x and older | No: upgrade with `git pull && python3 run.py`, or a newer image tag |
+
+## Reporting a vulnerability
+
+Report privately through GitHub: on this repository open **Security →
+Report a vulnerability**
+([direct link](https://github.com/855princekumar/edgeshell/security/advisories/new)).
+Please do not open a public issue, pull request or discussion for a security
+problem.
+
+Include the version, how EdgeShell is installed (`run.py`, Docker Compose,
+single container), the steps to reproduce and the impact you expect.
+
+| Step | Target |
+|---|---|
+| Acknowledgement | within 3 working days |
+| Initial assessment | within 7 days |
+| Fix or mitigation for confirmed high or critical issues | within 30 days |
+
+You will be credited in the release notes unless you ask not to be.
 
 ## Posture
 
 - Production refuses to start without `SECRET_KEY` and `CREDENTIAL_KEY`.
-- Node SSH passwords are encrypted at rest with Fernet; the key comes from
+- Node SSH passwords and API keys are encrypted at rest with Fernet, keyed by
   `CREDENTIAL_KEY`. Rotate with `python manage.py reencrypt --old <KEY>`.
-- CSRF protection is enabled for all state-changing requests.
-- Login lockout after repeated failures; login is rate-limited.
-- Session cookies are HttpOnly, SameSite=Lax, and Secure in production.
-- Run behind TLS. Keep the mesh (Tailscale/WireGuard) on the host, not per user.
+- CSRF protection on every state-changing request, with a strict referrer check over HTTPS.
+- Login lockout after repeated failures, per-IP rate limiting, and identical
+  errors for unknown users, wrong passwords and locked accounts.
+- Sessions are tracked server-side: one device per user by default (up to 4,
+  set by an administrator); logout, password change, admin password reset and
+  disabling a user revoke sessions immediately.
+- Cookies are HttpOnly, SameSite=Lax, and Secure behind HTTPS.
+- The container image runs as a non-root user with read-only application code
+  and no secrets baked in; releases carry an SBOM and build provenance.
+- `run.py` enables a host firewall (ufw) and audits listening ports; the app,
+  MariaDB and phpMyAdmin are never exposed to the internet.
+- `main` is protected: pull requests, eight required CI checks (including a
+  secret scan and end-to-end tests on amd64 and arm64) and secret-scanning push
+  protection.
 
 ## Hardening checklist for operators
 
-- [ ] Set strong, unique `SECRET_KEY` and `CREDENTIAL_KEY`.
-- [ ] Terminate TLS at a reverse proxy or load balancer.
-- [ ] Change the seeded admin password immediately.
-- [ ] Use SSH keys where possible; treat stored passwords as sensitive.
-- [ ] Restrict the portal to the mesh or a trusted network.
-- [ ] Back up `CREDENTIAL_KEY` with any database snapshot.
+- [ ] Change the seeded `admin` password at first login (it is enforced).
+- [ ] Set strong, unique `SECRET_KEY` and `CREDENTIAL_KEY`, and back them up with the database.
+- [ ] Serve over HTTPS only (`run.py` with a domain, or the production Compose stack).
+- [ ] Keep the security group to 80 and 443 public, SSH from your IP only.
+- [ ] Give each person their own account with the lowest role that works.
+- [ ] Prefer SSH keys on nodes where possible; treat stored passwords as sensitive.
+- [ ] Two-factor authentication is coming in a separate build; until then use long, unique passwords.
