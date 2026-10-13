@@ -89,7 +89,9 @@ def test_totp_replay_and_wrong_code_rejected(app):
     c = app.test_client()
     secret, _ = _enroll(c, 'admin', 'admin123')
     c.get('/logout')
-    used = mfa.totp_now(secret)            # consumed by the enrollment
+    with app.app_context():                # the exact step the enrollment consumed
+        step = db.session.get(UserMFA, 1).last_step
+    used = mfa.totp_now(secret, at=step * mfa.TOTP_STEP)
     r = _login_2fa(c, 'admin', 'admin123', used)
     assert b'not valid' in r.data
     r = c.post('/login/verify', data={'code': '000000' if used != '000000' else '111111'})
