@@ -17,6 +17,7 @@ def app():
         _seed_defaults()
         u = User.query.filter_by(username='admin').first()
         u.must_change_password = False
+        u.email = 'admin@fleet.test'
         db.session.commit()
     yield app
     with app.app_context():
@@ -146,6 +147,11 @@ def test_password_reset_and_disable_revoke_sessions(app):
     assert r.status_code == 401 and 'reset your password' in r.get_json()['message']
 
     victim.post('/login', data={'username': 'victim', 'password': 'new-pass-123'})
+    r = victim.get('/')                                # temporary password: must change it
+    assert r.status_code == 302 and '/change-password' in r.headers['Location']
+    victim.post('/change-password', data={'current_password': 'new-pass-123',
+                                          'new_password': 'victim-own-pass',
+                                          'confirm_password': 'victim-own-pass'})
     assert victim.get('/').status_code == 200
     admin.post(f'/users/{vid}/toggle')                 # disable: signed out
     assert victim.get('/').status_code == 302
@@ -180,7 +186,9 @@ def test_session_status(app):
     a = app.test_client()
     assert a.get('/session/status').get_json() == {'authenticated': False}
     _post_login(a)
-    assert a.get('/session/status').get_json() == {'authenticated': True}
+    j = a.get('/session/status').get_json()
+    assert j['authenticated'] is True and j['idle_after_s'] == 600 and j['warn_s'] == 300
+    assert j['idle_s'] < 5
 
 
 def test_heartbeat_loopback_only(app, monkeypatch):

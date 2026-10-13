@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% block title %}New backup codes{% endblock %}
+{% block content %}
+<div class="page-header">
+    <div>
+        <div class="page-title">New backup codes</div>
+        <div class="page-subtitle">Your previous backup codes no longer work</div>
+    </div>
+</div>
+<div class="card" style="max-width:560px">
+    <div class="card-body">
+        <style>
+          .codes { display:grid; grid-template-columns:1fr 1fr; gap:6px 14px; background:#f9fafb; border:1.5px dashed #d1d5db;
+                   border-radius:10px; padding:14px 18px; margin:10px 0 14px; font-family:var(--mono); font-size:15px; }
+          .btn-row { display:flex; gap:10px; }
+          .btn-light { background:#fff; color:#1a56db; border:1.5px solid #c7d2fe; border-radius:8px; padding:6px 14px; }
+          @media print { .sidebar, .topbar, .noprint { display:none !important; } }
+        </style>
+        {% include "auth/_backup_codes.html" %}
+        <a href="{{ url_for('account.index') }}" class="btn btn-primary noprint">I have saved them</a>
+    </div>
+</div>
+{% endblock %}

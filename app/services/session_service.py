@@ -11,6 +11,13 @@ How it works
   - Logout, password change or reset, and disabling an account revoke
     sessions server-side, so a copied cookie stops working immediately.
 
+  - Each session records its device type and when a person last interacted
+    with it (active_at: page loads, clicks, key presses; background polls do
+    not count). After IDLE_MINUTES without interaction the page asks "still
+    there?" and signs that session out unless answered within
+    IDLE_WARNING_MINUTES. The server enforces the same deadline, so a closed
+    laptop or a forgotten tab is signed out too.
+
 Tokens live in the database, so this holds across Gunicorn threads, restarts
 and hosts. SINGLE_SESSION=false lifts the per-user limit; sessions are still
 tracked and revocable.
@@ -28,6 +35,11 @@ from app.models.user import UserSession, clamp_sessions
 SEEN_WRITE_EVERY = timedelta(seconds=60)   # throttle last-seen writes
 # session_status is NOT exempt: its poll is how an idle tab learns it was replaced.
 SESSION_EXEMPT_ENDPOINTS = {'static', 'health.healthz'}
+ACTIVE_WRITE_EVERY = timedelta(seconds=20)  # throttle interaction writes
+# Pages a signed-in user may still open while a required step is pending.
+GATE_OPEN_ENDPOINTS = {'auth.logout', 'auth.change_password', 'auth.session_status',
+                       'auth.session_activity', 'account.email', 'static',
+                       'health.healthz'}
 
 REVOKE_MESSAGES = {
     'password_changed': 'Your password was changed, so this session was signed out.',
@@ -35,6 +47,11 @@ REVOKE_MESSAGES = {
     'limit_lowered': ("An administrator lowered this account's session limit, "
                       'so this session was signed out.'),
     'admin_revoked': 'An administrator signed out your sessions. Please sign in again.',
+    'closed': 'This session was closed from another of your devices or by an administrator.',
+    'idle': 'You were signed out after a period of inactivity.',
+    'mfa_reset': 'Your two-factor authentication was reset. Please sign in again.',
+    'deactivated': 'This account was disabled.',
+    'role_changed': 'Your role changed. Please sign in again.',
 }
 
 
@@ -59,8 +76,56 @@ def _agent_label():
     return (raw or 'Unknown device')[:256]
 
 
+def device_type():
+    raw = request.headers.get('User-Agent', '') or ''
+    if 'iPad' in raw or 'Tablet' in raw or ('Android' in raw and 'Mobile' not in raw):
+        return 'Tablet'
+    if 'Mobi' in raw or 'iPhone' in raw:
+        return 'Mobile'
+    return 'Desktop'
+
+
+def device_label(s):
+    """'Desktop #12 (Chrome on Windows)' for logs and session lists."""
+    return f"{s.device_type or 'Device'} #{s.id} ({s.agent or 'unknown'})"
+
+
 def _idle():
     return current_app.config.get('PERMANENT_SESSION_LIFETIME', timedelta(hours=8))
+
+
+def idle_limits():
+    """(seconds without interaction before the prompt, seconds to answer it).
+    (0, 0) disables the inactivity sign-out."""
+    idle = int(current_app.config.get('IDLE_MINUTES', 10)) * 60
+    warn = int(current_app.config.get('IDLE_WARNING_MINUTES', 5)) * 60
+    return (idle, warn) if idle > 0 else (0, 0)
+
+
+def current_session():
+    sid = session.get('sid')
+    if not sid or not current_user.is_authenticated:
+        return None
+    return UserSession.query.filter_by(user_id=current_user.id, token=sid).first()
+
+
+def mark_active(row, now=None):
+    now = now or datetime.utcnow()
+    if not row.active_at or now - row.active_at > ACTIVE_WRITE_EVERY:
+        row.active_at = now
+        return True
+    return False
+
+
+def _is_interaction():
+    """A page the person asked for, not a background poll from a page."""
+    if request.endpoint in ('auth.session_status', 'auth.session_activity'):
+        return False
+    if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+        return False
+    if request.headers.get('Accept', '').startswith('application/json'):
+        return False     # fetch() from a page: polls and button actions alike
+    return request.method != 'GET' or request.accept_mimetypes.accept_html
 
 
 def session_limit(user):
@@ -91,8 +156,9 @@ def sessions_to_replace(user):
 
 
 def _describe(s):
-    return {'id': s.id, 'ip': s.ip, 'agent': s.agent,
-            'started_at': s.started_at, 'seen_at': s.seen_at}
+    return {'id': s.id, 'ip': s.ip, 'agent': s.agent, 'device_type': s.device_type,
+            'started_at': s.started_at, 'seen_at': s.seen_at,
+            'active_at': s.active_at or s.started_at}
 
 
 def _revoke(rows, reason, detail=None):
@@ -124,9 +190,13 @@ def start_session(user):
 
     token = secrets.token_hex(32)
     now = datetime.utcnow()
-    db.session.add(UserSession(user_id=user.id, token=token, ip=_client_ip(),
-                               agent=_agent_label(), started_at=now, seen_at=now))
+    row = UserSession(user_id=user.id, token=token, ip=_client_ip(),
+                      agent=_agent_label(), device_type=device_type(),
+                      started_at=now, seen_at=now, active_at=now)
+    db.session.add(row)
+    db.session.flush()
     session['sid'] = token
+    session['sid_label'] = device_label(row)
     return replaced
 
 
@@ -145,6 +215,15 @@ def revoke_sessions(user, reason, keep_current=False):
         rows = [s for s in rows if s.token != sid]
     _revoke(rows, reason)
     return len(rows)
+
+
+def close_session(user, session_id, reason='closed'):
+    """End one of a user's sessions (e.g. the phone left signed in)."""
+    row = UserSession.query.filter_by(id=session_id, user_id=user.id).first()
+    if not row or row.revoked_at is not None:
+        return None
+    _revoke([row], reason)
+    return row
 
 
 def enforce_limit(user):
@@ -169,6 +248,9 @@ def live_session_counts():
 
 def _revoked_response(reason=None, detail=None):
     from app.services.activity_service import log_activity
+    if reason == 'idle':
+        log_activity('Signed out (inactive)', response=session.get('sid_label'),
+                     status='info')
     if reason == 'replaced':
         log_activity('Session revoked (signed in on another device)',
                      response=f'new session from {detail}', status='warning')
@@ -208,10 +290,39 @@ def register_single_session(app):
             return _revoked_response()
         if row.revoked_at is not None:
             return _revoked_response(row.revoked_reason, row.revoked_detail)
+
+        idle, warn = idle_limits()
+        if idle and now - (row.active_at or row.started_at) > timedelta(seconds=idle + warn):
+            _revoke([row], 'idle')
+            db.session.commit()
+            return _revoked_response('idle')
+
+        dirty = False
         if now - row.seen_at > SEEN_WRITE_EVERY:
             row.seen_at = now
+            dirty = True
+        if _is_interaction():
+            dirty = mark_active(row, now) or dirty
+        if dirty:
             try:
                 db.session.commit()
             except Exception:
                 db.session.rollback()
+
+        # Required steps before the rest of the app opens.
+        if request.endpoint not in GATE_OPEN_ENDPOINTS:
+            if current_user.must_change_password:
+                return _gate('auth.change_password',
+                             'Please set a new password before continuing.')
+            if current_user.needs_recovery_email():
+                return _gate('account.email', 'Administrators must add a personal '
+                             'email address for password reset links.')
         return None
+
+
+def _gate(endpoint, message):
+    if request.headers.get('Accept', '').startswith('application/json') or request.is_json:
+        return jsonify({'error': 'action_required', 'message': message,
+                        'url': url_for(endpoint)}), 403
+    flash(message, 'warning')
+    return redirect(url_for(endpoint))

@@ -1,19 +1,25 @@
 """EdgeShell end-to-end test against a Pi Fleet Emulator fleet.
 
 Drives EdgeShell exactly as a browser would (session cookie + CSRF token)
-and checks every fleet operation on every emulated node, plus the login and
-session protections. Standard library only, so it runs anywhere.
+and checks every fleet operation on every emulated node, plus the login,
+two-factor (privacyIDEA) and session protections. It enrolls an authenticator
+like a phone would, computing TOTP codes itself. Standard library only, so it
+runs anywhere.
 
     EDGESHELL_URL=http://127.0.0.1:5050 PFE_URL=http://127.0.0.1:7070 python e2e.py
 
 Exit code 0 only when every check passes. Run it through sandbox/run.sh,
 which starts the stack, spawns the fleet and tears everything down.
 """
+import base64
+import hashlib
+import hmac
 import http.cookiejar
 import json
 import os
 import re
 import secrets
+import struct
 import sys
 import time
 import urllib.error
@@ -33,6 +39,25 @@ FLEET_FILE = os.environ.get('FLEET_FILE',
                             os.path.join(os.path.dirname(os.path.abspath(__file__)), 'fleet.json'))
 
 FAILED = []
+_USED_STEPS = {}   # secret -> last TOTP time step sent (privacyIDEA rejects reuse)
+
+
+def totp(secret, step):
+    key = base64.b32decode(secret + '=' * (-len(secret) % 8), casefold=True)
+    digest = hmac.new(key, struct.pack('>Q', step), hashlib.sha1).digest()
+    o = digest[-1] & 0x0F
+    return str((struct.unpack('>I', digest[o:o + 4])[0] & 0x7FFFFFFF) % 10 ** 6).zfill(6)
+
+
+def fresh_totp(secret):
+    """A code for a time step not used yet, waiting for the next one if needed."""
+    while True:
+        now = int(time.time() // 30)
+        step = max(now, _USED_STEPS.get(secret, -1) + 1)
+        if step <= now + 1:            # verifiers accept one step of drift
+            _USED_STEPS[secret] = step
+            return totp(secret, step)
+        time.sleep(2)
 
 
 def check(name, ok, detail=''):
@@ -115,10 +140,35 @@ class Client:
                             headers={'Content-Type': f'multipart/form-data; boundary={boundary}',
                                      'Accept': 'application/json'})
 
-    def login(self, username, password):
+    def login(self, username, password, secret=None, code=None):
+        """Password, then the second factor. With no secret on file, set up an
+        authenticator (stored on self.secret / self.backup_codes). Returns the
+        final (status, location, body); a takeover prompt comes back as 200."""
         self.get('/login')
         status, headers, body = self.post_form('/login', {'username': username, 'password': password})
+        location = headers.get('Location', '')
+        if status == 302 and '/login/setup' in location:
+            _, _, page = self.get('/login/setup')
+            m = re.search(r'id="secret">([A-Z2-7 ]+)<', page)
+            if not m:
+                return 500, '', page
+            self.secret = m.group(1).replace(' ', '')
+            status, headers, body = self.post_form('/login/setup', {'code': fresh_totp(self.secret)})
+            self.backup_codes = re.findall(r'<span>([a-z2-9]{5}-[a-z2-9]{5})</span>', body)
+            self.csrf = re.search(r'name="csrf_token" value="([^"]+)"', body).group(1)
+            status, headers, body = self.post_form('/login/setup/done', {'saved': '1'})
+        elif status == 302 and '/login/verify' in location:
+            self.get('/login/verify')
+            status, headers, body = self.post_form(
+                '/login/verify', {'code': code or fresh_totp(secret or self.secret)})
+        if status == 200:
+            m = re.search(r'name="csrf_token" value="([^"]+)"', body)
+            if m:
+                self.csrf = m.group(1)
         return status, headers.get('Location', ''), body
+
+    secret = None
+    backup_codes = ()
 
     def cookies(self):
         return list(self.jar)
@@ -151,9 +201,11 @@ def main():
     check('Pi Fleet Emulator spawner', wait_for(PFE + '/api/health'))
 
     # ── Admin bootstrap ────────────────────────────────────────────────────
-    section('Admin sign-in')
+    section('Admin sign-in with mandatory 2FA (privacyIDEA)')
     admin = Client('Chrome/128.0 (Windows NT 10.0) E2E-admin')
     status, location, _ = admin.login('admin', 'admin123')
+    check('first sign-in sets up an authenticator (QR + key)', bool(admin.secret))
+    check('10 one-time backup codes issued', len(admin.backup_codes) == 10, len(admin.backup_codes))
     check('default admin must change password', status == 302 and '/change-password' in location,
           f'{status} {location}')
     admin_pw = 'E2e-' + secrets.token_urlsafe(12)
@@ -161,9 +213,14 @@ def main():
     status, _, _ = admin.post_form('/change-password', {
         'current_password': 'admin123', 'new_password': admin_pw, 'confirm_password': admin_pw})
     check('password changed', status == 302)
+    status, headers, _ = admin.request('GET', '/nodes/')
+    check('admin must add a personal email for reset links',
+          status == 302 and '/account/email' in headers.get('Location', ''), status)
+    admin.get('/account/email')
+    admin.post_form('/account/email', {'email': 'owner@example.org', 'password': admin_pw})
     if ADMIN_PASSWORD_FILE:
         with open(ADMIN_PASSWORD_FILE, 'w') as f:
-            f.write(admin_pw)
+            json.dump({'password': admin_pw, 'backup': admin.backup_codes[-1]}, f)
     status, _, _ = admin.get('/')
     check('dashboard loads', status == 200, status)
 
@@ -266,9 +323,26 @@ def main():
           f'{len(applied)}/{EXPECTED_NODES}')
 
     # ── Login and session security ─────────────────────────────────────────
+    section('Two-factor checks')
+    probe = Client('Firefox/130.0 (Linux) E2E-2fa-probe')
+    probe.get('/login')
+    probe.post_form('/login', {'username': 'admin', 'password': admin_pw})
+    probe.get('/login/verify')
+    status, _, body = probe.post_form('/login/verify', {'code': '000000'})
+    check('wrong 2FA code rejected', status == 200 and 'not valid' in body, status)
+    check('nothing signed in before the second factor', probe.request('GET', '/nodes/')[0] == 302)
+    probe.get('/login/cancel')
+    status, _, body = probe.login('admin', admin_pw, code=admin.backup_codes[0])
+    check('backup code accepted in place of the app code',
+          status == 200 and 'already signed in' in body, status)
+    probe.get('/login/cancel')
+    status, _, body = probe.login('admin', admin_pw, code=admin.backup_codes[0])
+    check('the same backup code is refused the second time', 'not valid' in body, status)
+    probe.get('/login/cancel')
+
     section('Session limits')
     other = Client('Firefox/130.0 (Linux) E2E-second-device')
-    status, _, body = other.login('admin', admin_pw)
+    status, _, body = other.login('admin', admin_pw, secret=admin.secret)
     check('admin limited to 1 device: second sign-in must confirm',
           status == 200 and 'already signed in' in body, status)
     other.get('/login/cancel')
@@ -281,19 +355,24 @@ def main():
         'password': op_pw, 'confirm_password': op_pw, 'max_sessions': '2'})
     check('operator created with 2-device limit', status == 302, status)
     devices = []
+    op_secret = None
     for i in range(2):
-        c = Client(f'Safari/17 (iPhone) E2E-op-{i}')
-        c.login('e2e-operator', op_pw)
-        c.get('/change-password')
+        c = Client(f'Mozilla/5.0 (iPhone) Mobile Safari/17 E2E-op-{i}' if i == 0
+                   else 'Mozilla/5.0 (iPad) Safari/17 E2E-op-tablet')
+        c.login('e2e-operator', op_pw, secret=op_secret)
+        op_secret = op_secret or c.secret
         if i == 0:
+            c.get('/change-password')
             new_pw = op_pw + 'x'
             c.post_form('/change-password', {'current_password': op_pw,
                                              'new_password': new_pw, 'confirm_password': new_pw})
             op_pw = new_pw
         devices.append(c)
     check('2 devices signed in at once', all(c.get('/')[0] == 200 for c in devices))
+    account = devices[1].get('/account/')[2]
+    check('My account lists both devices by type', 'Mobile #' in account and 'Tablet #' in account)
     third = Client('Edge/128 (Windows) E2E-op-2')
-    status, _, body = third.login('e2e-operator', op_pw)
+    status, _, body = third.login('e2e-operator', op_pw, secret=op_secret)
     check('3rd device must confirm signing out the oldest',
           status == 200 and 'already signed in' in body, status)
     third.post_form('/login/confirm', {})
@@ -309,17 +388,19 @@ def main():
     status, _, _ = thief.request('GET', '/api/v1/nodes', headers={'Accept': 'application/json'})
     check('copied cookie rejected once the owner logs out', status in (302, 401), status)
 
-    section('Password reset ends sessions')
+    section('Password reset ends sessions and resets 2FA')
     users_html = admin.get('/users/')[2]
-    op_id = None
-    for uid in re.findall(r'/users/(\d+)/reset-password', users_html):
-        if 'Reset password for e2e-operator' in users_html.split(f'/users/{uid}/reset-password', 1)[1][:400]:
-            op_id = uid
+    m = re.search(r'/users/(\d+)/reset-password" class="d-inline es-reset" data-user="e2e-operator"', users_html)
+    op_id = m.group(1) if m else None
     check('operator listed in User Management', op_id is not None)
     if op_id:
-        admin.post_form(f'/users/{op_id}/reset-password', {'new_password': 'Reset-' + secrets.token_hex(6)})
+        temp_pw = 'Reset-' + secrets.token_hex(6)
+        admin.post_form(f'/users/{op_id}/reset-password', {'new_password': temp_pw})
         status, _ = devices[1].post_json('/monitoring/poll', {'node_ids': []})
         check('operator signed out by admin password reset', status == 401, status)
+        again = Client('E2E-op-after-reset')
+        again.login('e2e-operator', temp_pw)
+        check('2FA must be set up again after an admin reset', bool(again.secret))
 
     section('Brute force and username discovery')
     attacker = Client('python-requests E2E-attacker')
@@ -340,11 +421,44 @@ def main():
     mon = Client('E2E-monitor')
     mon.login('e2e-monitor', mon_pw)
     mon.get('/change-password')
+    mon.post_form('/change-password', {'current_password': mon_pw, 'new_password': mon_pw + 'm',
+                                       'confirm_password': mon_pw + 'm'})
     status, _ = mon.post_json('/terminal/execute', {'node_ids': ids, 'command': 'id'})
     check('monitor cannot run commands', status == 403, status)
     status, _, _ = mon.post_multipart('/files/upload', [('node_ids', str(ids[0]))],
                                       [('files', ('x.txt', b'x'))])
     check('monitor cannot deploy files', status in (302, 403), status)
+
+    section('Sign-up approval and admin protection')
+    newbie = Client('E2E-signup')
+    newbie.get('/signup')
+    newbie_pw = 'New-' + secrets.token_urlsafe(10)
+    newbie.post_form('/signup', {'username': 'e2e-newbie', 'email': 'newbie@example.org',
+                                 'password': newbie_pw, 'confirm_password': newbie_pw})
+    status, _, body = newbie.login('e2e-newbie', newbie_pw)
+    check('sign-up waits for approval', 'waiting for an administrator' in body, status)
+    users_html = admin.get('/users/')[2]
+    m = re.search(r'/users/(\d+)/approve', users_html)
+    check('sign-up listed for approval', m is not None)
+    if m:
+        admin.post_form(f'/users/{m.group(1)}/approve', {'role': 'operator', 'max_sessions': '1'})
+        status, _, _ = newbie.login('e2e-newbie', newbie_pw)
+        check('approved user signs in after setting up 2FA', newbie.secret and newbie.get('/')[0] == 200)
+
+    adm2_pw = 'Adm-' + secrets.token_urlsafe(10)
+    admin.get('/users/add')
+    admin.post_form('/users/add', {'username': 'e2e-admin2', 'email': 'admin2@example.org',
+                                   'role': 'administrator', 'password': adm2_pw,
+                                   'confirm_password': adm2_pw, 'max_sessions': '1'})
+    adm2 = Client('E2E-admin2')
+    adm2.login('e2e-admin2', adm2_pw)
+    adm2.get('/change-password')
+    adm2.post_form('/change-password', {'current_password': adm2_pw, 'new_password': adm2_pw + 'z',
+                                        'confirm_password': adm2_pw + 'z'})
+    adm2.get('/users/')
+    adm2.post_form('/users/1/role', {'role': 'monitor'})
+    refused = 'No administrator can change another administrator' in adm2.get('/users/')[2]
+    check('a second admin cannot demote the owner', refused and admin.get('/users/')[0] == 200)
 
     print()
     if FAILED:

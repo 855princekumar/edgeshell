@@ -142,8 +142,11 @@ flowchart LR
 |---|---|
 | **Role-based access** | `monitor` (read-only), `operator` (fleet control), `administrator` (users and platform), enforced on every route |
 | **Hardened login** | Account lockout, per-IP rate limiting, forced password change, and login errors that never reveal which usernames exist |
-| **Session control** | One device at a time by default; admins can allow up to 4 per user. Password resets and "sign out everywhere" end sessions instantly |
-| **Two-factor auth** *(coming soon)* | Mandatory 2FA for every account, in a separate build currently in security testing |
+| **Two-factor auth** | Mandatory for every account: authenticator app plus one-time backup codes, checked by [privacyIDEA](https://privacyidea.org) in its own isolated container |
+| **Account recovery** | Users request a reset from an admin (which also resets their 2FA); admins use an emailed link or a backup code |
+| **Admin governance** | At most 3 admins; only the owner grants admin; no admin can change another admin; admins step down themselves with 2FA |
+| **Sign-up approval** | Anyone can request an account; an admin approves it with a role |
+| **Session control** | One device at a time by default, up to 4 per user (set by an admin). Each device is listed by type and can be signed out; idle sessions ask "still there?" and sign out |
 | **Encrypted credentials** | Node SSH passwords and API keys encrypted at rest (Fernet), with key rotation |
 | **CSRF everywhere** | Every state-changing request and AJAX call is protected |
 | **Fail-safe config** | Production refuses to start without its secret keys |
@@ -183,8 +186,10 @@ docker run -d --name edgeshell -p 5000:5000 \
   devprincekumar/edgeshell:latest
 ```
 
-Open **http://localhost:5000** and sign in as `admin` / `admin123` (you must
-change it on first login). Docker pulls the right architecture automatically.
+Open **http://localhost:5000** and sign in as `admin` / `admin123`. The first
+sign-in sets up two-factor authentication (scan the QR code with an
+authenticator app and save the backup codes), a new password and your personal
+email. Docker pulls the right architecture automatically.
 
 > [!IMPORTANT]
 > Save the `CREDENTIAL_KEY` you used. It encrypts the stored node SSH
@@ -218,7 +223,7 @@ mkdir edgeshell && cd edgeshell
 base=https://raw.githubusercontent.com/855princekumar/edgeshell/main/docker
 curl -fsSLO $base/compose.yaml && curl -fsSLO $base/Caddyfile
 curl -fsSLo .env $base/.env.example && chmod 600 .env
-for k in SECRET_KEY CREDENTIAL_KEY DB_PASSWORD DB_ROOT_PASSWORD; do
+for k in SECRET_KEY CREDENTIAL_KEY DB_PASSWORD DB_ROOT_PASSWORD MFA_ADMIN_PASSWORD MFA_PEPPER MFA_DB_PASSWORD; do
   sed -i "s|^$k=.*|$k=$(openssl rand -hex 32)|" .env; done
 nano .env                  # EDGESHELL_DOMAIN and ACME_EMAIL
 docker compose up -d
@@ -307,7 +312,7 @@ Change [`sandbox/fleet.json`](sandbox/fleet.json) to test any mix, up to 20 node
 
 ```bash
 bash sandbox/run.sh                                                 # build from source, test, tear down
-EDGESHELL_IMAGE=devprincekumar/edgeshell:1.2.0 bash sandbox/run.sh  # test a published image
+EDGESHELL_IMAGE=devprincekumar/edgeshell:1.3.0 bash sandbox/run.sh  # test a published image
 ```
 
 **Your own workflow:** run a change (command, playbook, file rollout) against
@@ -421,8 +426,8 @@ python3 run.py   # asks for sudo, then installs everything
 
 Generated passwords are printed once and saved to
 `/root/edgeshell-credentials.txt` (readable by root only). Open
-`https://fleet.yourdomain.com`, sign in as `admin / admin123`, and set a new
-password.
+`https://fleet.yourdomain.com`, sign in as `admin / admin123`, then set up
+two-factor authentication, a new password and your personal email.
 
 > [!IMPORTANT]
 > Back up `SECRET_KEY` and `CREDENTIAL_KEY` from `.env`. Node SSH passwords are
@@ -644,7 +649,7 @@ Dependabot keeps Python packages, the base image and Actions up to date.
 - [x] Per-user session limits (1 to 4 devices) with server-side revocation
 - [x] Multi-arch image (amd64 + arm64) on Docker Hub and GHCR
 - [x] Sandbox and CI end-to-end suite against Pi Fleet Emulator on amd64 and arm64
-- [ ] **Mandatory two-factor authentication for all users** (separate build, in security testing)
+- [x] Mandatory two-factor authentication for all users (privacyIDEA), account recovery, admin governance, sign-up approval
 - [ ] WireGuard as a first-class backend (status reading works today)
 - [ ] Shared rate-limit store for multi-worker deployments
 - [x] UI screenshots
@@ -662,7 +667,10 @@ Ideas and feature requests are welcome in
 | **Password guessing on one account** | After 5 wrong passwords (`MAX_FAILED_LOGINS`) the account locks for 15 minutes (`LOCKOUT_MINUTES`). While locked, even the correct password is refused |
 | **Guessing from one address** | The login form is rate limited to 20 attempts per minute per IP |
 | **Discovering usernames** | Every failure shows the same message, and unknown usernames take the same time to answer as real ones |
-| **Weak or default passwords** | Passwords are bcrypt-hashed, at least 8 characters, and the seeded `admin` must change its password on first login |
+| **Stolen or guessed password** | **Two-factor authentication is mandatory.** A 6-digit code from an authenticator app (or a one-time backup code) is required after the password; nothing is signed in before it, and failed codes count toward the lockout |
+| **Weak or default passwords** | Passwords are bcrypt-hashed, at least 10 characters, and the seeded `admin` must change its password, set up 2FA and add a personal email on first sign-in |
+| **Admin takeover** | At most 3 administrators; only the owner grants the role; no administrator can change, reset or demote another; stepping down needs password + 2FA |
+| **Forgotten password** | Users: reset by an admin, which also resets their 2FA. Admins: single-use emailed link (30 minutes, built from `PUBLIC_URL`, never the Host header) or a backup code |
 
 ### Session protection
 
@@ -670,16 +678,11 @@ Ideas and feature requests are welcome in
 |---|---|
 | **Account shared or used on too many devices** | Each account allows **1 device by default**, including admins. Only an administrator can raise it, **up to 4** (for example phone, tablet, laptop), when creating the user or later in User Management |
 | **Signing in on one more device** | The user sees which device will be signed out (device, IP, last active) and must confirm. The oldest device is signed out within seconds |
+| **A device left signed in** | Every session is listed by device type (Desktop, Mobile, Tablet) with its last real interaction; the user or an admin can sign out any one. The activity log records which device did what |
 | **Stolen session cookie** | Cookies are HttpOnly, SameSite, and Secure behind TLS. Every request is checked against a server-side session record, so logging out makes a copied cookie useless immediately |
 | **Compromised account** | A password change signs out every other session. An admin password reset, disabling the account, or **Sign out everywhere** ends all of that user's sessions at once |
 | **Forged requests** | CSRF tokens on every state-changing request, plus same-origin redirect checks |
-| **Idle sessions** | Sessions expire after 8 hours without activity (`SESSION_HOURS`) |
-
-> [!NOTE]
-> **Mandatory two-factor authentication** for every user is being built as a
-> separate release and is currently in security testing. When it ships,
-> administrators will be able to require 2FA for all accounts they create. It
-> will be announced in the [Changelog](CHANGELOG.md).
+| **Idle sessions** | After 10 minutes without a click or key press (`IDLE_MINUTES`) the page asks "Are you still there?"; no answer within 5 minutes (`IDLE_WARNING_MINUTES`) signs that session out. The server enforces it too |
 
 ### Platform
 

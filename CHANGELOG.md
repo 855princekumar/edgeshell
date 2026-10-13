@@ -2,7 +2,26 @@
 
 All notable changes are documented here. Format loosely follows Keep a Changelog.
 
-## [Unreleased]
+## [1.3.0] - 2026-10-13
+
+Accounts release: mandatory two-factor authentication, account recovery,
+administrator governance, sign-up approval and device-aware sessions.
+
+### Added
+- **Mandatory two-factor authentication** for every account: an authenticator app (TOTP, any standard app) plus 10 one-time backup codes shown once to save privately. Set up at first sign-in; nothing is signed in until the second factor passes, and failed codes count toward the account lockout.
+- In the Docker stack the codes are checked by [privacyIDEA](https://privacyidea.org) (open-source MFA server) in its own container on the internal network, with no published port and no internet route. EdgeShell stores only token serials; the secrets stay in privacyIDEA, encrypted with its own key in `./data/privacyidea`. Installs without that container (`run.py`, single container) use a built-in verifier with the secret encrypted by `CREDENTIAL_KEY` and backup codes hashed.
+- **My account** page: 2FA status, backup codes left, new backup codes, reset 2FA for a new phone, personal email, signed-in devices with "Sign out" for each.
+- **Password recovery.** Users send a reset request from the sign-in page; an administrator sets a temporary password, which also removes that user's 2FA so it is set up again. Administrators recover by an emailed reset link (any SMTP server, `SMTP_*` and `PUBLIC_URL` in `.env`) or with one of their backup codes. Reset links are single-use, expire after 30 minutes and are never built from the request's Host header.
+- **Administrator governance.** At most 3 administrators. The first administrator is the owner and the only one who can grant the administrator role. No administrator can change another administrator (role, status, password, sessions, deletion). Administrators step down themselves with their password, a 2FA code and a typed confirmation; the last administrator cannot. When the owner steps down, ownership passes to the longest-serving administrator. The owner is prompted to add more administrators.
+- Administrators must add a personal email (where reset links go) before using the platform.
+- **Self sign-up** (`SIGNUP_ENABLED`, on by default): requests wait for an administrator, who approves with a role (monitor or operator; administrator only by the owner) and a device limit, or rejects them.
+- **Device-aware sessions.** Each session records its device type (Desktop, Mobile, Tablet) and the time of the last real interaction (click, key press, page load; background polls do not count). Users and administrators see and close individual devices. The activity log records which device did what.
+- **Inactivity sign-out.** After `IDLE_MINUTES` (10) without interaction a session shows "Are you still there?" with a countdown, and signs out unless answered within `IDLE_WARNING_MINUTES` (5). The server enforces the same deadline, so a closed laptop or forgotten tab is signed out too. Tabs of the same session share the timer.
+
+### Security
+- The default `admin` / `admin123` account is created only in an empty database. Previously it was re-created whenever no user was named `admin`.
+- Passwords are at least 10 characters (temporary ones included) and cannot be reused on change.
+- Admin password resets in User Management had no password field and always failed; resets now ask for a temporary password (a random one is suggested).
 
 ### Fixed
 - `python3 run.py` stopped at the Nginx step on Ubuntu 26.04 LTS: its `nginx.conf` sets `server_tokens` itself and nginx rejects the duplicate. The installer now switches that line to `off` (backup kept) instead. Verified on Ubuntu 26.04.1 (Python 3.14, MariaDB 11.8, PHP 8.5): fresh install, a re-run over a half-finished install, a repeat run and a reboot.

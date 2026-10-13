@@ -46,8 +46,55 @@ and API callers get a JSON 403; browser navigation gets a flash and redirect.
 - Every failure shows the same message and takes the same time, so the form
   does not reveal which usernames exist.
 - `next` redirects are restricted to same-origin paths (open-redirect guard).
-- Mandatory two-factor authentication for all users is coming in a separate
-  build (in security testing).
+
+## Two-factor authentication (mandatory)
+
+- Every account signs in with a password **and** a 6-digit code from an
+  authenticator app (Google Authenticator, Microsoft Authenticator, Authy,
+  1Password, Bitwarden, ...). Nothing is signed in before the code passes.
+- First sign-in shows a QR code to scan, then 10 one-time **backup codes** to
+  save privately. A backup code works once in place of the app code.
+- Failed codes count toward the same lockout as failed passwords.
+- Who checks the codes: in the Docker stack, [privacyIDEA](https://privacyidea.org)
+  in its own container on the internal network (no published port, no internet
+  route); EdgeShell keeps only the token serials. Without that container
+  (`run.py`, single container) a built-in verifier is used: the secret is
+  encrypted with `CREDENTIAL_KEY`, backup codes are stored hashed. Set with
+  `MFA_PROVIDER`; if privacyIDEA is down, sign-in fails closed.
+- My account: backup codes left, new backup codes, and "Reset 2FA" for a new
+  phone (password plus a current code required).
+
+## Password recovery
+
+| Who | How |
+|---|---|
+| Monitor or operator | "Forgot password?" sends a request to the administrators. An admin sets a temporary password; this also removes the user's 2FA, so it is set up again at the next sign-in, and ends every session. |
+| Administrator | A reset link to the personal email on the account (needs `SMTP_*` and `PUBLIC_URL`), single use, valid 30 minutes. Or "use a backup code": username + one backup code + new password. 2FA stays on either way. |
+
+Administrators must add a personal email before using the platform. Nobody,
+including other administrators, can reset an administrator's password.
+
+## Administrators
+
+- At most **3** administrators.
+- The first administrator is the **owner**: the only account that can grant
+  the administrator role (when adding a user, approving a sign-up or changing
+  a role). The owner is prompted to add up to 2 more so the platform is never
+  locked out.
+- **No administrator can change another administrator**: role, enable or
+  disable, password, sessions, deletion. Each administrator manages only
+  their own account.
+- An administrator leaves the role from My account ("Step down"), confirming
+  with password, a 2FA code and typing `STEP DOWN`. The last administrator
+  cannot step down. When the owner steps down, ownership passes to the
+  longest-serving remaining administrator.
+
+## Sign-up and approval
+
+With `SIGNUP_ENABLED=true` (default) anyone can request an account. It stays
+inactive until an administrator approves it in User Management, choosing the
+role (monitor or operator; administrator only by the owner) and how many
+devices it may use, or rejects it.
 
 ## Sessions
 
@@ -55,9 +102,16 @@ and API callers get a JSON 403; browser navigation gets a flash and redirect.
   token in its signed cookie, and every request is checked against the row.
 - Each account allows `max_sessions` devices at once: 1 by default (admins
   included), up to 4, set only by an administrator.
-- Logout, password change, admin password reset, disabling a user, and
+- Logout, password change, password reset, 2FA reset, disabling a user, and
   "Sign out everywhere" revoke sessions server-side immediately.
-- Idle sessions expire after `SESSION_HOURS` (default 8).
+- Each session records its device type (Desktop, Mobile, Tablet), IP and the
+  last real interaction (click, key press, page load; background polls do not
+  count). My account and User Management list them, and any single device can
+  be signed out. The activity log records the device for every action.
+- After `IDLE_MINUTES` (default 10) without interaction the page asks "Are you
+  still there?" and signs that session out unless answered within
+  `IDLE_WARNING_MINUTES` (default 5). The server enforces the same deadline.
+- Sessions also end after `SESSION_HOURS` (default 8) without any request.
 - Cookies are HttpOnly, SameSite=Lax, and Secure in production.
 - CSRF tokens protect every state-changing request; the token rides the session.
 

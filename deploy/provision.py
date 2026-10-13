@@ -57,7 +57,7 @@ MANAGED_ENV_ORDER = [
     'FLASK_ENV', 'FLASK_DEBUG', 'SECRET_KEY', 'CREDENTIAL_KEY', 'DATABASE_URL',
     'HOST', 'PORT', 'GUNICORN_THREADS', 'BEHIND_PROXY', 'SESSION_COOKIE_SECURE',
     'SESSION_HOURS', 'SINGLE_SESSION', 'MAX_FAILED_LOGINS', 'LOCKOUT_MINUTES',
-    'DISPLAY_TZ', 'EDGESHELL_DOMAIN', 'LETSENCRYPT_EMAIL', 'PMA_PORT',
+    'DISPLAY_TZ', 'EDGESHELL_DOMAIN', 'LETSENCRYPT_EMAIL', 'PMA_PORT', 'PUBLIC_URL',
     'VPN_BACKEND', 'WIREGUARD_INTERFACE', 'TAILSCALE_AUTH_KEY',
 ]
 PLACEHOLDERS = ('CHANGE_ME', 'your-key-here', 'your_api_key_here')
@@ -359,6 +359,9 @@ def write_env(cfg, sec, cookie_secure=False):
         'DISPLAY_TZ': cfg['tz'], 'EDGESHELL_DOMAIN': cfg['domain'],
         'LETSENCRYPT_EMAIL': cfg['email'], 'PMA_PORT': cfg['pma_port'],
     })
+    # Reset links for administrators point here (never at the request's Host).
+    if cfg['domain'] and cookie_secure:
+        vals['PUBLIC_URL'] = f"https://{cfg['domain']}"
     vals.setdefault('SINGLE_SESSION', 'true')
     vals.setdefault('GUNICORN_THREADS', '16')
     vals.setdefault('VPN_BACKEND', 'tailscale')

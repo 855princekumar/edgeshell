@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+{% block title %}Account email{% endblock %}
+{% block content %}
+<div class="page-header">
+    <div>
+        <div class="page-title">{{ 'Add your personal email' if required else 'Account email' }}</div>
+        <div class="page-subtitle">
+          {% if current_user.is_admin() %}Password reset links for administrators are sent only to this address.{% else %}Used to identify your account.{% endif %}
+        </div>
+    </div>
+</div>
+<div class="card" style="max-width:520px">
+    <div class="card-body">
+        {% if required %}
+        <div class="alert alert-warning small">Administrators must keep a personal email they can read. If you forget your
+            password, a reset link goes there; your backup codes are the other way back in.</div>
+        {% endif %}
+        {% if current_user.is_admin() and not mail_ready %}
+        <div class="alert alert-info small">Outgoing email is not configured on this server yet (SMTP_* and PUBLIC_URL in
+            .env), so reset links cannot be sent until it is. Keep your backup codes safe.</div>
+        {% endif %}
+        <form method="POST">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <div class="form-group">
+                <label class="form-label">Email</label>
+                <input type="email" name="email" class="form-control" required
+                       value="{{ '' if required else current_user.email }}" autocomplete="email">
+            </div>
+            <div class="form-group">
+                <label class="form-label">Current password</label>
+                <input type="password" name="password" class="form-control" required autocomplete="current-password">
+            </div>
+            <button type="submit" class="btn btn-primary">Save</button>
+        </form>
+    </div>
+</div>
+{% endblock %}

@@ -1,0 +1,15 @@
+{% extends "auth/_layout.html" %}
+{% block title %}Backup codes{% endblock %}
+{% block heading %}
+    <h2>Your backup codes</h2>
+    <p class="subtitle">Two-factor authentication is on for {{ username }}</p>
+{% endblock %}
+{% block body %}
+    {% include "auth/_backup_codes.html" %}
+    <form method="POST" action="{{ url_for('auth.mfa_setup_done') }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <label class="check"><input type="checkbox" name="saved" value="1" required>
+            I have saved my backup codes somewhere safe.</label>
+        <button type="submit" class="btn">Continue</button>
+    </form>
+{% endblock %}

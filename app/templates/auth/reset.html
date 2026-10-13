@@ -1,0 +1,23 @@
+{% extends "auth/_layout.html" %}
+{% block title %}Set a new password{% endblock %}
+{% block heading %}
+    <h2>Set a new password</h2>
+    <p class="subtitle">{{ username }}</p>
+{% endblock %}
+{% block body %}
+    <form method="POST" data-busy="Saving...">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <div class="field">
+            <label for="new_password">New password</label>
+            <input type="password" id="new_password" name="new_password" required minlength="10" autocomplete="new-password">
+            <div class="hint">At least 10 characters.</div>
+        </div>
+        <div class="field">
+            <label for="confirm_password">Confirm new password</label>
+            <input type="password" id="confirm_password" name="confirm_password" required autocomplete="new-password">
+        </div>
+        <button type="submit" class="btn">Save password</button>
+    </form>
+    <p class="hint" style="margin-top:12px">Two-factor authentication stays on: sign in with the new
+       password and a code from your app (or a backup code). Every other session is signed out.</p>
+{% endblock %}

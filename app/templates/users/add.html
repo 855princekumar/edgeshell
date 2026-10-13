@@ -44,10 +44,13 @@
             <label class="form-label fw-medium">Role <span class="text-danger">*</span></label>
             <select class="form-select" name="role" required>
               <option value="">Select role…</option>
-              <option value="administrator">Administrator - Full access</option>
+              {% if 'administrator' in grantable %}<option value="administrator">Administrator - Full access</option>{% endif %}
               <option value="operator">Operator - Execute commands, upload files</option>
               <option value="monitor">Monitor - Read-only access</option>
             </select>
+            {% if 'administrator' not in grantable %}
+            <div class="form-text">{% if current_user.is_owner %}The limit of 3 administrators is reached.{% else %}Only the owner (the first administrator) can grant the administrator role.{% endif %}</div>
+            {% endif %}
           </div>
 
           <div class="mb-3">
@@ -66,7 +69,7 @@
             <label class="form-label fw-medium">Password <span class="text-danger">*</span></label>
             <div class="input-group">
               <input type="password" class="form-control" name="password" id="password" required
-                minlength="8" placeholder="Minimum 8 characters">
+                minlength="10" placeholder="Temporary password, minimum 10 characters">
               <button class="btn btn-outline-secondary" type="button" onclick="togglePwd('password', this)">
                 <i class="bi bi-eye"></i>
               </button>
@@ -84,13 +87,9 @@
             </div>
           </div>
 
-          <div class="mb-4">
-            <div class="form-check">
-              <input class="form-check-input" type="checkbox" name="must_change_password" id="mustChange" checked>
-              <label class="form-check-label" for="mustChange">
-                Require password change on first login
-              </label>
-            </div>
+          <div class="alert alert-info small mb-4">
+            At first sign-in the user replaces this temporary password and sets up two-factor
+            authentication (an authenticator app plus backup codes).
           </div>
 
           <!-- Role info cards -->

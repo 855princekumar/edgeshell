@@ -9,6 +9,10 @@ def app():
     app = create_app('testing')
     with app.app_context():
         db.create_all()
+        admin = User.query.filter_by(username='admin').first()
+        admin.email = 'admin@fleet.test'      # admins must have a real email
+        admin.must_change_password = False
+        db.session.commit()
     yield app
 
 
@@ -21,6 +25,7 @@ def _login(app, client, role='administrator'):
     with app.app_context():
         u = User.query.filter_by(username='admin').first()
         u.must_change_password = False
+        u.email = 'admin@fleet.test'
         u.role = role
         db.session.commit()
     return client.post('/login', data={'username': 'admin', 'password': 'admin123'},

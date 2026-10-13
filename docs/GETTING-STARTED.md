@@ -11,7 +11,9 @@ python run.py --dev        # on Windows and macOS --dev is the default
 
 `run.py` bootstraps a venv, installs dependencies, generates a `.env` with
 random keys if missing, and starts the dev server. Default login is
-`admin / admin123`, and you must change it on first login.
+`admin / admin123`. The first sign-in sets up two-factor authentication (any
+authenticator app; save the backup codes), a new password and a personal
+email.
 
 Development uses a dev-only fallback for secrets so you can start instantly.
 Production does not (see below).
