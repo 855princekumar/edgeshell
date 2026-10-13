@@ -477,15 +477,29 @@ def test_large_import_stays_out_of_the_cookie_and_checks_in_background(app, clie
     with app.app_context():
         from app.models.node import Node
         assert Node.query.filter(Node.name.like('bulk-node-%')).count() == 400
+    # Watch the job registry directly: the in-memory test database shares one
+    # connection between threads, so a request here could roll back a write
+    # the job is making. (MariaDB and file SQLite have separate connections.)
+    from app.services import jobs as jobs_service
+    with app.app_context():
+        uid = User.query.filter_by(username='admin').first().id
     for _ in range(300):
-        jobs = client.get('/nodes/jobs').get_json()['jobs']
+        jobs = jobs_service.for_user(uid)
         if jobs and jobs[0]['state'] != 'running':
             break
         time.sleep(0.2)
     job = jobs[0]
+    assert client.get('/nodes/jobs').get_json()['jobs'][0]['id'] == job['id']
     assert job['state'] == 'done' and job['total'] == 400 and job['ok'] == 40, job
-    with app.app_context():
-        from app.models.node import Node
-        assert Node.query.filter_by(status='online').count() == 40
+    online = 0
+    for _ in range(50):                 # the last write can land just after 'done'
+        with app.app_context():
+            from app.models.node import Node
+            db.session.expire_all()
+            online = Node.query.filter_by(status='online').count()
+        if online == 40:
+            break
+        time.sleep(0.1)
+    assert online == 40
     r = client.post('/nodes/import/commit', data={})          # token is single use
     assert r.status_code == 302 and '/nodes/import' in r.headers['Location']
