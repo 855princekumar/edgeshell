@@ -189,7 +189,7 @@ def test_issue_isolation_and_thread(app, client):
     # alice reports
     ca = app.test_client()
     ca.post('/login', data={'username': 'alice', 'password': 'pw'}, follow_redirects=True)
-    ca.post('/issues/new', data={'subject': 'S1', 'body': 'B1',
+    ca.post('/issues/new', data={'subject': 'alice-only-ticket-subject', 'body': 'B1',
             'category': 'access', 'priority': 'high'}, follow_redirects=True)
     with app.app_context():
         iid = Issue.query.first().id
@@ -198,10 +198,10 @@ def test_issue_isolation_and_thread(app, client):
     cb = app.test_client()
     cb.post('/login', data={'username': 'bob', 'password': 'pw'}, follow_redirects=True)
     assert cb.get(f'/issues/{iid}').status_code == 403
-    assert b'S1' not in cb.get('/issues/').data
+    assert b'alice-only-ticket-subject' not in cb.get('/issues/').data
     # admin sees all and can reply + set status
     _login(app, client)  # admin
-    assert b'S1' in client.get('/issues/').data
+    assert b'alice-only-ticket-subject' in client.get('/issues/').data
     client.post(f'/issues/{iid}/reply', data={'body': 'on it'}, follow_redirects=True)
     client.post(f'/issues/{iid}/status', data={'status': 'resolved'}, follow_redirects=True)
     with app.app_context():
