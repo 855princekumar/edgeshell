@@ -141,3 +141,13 @@ Measured on a 122-node Tailscale fleet:
 The remaining time per node is network latency to the device, which a
 faster language would not remove; the collector is Python by design. Run
 `tools/perf.py` to time every page, API and action against a simulated fleet.
+
+
+## Device categories
+
+Categories group nodes by `node_type` for the dashboard (stored as JSON in
+the `settings` table, key `dashboard_categories`, edited by administrators on
+the dashboard). Each has a name, node types, an icon and an SLA target. The
+fleet summary returns the categories with every node's type; the dashboard
+computes each card's counts, availability and averages in the browser, so
+switching categories is instant.

@@ -2,6 +2,17 @@
 
 All notable changes are documented here. Format loosely follows Keep a Changelog.
 
+## [1.5.0] - 2026-10-13
+
+### Added
+- **Device categories on the dashboard.** A row of cards, one per category (default: Data Loggers, Floc Detectors, Bio Health Trackers, matched by node type, plus an automatic "Other"), each with online/total, availability against its own SLA target, average CPU and RAM, and login-failed and offline counts. Clicking a card scopes the SLA bar, stat cards, charts and node grid to that category.
+- Administrators edit categories on the dashboard: add, rename, remove and reorder them, choose which node types belong to each, an icon and an SLA target. The editor lists the node types found in the fleet with their counts.
+- Node Fleet has a Category filter (also `/nodes/?category=<name>`), and the status filter has "login failed".
+
+### Fixed
+- The last-seen time could overflow node cards on Node Fleet; the badge row now wraps.
+- Node tags separated by semicolons (`datalogger;ts-online;tailscale`) showed as one tag; commas and semicolons both separate tags now.
+
 ## [1.4.0] - 2026-10-13
 
 Fast fleet monitoring. Measured on a live 122-node Tailscale fleet, one full

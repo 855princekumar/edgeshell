@@ -1,6 +1,7 @@
 from flask import Blueprint, render_template, jsonify, request
-from flask_login import login_required
+from flask_login import current_user, login_required
 from app.utils.timeutil import iso_utc
+from app.services import categories as _categories
 from app.models.node import Node
 from app.models import SystemMetrics
 
@@ -66,6 +67,24 @@ def poll():
                     'collector': COLLECTOR.status()})
 
 
+@monitoring_bp.route('/categories', methods=['GET', 'POST'])
+@login_required
+def categories():
+    """Dashboard categories. Anyone signed in reads them; administrators edit."""
+    if request.method == 'POST':
+        if not current_user.is_admin():
+            return jsonify({'success': False, 'message': 'Administrator access required.'}), 403
+        cats, error = _categories.clean((request.get_json(silent=True) or {}).get('categories'))
+        if error:
+            return jsonify({'success': False, 'message': error}), 400
+        _categories.save(cats)
+        from app.services.activity_service import log_activity
+        log_activity('Dashboard categories updated', response=', '.join(c['name'] for c in cats))
+        return jsonify({'success': True, 'categories': cats})
+    return jsonify({'categories': _categories.load(), 'types': _categories.known_types(),
+                    'icons': list(_categories.ICONS)})
+
+
 @monitoring_bp.route('/collector')
 @login_required
 def collector_status():
@@ -102,7 +121,7 @@ def fleet_summary():
         la = n.load_average.split() if n.load_average else []
         nodes_out.append({
             'id': n.id, 'name': n.name, 'ip': n.ip_address,
-            'status': n.status, 'last_error': n.last_error,
+            'status': n.status, 'last_error': n.last_error, 'node_type': n.node_type,
             'cpu': n.cpu_percent, 'mem': n.ram_percent, 'username': n.username,
             'disk': n.disk_percent, 'temp': n.temperature,
             'load_1':  float(la[0]) if len(la) > 0 else None,
@@ -117,6 +136,7 @@ def fleet_summary():
     return jsonify({
         'total': total, 'online': len(online), 'offline': len(offline),
         'auth_failed': auth_failed,
+        'categories': _categories.load(),
         'sla_percent': sla,
         'avg_cpu':    avg(cpus),
         'avg_mem':    avg(mems),
