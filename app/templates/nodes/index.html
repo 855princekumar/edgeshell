@@ -170,6 +170,11 @@
                     onclick="window.open('http://{{ node.ip_address }}:{{ node.nodered_port or NODERED_DEFAULT_PORT }}','_blank')">
                 <i class="bi bi-diagram-3"></i>
             </button>
+            <button class="btn btn-outline btn-xs es-shell-btn" title="Open an SSH terminal on this node"
+                    data-id="{{ node.id }}" data-name="{{ node.name }}"
+                    {% if node.status != 'online' %}disabled{% endif %}>
+                <i class="bi bi-terminal"></i>
+            </button>
             <button class="btn btn-outline btn-xs orgui-btn" id="orgui-{{ node.id }}"
                     title="Open Remote Desktop (OpenRemoteGUI)"
                     data-ip="{{ node.ip_address }}" data-port="{{ node.orgui_port or ORGUI_DEFAULT_PORT }}"
@@ -334,6 +339,8 @@ function testNode(id) {
 }
 
 document.addEventListener('click', function (e) {
+    const s = e.target.closest('.es-shell-btn');
+    if (s) { e.preventDefault(); esOpenShell(s.dataset.id, s.dataset.name); return; }
     const b = e.target.closest('.es-fix-login');
     if (!b) return;
     e.preventDefault();
@@ -382,7 +389,16 @@ function openRemoteGui(id) {
                 btn.dataset.installed = 'yes';
                 window.open(d.url, '_blank');
             } else {
-                if (confirm(`OpenRemoteGUI is not installed on ${ip}.\nInstall it now? (git clone + sudo ./install.sh)`)) {
+                const why = d.signal === 'STOPPED' ? 'is installed but not running'
+                          : d.signal === 'PORT_OTHER' ? 'is not installed (another program uses its port)'
+                          : 'is not installed';
+                if (confirm(`OpenRemoteGUI ${why} on ${ip}.\n\nInstall it now? EdgeShell will:\n`
+                    + `  1. check the OS, disk space, network, desktop session and sudo (and stop if anything is unsafe)\n`
+                    + `  2. git clone https://github.com/855princekumar/OpenRemoteGUI.git\n`
+                    + `  3. cd OpenRemoteGUI and run sudo ./install.sh\n`
+                    + `  4. check that its page answers on port ${btn.dataset.port}\n\n`
+                    + `Note: the installer turns off Raspberry Pi Connect's own VNC on that node, as OpenRemoteGUI replaces it.\n`
+                    + `You can follow every step live.`)) {
                     installOrgui(id, ip);
                 }
             }
@@ -390,19 +406,11 @@ function openRemoteGui(id) {
 }
 
 function installOrgui(id, ip) {
-    showToast('Installing OpenRemoteGUI on ' + ip + '. This can take a few minutes...', 'info');
-    const btn = document.getElementById('orgui-' + id);
-    btn.disabled = true;
     fetch(`/nodes/${id}/orgui/install`, { method: 'POST' })
         .then(r => r.json()).then(d => {
-            btn.disabled = false;
-            if (d.success) {
-                btn.dataset.installed = 'yes';
-                showToast('OpenRemoteGUI installed on ' + ip, 'success');
-            } else {
-                showToast('Install failed on ' + ip + '. See activity log.', 'danger');
-            }
-        }).catch(e => { btn.disabled = false; showToast('Install error: ' + e.message, 'danger'); });
+            if (d.job_id) esJobWindow(d.job_id);
+            else showToast(d.message || 'Could not start the install.', 'danger');
+        }).catch(e => showToast('Install error: ' + e.message, 'danger'));
 }
 
 function scanFleetOrgui() {
@@ -424,15 +432,15 @@ function scanFleetOrgui() {
 }
 
 function installFleetOrgui() {
-    if (!confirm('Install OpenRemoteGUI on all nodes that do not have it?\nUnreachable nodes are handled by Ansible and logged.')) return;
-    const b = document.getElementById('orguiInstallAllBtn');
-    b.disabled = true; showToast('Fleet install running via Ansible...', 'info');
+    if (!confirm('Install OpenRemoteGUI on every online node that does not run it yet?\n\n'
+        + 'Nodes are installed one at a time. Each one is safety-checked first and skipped if it is not suitable '
+        + '(no desktop, low disk, no network, sudo not allowed). The run stops at the first failed install, '
+        + 'so a problem cannot spread across the fleet. You can follow every step live.')) return;
     fetch('/nodes/orgui/install-all', { method: 'POST' })
         .then(r => r.json()).then(d => {
-            b.disabled = false;
-            showToast(`Fleet install: ${d.ok} succeeded, ${d.failed} failed. Details in activity log.`,
-                d.failed ? 'warning' : 'success');
-        }).catch(e => { b.disabled = false; showToast('Install failed: ' + e.message, 'danger'); });
+            if (d.job_id) esJobWindow(d.job_id);
+            else showToast(d.message || 'Nothing to install.', 'info');
+        }).catch(e => showToast('Install failed: ' + e.message, 'danger'));
 }
 
 // ── Fleet Setup: capability scan + install ───────────────────────────────────

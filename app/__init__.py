@@ -6,6 +6,7 @@ from flask_bcrypt import Bcrypt
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 from flask_wtf import CSRFProtect
+from flask_sock import Sock
 from sqlalchemy import event
 from sqlalchemy.engine import Engine
 from config import config
@@ -15,6 +16,7 @@ login_manager = LoginManager()
 bcrypt = Bcrypt()
 limiter = Limiter(key_func=get_remote_address)
 csrf = CSRFProtect()
+sock = Sock()
 
 
 @event.listens_for(Engine, "connect")
@@ -39,6 +41,9 @@ def create_app(config_name='default'):
     bcrypt.init_app(app)
     limiter.init_app(app)
     csrf.init_app(app)
+    # WebSocket terminals: ping every 25 s so proxies keep idle shells open.
+    app.config.setdefault('SOCK_SERVER_OPTIONS', {'ping_interval': 25})
+    sock.init_app(app)
 
     # Rate-limit storage from config (Redis recommended behind >1 worker).
     app.config.setdefault('RATELIMIT_STORAGE_URI',
@@ -69,6 +74,7 @@ def create_app(config_name='default'):
     from app.routes.health import health_bp
     from app.routes.issues import issues_bp
     from app.routes.account import account_bp
+    from app.routes import shell as _shell  # noqa: F401  (registers the WebSocket route)
 
     for bp in (auth_bp, dashboard_bp, nodes_bp, terminal_bp, files_bp, logs_bp,
                settings_bp, users_bp, api_bp, tailscale_bp, monitoring_bp,

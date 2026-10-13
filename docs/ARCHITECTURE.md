@@ -151,3 +151,17 @@ the dashboard). Each has a name, node types, an icon and an SLA target. The
 fleet summary returns the categories with every node's type; the dashboard
 computes each card's counts, availability and averages in the browser, so
 switching categories is instant.
+
+
+## Terminals
+
+| | Fleet terminal (Terminal page) | Node terminal (card button) |
+|---|---|---|
+| Transport | HTTP POST, results streamed as NDJSON, one line per node | WebSocket `/ws/nodes/<id>/shell` (flask-sock) |
+| On the node | one command per node over the collector's pooled SSH connection | an interactive shell on a real PTY (`invoke_shell`) |
+| Targets | online nodes only; the rest are listed as skipped | one node |
+| sudo | the stored password is fed on stdin (not on the command line, no echo) | prompts like any SSH session |
+
+Each WebSocket terminal holds one Gunicorn thread (`GUNICORN_THREADS`, 32 by
+default). nginx forwards `/ws/` with the Upgrade headers; the app pings every
+25 s so idle shells survive proxies.

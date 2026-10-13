@@ -2,6 +2,19 @@
 
 All notable changes are documented here. Format loosely follows Keep a Changelog.
 
+## [1.6.0] - 2026-10-14
+
+### Added
+- **Interactive SSH terminal per node.** A terminal button on each Node Fleet card opens a real shell on that node in a window (xterm.js over a WebSocket, a real PTY on the node): colors, `top`, `nano`, tab completion, Ctrl+C, and sudo prompting like any SSH session. Closing the window ends the SSH session on the node; it also closes after 30 minutes without input or as soon as the EdgeShell sign-in ends. Operators and administrators only, same-origin only, at most 4 per user and 12 per server, and every open and close is in the activity log.
+- **Guided OpenRemoteGUI install** with live steps and log, one node at a time: safety checks (OS, free disk, network to GitHub, desktop session, sudo) that skip unsuitable nodes without touching them, then `git clone`, then `cd OpenRemoteGUI && sudo ./install.sh`, then a check that the page answers. "Install on Fleet" stops at the first failed install so a problem cannot spread across production nodes. The confirmation says what the installer changes (it turns off Raspberry Pi Connect's own VNC).
+- A live job window (steps per node and the log) for long jobs, opened from the progress card's Details link.
+
+### Changed
+- **Fleet terminal runs in parallel and streams.** Offline and login-failed nodes are skipped up front (and listed), the rest run 16 at a time over the collector's open SSH connections, and each node's output appears as soon as it finishes instead of after the slowest one.
+
+### Fixed
+- `sudo` hung until the timeout on nodes that ask for a password (the OpenRemoteGUI install showed no progress for 10 minutes and the terminal's sudo switch did the same): there was no way to answer the prompt. sudo now gets the node's stored password on stdin, never on a command line and never echoed.
+
 ## [1.5.1] - 2026-10-13
 
 ### Fixed

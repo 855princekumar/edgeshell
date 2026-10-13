@@ -5,7 +5,7 @@
 #
 #   sandbox/run.sh              build EdgeShell from this checkout, test, tear down
 #   sandbox/run.sh --keep       same, but leave everything running afterwards
-#   EDGESHELL_IMAGE=devprincekumar/edgeshell:1.5.1 sandbox/run.sh   test a published image
+#   EDGESHELL_IMAGE=devprincekumar/edgeshell:1.6.0 sandbox/run.sh   test a published image
 #
 # Needs Docker with Compose v2, curl and Python 3. Exit code 0 = all passed.
 set -euo pipefail
@@ -91,6 +91,49 @@ with app.app_context():
     assert not bad, f'Ansible failed on {sorted(bad)}'
     print(f'  Ansible: {len(res)}/{len(nodes)} hosts OK')
 PY
+
+step "Interactive terminal over WebSocket (real PTY on an emulated node)"
+docker cp "$PW_FILE" "$ES:/tmp/e2e-admin.json"
+docker exec -i "$ES" python - <<'PY'
+import base64, hashlib, hmac, json, re, struct, time
+import requests, simple_websocket
+saved = json.load(open('/tmp/e2e-admin.json'))
+B = 'http://127.0.0.1:5000'
+def totp(secret, step):
+    key = base64.b32decode(secret + '=' * (-len(secret) % 8), casefold=True)
+    d = hmac.new(key, struct.pack('>Q', step), hashlib.sha1).digest()
+    o = d[-1] & 15
+    return str((struct.unpack('>I', d[o:o + 4])[0] & 0x7fffffff) % 1000000).zfill(6)
+s = requests.Session()
+csrf = lambda html: re.search(r'name="csrf_token" value="([^"]+)"', html).group(1)
+r = s.get(B + '/login')
+r = s.post(B + '/login', data={'username': 'admin', 'password': saved['password'], 'csrf_token': csrf(r.text)},
+           headers={'Referer': B + '/login'}, allow_redirects=False)
+assert '/login/verify' in r.headers.get('Location', ''), r.status_code
+page = s.get(B + '/login/verify').text
+step = int(time.time() // 30) + 1                 # a step the suite has not used
+r = s.post(B + '/login/verify', data={'code': totp(saved['secret'], step), 'csrf_token': csrf(page)},
+           headers={'Referer': B + '/login/verify'}, allow_redirects=False)
+if r.status_code == 200 and 'already signed in' in r.text:
+    r = s.post(B + '/login/confirm', data={'csrf_token': csrf(r.text)}, headers={'Referer': B + '/login'},
+               allow_redirects=False)
+assert r.status_code == 302, f'sign-in failed: {r.status_code}'
+node = s.get(B + '/api/v1/nodes', headers={'Accept': 'application/json'}).json()[0]
+cookie = '; '.join(f'{k}={v}' for k, v in s.cookies.items())
+ws = simple_websocket.Client(f'ws://127.0.0.1:5000/ws/nodes/{node["id"]}/shell?cols=120&rows=30',
+                             headers={'Cookie': cookie, 'Origin': B})
+out, deadline = '', time.time() + 20
+while time.time() < deadline and '$' not in out:
+    out += ws.receive(timeout=1) or ''
+ws.send(json.dumps({'t': 'i', 'd': 'echo WS_OK_$((6*7)); tty\r'}))
+deadline = time.time() + 15
+while time.time() < deadline and ('WS_OK_42' not in out or '/dev/pts' not in out):
+    out += ws.receive(timeout=1) or ''
+assert 'WS_OK_42' in out and '/dev/pts' in out, out[-300:]
+ws.close()
+print(f"  PASS  interactive SSH terminal on {node['name']}: command ran on a real PTY, session closed")
+PY
+docker exec -u 0 "$ES" rm -f /tmp/e2e-admin.json
 
 step "Image hardening"
 uid="$(docker exec "$ES" id -u)"; [ "$uid" = 10001 ] && echo "  PASS  runs as non-root uid 10001" || { echo "  FAIL  uid=$uid"; exit 1; }

@@ -173,6 +173,26 @@ class Client:
     def cookies(self):
         return list(self.jar)
 
+    def fleet_exec(self, node_ids, command):
+        """Terminal execute streams one JSON line per node as each finishes.
+        Returns (status, {node_name: result}, skipped)."""
+        status, _, body = self.request('POST', '/terminal/execute',
+                                       json_body={'node_ids': node_ids, 'command': command})
+        results, skipped = {}, []
+        for line in body.splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                msg = json.loads(line)
+            except ValueError:
+                continue
+            if msg.get('type') == 'result':
+                results[msg['node']] = msg
+            elif msg.get('type') == 'start':
+                skipped = msg.get('skipped', [])
+        return status, results, skipped
+
 
 def wait_for(url, seconds=180):
     deadline = time.time() + seconds
@@ -223,7 +243,8 @@ def main():
     check('password changed', status == 302)
     if ADMIN_PASSWORD_FILE:
         with open(ADMIN_PASSWORD_FILE, 'w') as f:
-            json.dump({'password': admin_pw, 'backup': admin.backup_codes[-1]}, f)
+            json.dump({'password': admin_pw, 'backup': admin.backup_codes[-1],
+                       'secret': admin.secret}, f)
     status, _, _ = admin.get('/')
     check('dashboard loads', status == 200, status)
 
@@ -284,9 +305,7 @@ def main():
 
     # ── Remote command on every node (OS and arch spread) ─────────────────
     section('Fleet-wide command')
-    status, r = admin.post_json('/terminal/execute', {
-        'node_ids': ids, 'command': '. /etc/os-release; echo "$VERSION_CODENAME $(uname -m)"'})
-    results = r.get('results', {})
+    status, results, _ = admin.fleet_exec(ids, '. /etc/os-release; echo "$VERSION_CODENAME $(uname -m)"')
     for name, n in by_name.items():
         want_debian, want_arch = expected_for(n)
         out = (results.get(name) or {}).get('stdout', '')
@@ -332,9 +351,8 @@ def main():
         '/files/upload', [('node_ids', str(i)) for i in ids] + [('target_path', '/tmp/')],
         [('files', ('edgeshell-ota.sh', script))])
     check('update package pushed', status == 200 and json.loads(body).get('success'), body[:200])
-    status, r = admin.post_json('/terminal/execute', {
-        'node_ids': ids, 'command': 'sudo sh /tmp/edgeshell-ota.sh && cat /opt/edgeshell-ota/VERSION'})
-    applied = [k for k, v in r.get('results', {}).items() if version in (v.get('stdout') or '')]
+    status, ota, _ = admin.fleet_exec(ids, 'sudo sh /tmp/edgeshell-ota.sh && cat /opt/edgeshell-ota/VERSION')
+    applied = [k for k, v in ota.items() if version in (v.get('stdout') or '')]
     check('update applied with sudo on every node', len(applied) == EXPECTED_NODES,
           f'{len(applied)}/{EXPECTED_NODES}')
 

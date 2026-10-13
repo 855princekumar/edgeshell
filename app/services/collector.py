@@ -23,6 +23,7 @@ Results are written by the collector thread only (workers do SSH, never the
 database), so it is safe on SQLite and MariaDB alike.
 """
 import hashlib
+import re
 import logging
 import socket
 import threading
@@ -388,3 +389,72 @@ COLLECTOR = Collector()
 def start(app):
     if app.config.get('COLLECTOR_ENABLED', True) and not app.config.get('TESTING'):
         COLLECTOR.start(app)
+
+
+# ---------------------------------------------------------------- commands
+
+# sudo inside this one command reads the password from a shell variable that
+# came in on stdin: never on a command line, never echoed, no reliance on
+# sudo's credential cache (which does not carry across pipes).
+_SUDO_PRIME = ("IFS= read -r __es_pw; "
+               "sudo() { printf '%s' \"$__es_pw\" | command sudo -S -p '' \"$@\"; }; ")
+
+
+def run_command(target, command, timeout=60, sudo_password=None, on_output=None,
+                get_pty=True, stop=None):
+    """Run a command on the node over its pooled connection (no new login).
+
+    sudo: when the command uses sudo and a password is known, every sudo in it
+    gets the password on stdin (sent over the SSH channel, never on a command
+    line, so it is not visible in the node's process list) and the command
+    runs without a terminal, so nothing is echoed.
+    on_output(text) receives output as it arrives; stop() may end it early.
+    Returns {'stdout', 'exit_code', 'success', 'duration', 'error', 'kind'}."""
+    started = time.time()
+    uses_sudo = sudo_password and re.search(r'(^|[\s;&|(])sudo\s', command)
+    if uses_sudo:
+        command = _SUDO_PRIME + command
+        get_pty = False
+    out = []
+    try:
+        with POOL.lock(target['id']):
+            client, _ = POOL.get(target)
+        chan = client.get_transport().open_session(timeout=CONNECT_TIMEOUT_S)
+        if get_pty:
+            chan.get_pty(term='xterm', width=200, height=50)
+        chan.set_combine_stderr(True)
+        chan.exec_command(command)
+        if uses_sudo:
+            chan.sendall((sudo_password + '\n').encode())
+        deadline = started + timeout
+        while True:
+            if chan.recv_ready():
+                text = chan.recv(65536).decode('utf-8', 'replace')
+                out.append(text)
+                if on_output:
+                    on_output(text)
+                continue
+            if chan.exit_status_ready() and not chan.recv_ready():
+                break
+            if time.time() > deadline or (stop and stop()):
+                chan.close()
+                msg = 'Stopped' if stop and stop() else f'Timed out after {timeout}s'
+                return {'stdout': ''.join(out), 'exit_code': -1, 'success': False,
+                        'duration': round(time.time() - started, 2), 'error': msg, 'kind': 'timeout'}
+            time.sleep(0.05)
+        code = chan.recv_exit_status()
+        chan.close()
+        return {'stdout': ''.join(out), 'exit_code': code, 'success': code == 0,
+                'duration': round(time.time() - started, 2), 'error': None, 'kind': None}
+    except Exception as e:
+        POOL.drop(target['id'])
+        kind, message = classify(e)
+        return {'stdout': ''.join(out), 'exit_code': -1, 'success': False,
+                'duration': round(time.time() - started, 2), 'error': message, 'kind': kind}
+
+
+def target_for(node):
+    """Connection details for run_command / collect_one (decrypts the password)."""
+    return {'id': node.id, 'ip': node.ip_address, 'port': node.ssh_port or 22,
+            'username': node.username, 'password': node.password,
+            'orgui_port': node.orgui_port or 6080, 'name': node.name}

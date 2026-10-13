@@ -339,22 +339,49 @@ async function sendCmd() {
   cmdHistory.unshift(raw); if (cmdHistory.length > 100) cmdHistory.pop();
   histIdx = -1; inp.value = '';
 
-  const names = getSelectedNames();
-  const ts    = new Date().toLocaleTimeString();
-
-  // Show command line
-  append(`<div class="t-cmd">❯ ${esc(cmd)}<span class="t-meta">  [${ts}] → ${esc(names.join(', '))}</span></div>`);
-
-  // Spinner placeholders per node
-  const spinIds = {};
-  nodeIds.forEach((id, i) => {
-    const sid = `spin_${id}_${Date.now()}`;
-    spinIds[id] = sid;
-    append(`<div id="${sid}" class="t-node">▸ ${esc(names[i])}  <span class="t-spin">executing…</span></div>`);
-  });
+  const ts = new Date().toLocaleTimeString();
+  append(`<div class="t-cmd">❯ ${esc(cmd)}<span class="t-meta">  [${ts}]</span></div>`);
 
   const btn = document.getElementById('sendBtn');
   btn.disabled = true; btn.textContent = 'Running…';
+  const spin = {};
+  let finished = 0, total = 0;
+
+  function renderResult(r) {
+    const icon = r.success ? '✔' : '✘';
+    const cls  = r.success ? 't-ok' : 't-fail';
+    const dur  = r.duration != null ? ` · ${r.duration}s` : '';
+    const cwd  = r.cwd ? ` · ${esc(r.cwd)}` : '';
+    const stdout = (r.stdout || '').trimEnd();
+    const stderr = (r.stderr || '').trimEnd();
+    let html = `<div><div class="t-node">▸ ${esc(r.node)}</div>`;
+    if (stdout) html += `<div class="t-out">${esc(stdout)}</div>`;
+    if (stderr) html += `<div class="t-err">${esc(stderr)}</div>`;
+    if (!stdout && !stderr) html += `<div class="t-meta">(no output)</div>`;
+    html += `<div class="t-meta ${cls}">${icon}  exit ${r.exit_code ?? '?'}${dur}${cwd}</div></div>`;
+    const el = document.getElementById(spin[r.id]);
+    if (el) el.outerHTML = html; else append(html);
+    finished++;
+    btn.textContent = `Running… ${finished}/${total}`;
+  }
+
+  function handle(msg) {
+    if (msg.type === 'start') {
+      total = msg.running.length;
+      if (msg.skipped.length) {
+        append(`<div class="t-fail">⚠  Skipped ${msg.skipped.length} node(s) that are not reachable right now: `
+          + msg.skipped.map(s => `${esc(s.name)} (${esc(s.reason)})`).join(', ') + '</div>');
+        showToast(`Skipped ${msg.skipped.length} offline or login-failed node(s); running on ${total}.`, 'info');
+      }
+      if (!total) append('<div class="t-fail">✘  None of the selected nodes is online.</div>');
+      msg.running.forEach(n => {
+        spin[n.id] = `spin_${n.id}_${Date.now()}`;
+        append(`<div id="${spin[n.id]}" class="t-node">▸ ${esc(n.name)}  <span class="t-spin">executing…</span></div>`);
+      });
+    } else if (msg.type === 'result') {
+      renderResult(msg);
+    }
+  }
 
   try {
     const resp = await fetch('/terminal/execute', {
@@ -362,45 +389,32 @@ async function sendCmd() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ command: cmd, node_ids: nodeIds })
     });
-    const data = await resp.json();
-
-    if (data.error) {
-      nodeIds.forEach(id => { const el=document.getElementById(spinIds[id]); if(el) el.remove(); });
-      append(`<div class="t-fail">✘  ${esc(data.error)}</div>`);
+    if (!resp.ok) {
+      let msg = `HTTP ${resp.status}`;
+      try { const j = await resp.json(); msg = j.error || j.message || msg; } catch (e) {}
+      append(`<div class="t-fail">✘  ${esc(msg)}</div>`);
     } else {
-      // Match results back to node ids
-      const idToName = {};
-      nodeIds.forEach((id,i) => idToName[id] = names[i]);
-
-      Object.entries(data.results).forEach(([nodeName, r]) => {
-        // Find the node id that matches this name
-        const id = nodeIds.find((_,i) => names[i] === nodeName);
-        const sid = spinIds[id];
-        const el  = sid ? document.getElementById(sid) : null;
-
-        const icon  = r.success ? '✔' : '✘';
-        const cls   = r.success ? 't-ok' : 't-fail';
-        const dur   = r.duration != null ? ` · ${r.duration}s` : '';
-        const cwd   = r.cwd ? ` · ${esc(r.cwd)}` : '';
-        const stdout = (r.stdout||'').trimEnd();
-        const stderr = (r.stderr||'').trimEnd();
-
-        let html = `<div>
-          <div class="t-node">▸ ${esc(nodeName)}</div>`;
-        if (stdout) html += `<div class="t-out">${esc(stdout)}</div>`;
-        if (stderr) html += `<div class="t-err">${esc(stderr)}</div>`;
-        if (!stdout && !stderr) html += `<div class="t-meta">(no output)</div>`;
-        html += `<div class="t-meta ${cls}">${icon}  exit ${r.exit_code ?? '?'}${dur}${cwd}</div>
-          </div>`;
-
-        if (el) el.outerHTML = html;
-        else    append(html);
-      });
+      // One JSON line per node, as each one finishes.
+      const reader = resp.body.getReader();
+      const dec = new TextDecoder();
+      let buf = '';
+      for (;;) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buf += dec.decode(value, { stream: true });
+        let nl;
+        while ((nl = buf.indexOf('\n')) >= 0) {
+          const line = buf.slice(0, nl).trim();
+          buf = buf.slice(nl + 1);
+          if (line) handle(JSON.parse(line));
+          out.scrollTop = out.scrollHeight;
+        }
+      }
     }
-  } catch(err) {
-    nodeIds.forEach(id => { const el=document.getElementById(spinIds[id]); if(el) el.remove(); });
+  } catch (err) {
     append(`<div class="t-fail">✘  Network error: ${esc(err.message)}</div>`);
   }
+  Object.values(spin).forEach(id => { const el = document.getElementById(id); if (el) el.remove(); });
 
   append('<div class="t-sep">──────────────────────────────────────────────────────</div>');
   btn.disabled = false; btn.textContent = 'Send';
