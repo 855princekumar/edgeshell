@@ -9,7 +9,7 @@
 #   curl -fsSLo nginx/entrypoint.sh $base/nginx/entrypoint.sh
 #   curl -fsSLo nginx/certbot.sh $base/nginx/certbot.sh
 #   curl -fsSLo .env $base/.env.example && chmod 600 .env
-#   for k in SECRET_KEY CREDENTIAL_KEY DB_PASSWORD DB_ROOT_PASSWORD MFA_ADMIN_PASSWORD MFA_PEPPER MFA_DB_PASSWORD; do
+#   for k in SECRET_KEY CREDENTIAL_KEY DB_PASSWORD DB_ROOT_PASSWORD MFA_ADMIN_PASSWORD MFA_PEPPER MFA_DB_PASSWORD MFA_SECRET_KEY; do
 #     sed -i "s|^$k=.*|$k=$(openssl rand -hex 32)|" .env; done
 #   docker compose up -d
 #
@@ -25,7 +25,7 @@ name: edgeshell
 services:
   # One-shot: the app runs as uid 10001, so give it the host data folders.
   init-data:
-    image: devprincekumar/edgeshell:${EDGESHELL_TAG:-1.3.1}
+    image: devprincekumar/edgeshell:${EDGESHELL_TAG:-1.3.2}
     user: "0:0"
     entrypoint: ["sh", "-c", "mkdir -p /data/instance /data/uploads /data/privacyidea && chown -R 10001:10001 /data/instance /data/uploads && chown -R 65532:65532 /data/privacyidea && chmod 700 /data/privacyidea"]
     volumes:
@@ -94,6 +94,9 @@ services:
       PI_ADMIN: edgeshell
       PI_ADMIN_PASS: ${MFA_ADMIN_PASSWORD:?set MFA_ADMIN_PASSWORD in .env}
       PI_PEPPER: ${MFA_PEPPER:?set MFA_PEPPER in .env}
+      # Signs privacyIDEA's own session tokens. Without it privacyIDEA falls
+      # back to a random 24-character key (and logs a key-length warning).
+      SECRET_KEY: ${MFA_SECRET_KEY:-}
       PI_LOGLEVEL: WARNING
       DB_API: mysql+pymysql
       DB_HOST: mariadb
@@ -114,7 +117,7 @@ services:
       - backend
 
   edgeshell:
-    image: devprincekumar/edgeshell:${EDGESHELL_TAG:-1.3.1}
+    image: devprincekumar/edgeshell:${EDGESHELL_TAG:-1.3.2}
     restart: unless-stopped
     depends_on:
       init-data:

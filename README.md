@@ -226,7 +226,7 @@ curl -fsSLO $base/compose.yaml
 curl -fsSLo nginx/entrypoint.sh $base/nginx/entrypoint.sh
 curl -fsSLo nginx/certbot.sh $base/nginx/certbot.sh
 curl -fsSLo .env $base/.env.example && chmod 600 .env
-for k in SECRET_KEY CREDENTIAL_KEY DB_PASSWORD DB_ROOT_PASSWORD MFA_ADMIN_PASSWORD MFA_PEPPER MFA_DB_PASSWORD; do
+for k in SECRET_KEY CREDENTIAL_KEY DB_PASSWORD DB_ROOT_PASSWORD MFA_ADMIN_PASSWORD MFA_PEPPER MFA_DB_PASSWORD MFA_SECRET_KEY; do
   sed -i "s|^$k=.*|$k=$(openssl rand -hex 32)|" .env; done
 docker compose up -d       # http://<server IP>; add a domain later for HTTPS
 ```
@@ -314,7 +314,7 @@ Change [`sandbox/fleet.json`](sandbox/fleet.json) to test any mix, up to 20 node
 
 ```bash
 bash sandbox/run.sh                                                 # build from source, test, tear down
-EDGESHELL_IMAGE=devprincekumar/edgeshell:1.3.0 bash sandbox/run.sh  # test a published image
+EDGESHELL_IMAGE=devprincekumar/edgeshell:1.3.2 bash sandbox/run.sh  # test a published image
 ```
 
 **Your own workflow:** run a change (command, playbook, file rollout) against

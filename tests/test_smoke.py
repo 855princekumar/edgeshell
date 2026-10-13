@@ -386,3 +386,11 @@ def test_fleet_summary_reports_average_temperature(app, client):
         db.session.commit()
     d = client.get('/monitoring/fleet-summary').get_json()
     assert d['avg_temp'] == 50.0
+
+
+def test_favicon_served(client):
+    r = client.get('/favicon.ico')
+    assert r.status_code == 301 and r.headers['Location'].endswith('/static/favicon.svg')
+    r = client.get('/static/favicon.svg')
+    assert r.status_code == 200 and b'<svg' in r.data
+    assert b'favicon.svg' in client.get('/login').data

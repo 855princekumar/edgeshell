@@ -1,10 +1,16 @@
 """Unauthenticated health endpoint for the watchdog and load balancers."""
 import os
-from flask import Blueprint, jsonify
+from flask import Blueprint, jsonify, redirect, url_for
 from sqlalchemy import text
 from app import db
 
 health_bp = Blueprint('health', __name__)
+
+
+@health_bp.route('/favicon.ico')
+def favicon():
+    """Browsers ask for /favicon.ico on their own; answer with the SVG icon."""
+    return redirect(url_for('static', filename='favicon.svg'), code=301)
 
 
 @health_bp.route('/healthz')
