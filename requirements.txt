@@ -11,6 +11,7 @@ SQLAlchemy>=2.0.36
 WTForms>=3.1.2
 Werkzeug>=3.0.3
 PyJWT>=2.8.0
+flask-sock>=0.7.0             # WebSocket for the interactive node terminal
 segno>=1.6.1                  # QR codes for 2FA enrollment (pure Python)
 
 # Fleet / SSH / Ansible

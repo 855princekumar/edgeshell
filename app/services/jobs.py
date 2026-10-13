@@ -18,9 +18,82 @@ _JOBS = {}
 _LOCK = threading.Lock()
 
 
-def _public(job):
-    return {k: job[k] for k in ('id', 'kind', 'title', 'total', 'done', 'ok', 'failed',
-                                'state', 'message', 'started', 'finished')}
+LOG_KEEP = 400
+
+
+def _public(job, full=False):
+    out = {k: job[k] for k in ('id', 'kind', 'title', 'total', 'done', 'ok', 'failed',
+                               'state', 'message', 'started', 'finished')}
+    out['items'] = [dict(i) for i in job.get('items', [])]
+    log = job.get('log', [])
+    out['log'] = list(log if full else log[-12:])
+    return out
+
+
+def get(job_id, user_id):
+    with _LOCK:
+        job = _JOBS.get(job_id)
+        return _public(job, full=True) if job and job['owner'] == user_id else None
+
+
+class Task:
+    """Handle given to run_task's function: report steps, items and log lines."""
+
+    def __init__(self, job):
+        self.job = job
+
+    def log(self, text):
+        with _LOCK:
+            for line in str(text).replace(chr(13), '').splitlines() or ['']:
+                self.job['log'].append(line[:500])
+            del self.job['log'][:-LOG_KEEP]
+
+    def item(self, key, **fields):
+        """Create or update one item (a node): name, state, step, message."""
+        with _LOCK:
+            for it in self.job['items']:
+                if it['key'] == key:
+                    it.update(fields)
+                    return
+            self.job['items'].append(dict(key=key, **fields))
+
+    def finish_item(self, ok):
+        with _LOCK:
+            self.job['done'] += 1
+            self.job['ok' if ok else 'failed'] += 1
+
+
+def run_task(kind, title, owner_id, total, fn, summary=None):
+    """Run fn(task) in a background thread inside an app context. fn reports
+    progress through the Task handle. Returns the job id."""
+    app = current_app._get_current_object()
+    jid = uuid.uuid4().hex[:12]
+    job = {'id': jid, 'kind': kind, 'title': title, 'owner': owner_id, 'total': total,
+           'done': 0, 'ok': 0, 'failed': 0, 'state': 'running', 'message': '',
+           'started': time.time(), 'finished': None, 'items': [], 'log': []}
+    with _LOCK:
+        _JOBS[jid] = job
+
+    def runner():
+        task = Task(job)
+        try:
+            with app.app_context():
+                try:
+                    fn(task)
+                finally:
+                    from app import db
+                    db.session.remove()
+            job['state'] = 'done'
+            job['message'] = summary(job) if summary else ''
+        except Exception as e:
+            app.logger.exception('%s failed', kind)
+            job['state'] = 'error'
+            job['message'] = str(e)[:300]
+        finally:
+            job['finished'] = time.time()
+
+    threading.Thread(target=runner, name=f'job-{kind}-{jid}', daemon=True).start()
+    return jid
 
 
 def _prune():

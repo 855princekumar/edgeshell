@@ -734,8 +734,16 @@
                 const note = document.createElement('div');
                 note.style.cssText = 'margin-top:6px;color:#6b7280;display:flex;justify-content:space-between;gap:8px';
                 const txt = document.createElement('span');
-                txt.textContent = running ? (j.ok + ' reachable, ' + j.failed + ' not reachable so far. You can keep working.') : (j.message || '');
+                txt.textContent = running ? (j.kind === 'orgui-install'
+                        ? (j.ok + ' installed, ' + j.failed + ' not so far. You can keep working.')
+                        : (j.ok + ' reachable, ' + j.failed + ' not reachable so far. You can keep working.'))
+                    : (j.message || '');
                 note.appendChild(txt);
+                const det = document.createElement('a');
+                det.href = '#'; det.textContent = 'Details';
+                det.style.cssText = 'flex-shrink:0;color:#1a56db;font-weight:600;text-decoration:none';
+                det.addEventListener('click', function(e){ e.preventDefault(); esJobWindow(j.id); });
+                note.appendChild(det);
                 if (!running) {
                     const a = document.createElement('a');
                     a.href = '#'; a.textContent = 'Refresh';
@@ -817,6 +825,138 @@
                     msg.style.color = '#dc2626'; msg.textContent = 'The server did not answer. Try again.';
                 });
             });
+        }
+
+        // Interactive SSH terminal for one node (xterm.js over a WebSocket).
+        // Closing the window closes the SSH session on the node.
+        const ES_XTERM = 'https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0';
+        const ES_FIT = 'https://cdn.jsdelivr.net/npm/@xterm/addon-fit@0.10.0/lib/addon-fit.js';
+        function esLoadXterm() {
+            if (window.Terminal && window.FitAddon) return Promise.resolve();
+            function js(src) {
+                return new Promise(function(ok, fail){
+                    const s = document.createElement('script'); s.src = src; s.onload = ok; s.onerror = fail;
+                    document.head.appendChild(s);
+                });
+            }
+            if (!document.getElementById('esXtermCss')) {
+                const l = document.createElement('link');
+                l.id = 'esXtermCss'; l.rel = 'stylesheet'; l.href = ES_XTERM + '/css/xterm.css';
+                document.head.appendChild(l);
+            }
+            return js(ES_XTERM + '/lib/xterm.js').then(function(){ return js(ES_FIT); });
+        }
+        let esShellCount = 0;
+        function esOpenShell(id, name) {
+            const n = ++esShellCount;
+            const o = document.createElement('div');
+            o.className = 'es-shell';
+            o.style.cssText = 'position:fixed;inset:0;z-index:99994;background:rgba(15,23,42,.6);display:flex;align-items:center;justify-content:center;padding:16px';
+            const box = document.createElement('div');
+            box.style.cssText = 'background:#0d1117;border-radius:12px;width:min(1100px,100%);height:min(680px,calc(100vh - 32px));display:flex;flex-direction:column;box-shadow:0 12px 48px rgba(0,0,0,.45);overflow:hidden';
+            box.innerHTML = '<div style="display:flex;align-items:center;gap:10px;padding:8px 12px;background:#161b22;border-bottom:1px solid #30363d;color:#c9d1d9;font-size:13px">'
+              + '<span class="es-dot" style="width:9px;height:9px;border-radius:50%;background:#d29922;flex-shrink:0"></span>'
+              + '<span class="es-name" style="font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0"></span>'
+              + '<span class="es-state" style="color:#8b949e;flex-shrink:0">connecting...</span>'
+              + '<span style="flex:1"></span>'
+              + '<button type="button" class="es-close" title="Close the terminal and end the SSH session" style="background:transparent;border:1px solid #30363d;color:#c9d1d9;border-radius:6px;padding:3px 10px">Close</button></div>'
+              + '<div class="es-term" style="flex:1;min-height:0;padding:6px 8px"></div>';
+            o.appendChild(box);
+            document.body.appendChild(o);
+            box.querySelector('.es-name').textContent = name;
+            const dot = box.querySelector('.es-dot'), state = box.querySelector('.es-state');
+            let ws = null, term = null, fit = null, onResize = null;
+            function setState(text, color) { state.textContent = text; dot.style.background = color; }
+            function close() {
+                if (ws && ws.readyState <= 1) ws.close();
+                if (onResize) window.removeEventListener('resize', onResize);
+                if (term) term.dispose();
+                o.remove();
+            }
+            box.querySelector('.es-close').addEventListener('click', close);
+            esLoadXterm().then(function(){
+                term = new Terminal({cursorBlink: true, fontSize: 13, scrollback: 5000,
+                                     fontFamily: "'JetBrains Mono', Menlo, Consolas, monospace",
+                                     theme: {background: '#0d1117', foreground: '#c9d1d9'}});
+                fit = new FitAddon.FitAddon();
+                term.loadAddon(fit);
+                term.open(box.querySelector('.es-term'));
+                fit.fit();
+                const proto = location.protocol === 'https:' ? 'wss://' : 'ws://';
+                ws = new WebSocket(proto + location.host + '/ws/nodes/' + encodeURIComponent(id)
+                                   + '/shell?cols=' + term.cols + '&rows=' + term.rows);
+                ws.onopen = function(){ setState('connected', '#3fb950'); term.focus(); };
+                ws.onmessage = function(e){ term.write(e.data); };
+                ws.onclose = function(){ setState('closed', '#8b949e'); };
+                ws.onerror = function(){ setState('connection error', '#f85149'); };
+                term.onData(function(d){ if (ws.readyState === 1) ws.send(JSON.stringify({t: 'i', d: d})); });
+                term.onResize(function(sz){ if (ws.readyState === 1) ws.send(JSON.stringify({t: 'r', c: sz.cols, r: sz.rows})); });
+                onResize = function(){ try { fit.fit(); } catch (e) {} };
+                window.addEventListener('resize', onResize);
+            }).catch(function(){
+                setState('could not load the terminal (no internet access to the CDN?)', '#f85149');
+            });
+        }
+        window.addEventListener('beforeunload', function(){
+            document.querySelectorAll('.es-shell .es-close').forEach(function(b){ b.click(); });
+        });
+
+        // Live window for a background job: steps per node and the log.
+        // Closing the window does not stop the job.
+        function esJobWindow(jobId) {
+            const old = document.getElementById('esJobWin'); if (old) old.remove();
+            const o = document.createElement('div');
+            o.id = 'esJobWin';
+            o.style.cssText = 'position:fixed;inset:0;z-index:99995;background:rgba(15,23,42,.55);display:flex;align-items:center;justify-content:center;padding:16px';
+            const box = document.createElement('div');
+            box.style.cssText = 'background:#fff;border-radius:14px;width:100%;max-width:820px;max-height:calc(100vh - 32px);display:flex;flex-direction:column;box-shadow:0 10px 40px rgba(0,0,0,.25);font-size:13px;color:#374151';
+            box.innerHTML = '<div style="padding:16px 20px;border-bottom:1px solid #e5e7eb;display:flex;gap:12px;align-items:center">'
+              + '<div style="flex:1;min-width:0"><div id="esJobTitle" style="font-size:16px;font-weight:700;color:#111827;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"></div>'
+              + '<div id="esJobSub" style="color:#6b7280"></div></div>'
+              + '<button type="button" id="esJobClose" style="padding:7px 14px;border-radius:8px;border:1.5px solid #d1d5db;background:#fff;font-weight:600">Close</button></div>'
+              + '<div id="esJobItems" style="padding:10px 20px;max-height:34vh;overflow:auto;border-bottom:1px solid #e5e7eb"></div>'
+              + '<pre id="esJobLog" style="margin:0;padding:12px 20px;background:#0d1117;color:#c9d1d9;font-size:12px;line-height:1.5;flex:1;min-height:180px;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;border-radius:0 0 14px 14px"></pre>';
+            o.appendChild(box);
+            document.body.appendChild(o);
+            let timer = null;
+            const close = function(){ clearTimeout(timer); o.remove(); };
+            document.getElementById('esJobClose').addEventListener('click', close);
+            const colors = {done: '#059669', running: '#1a56db', waiting: '#6b7280', skipped: '#d97706', failed: '#dc2626'};
+            function draw(j) {
+                document.getElementById('esJobTitle').textContent = j.title;
+                document.getElementById('esJobSub').textContent = j.state === 'running'
+                    ? 'Running: ' + j.done + ' of ' + j.total + ' finished. You can close this window; the job keeps going.'
+                    : (j.state === 'done' ? 'Finished: ' : 'Stopped: ') + (j.message || '');
+                const items = document.getElementById('esJobItems');
+                items.innerHTML = '';
+                (j.items || []).forEach(function(it){
+                    const row = document.createElement('div');
+                    row.style.cssText = 'display:flex;gap:10px;align-items:baseline;padding:4px 0;min-width:0';
+                    const badge = document.createElement('span');
+                    badge.style.cssText = 'flex-shrink:0;font-weight:700;font-size:11px;text-transform:uppercase;color:' + (colors[it.state] || '#6b7280');
+                    badge.textContent = it.state;
+                    const name = document.createElement('span');
+                    name.style.cssText = 'flex-shrink:0;font-weight:600;color:#111827';
+                    name.textContent = it.name;
+                    const msg = document.createElement('span');
+                    msg.style.cssText = 'color:#6b7280;min-width:0;overflow-wrap:anywhere';
+                    msg.textContent = [it.step, it.message].filter(Boolean).join(': ');
+                    row.appendChild(badge); row.appendChild(name); row.appendChild(msg);
+                    items.appendChild(row);
+                });
+                const log = document.getElementById('esJobLog');
+                const atEnd = log.scrollTop + log.clientHeight >= log.scrollHeight - 30;
+                log.textContent = (j.log || []).join('\n');
+                if (atEnd) log.scrollTop = log.scrollHeight;
+            }
+            function poll() {
+                if (!document.getElementById('esJobWin')) return;
+                fetch('/nodes/jobs/' + encodeURIComponent(jobId), {credentials: 'same-origin'})
+                    .then(function(r){ return r.json(); })
+                    .then(function(j){ if (j && j.id) { draw(j); if (j.state === 'running') timer = setTimeout(poll, 1500); } })
+                    .catch(function(){ timer = setTimeout(poll, 3000); });
+            }
+            poll();
         }
 
         function apiPost(url, data, formData = false) {

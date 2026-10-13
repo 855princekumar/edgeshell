@@ -45,6 +45,22 @@ location ~ /\.(?!well-known) {
     return 404;
 }
 
+# Interactive node terminals (WebSocket). The app pings every 25 s.
+location ^~ /ws/ {
+    proxy_pass http://edgeshell;
+    proxy_http_version 1.1;
+    proxy_set_header Upgrade $http_upgrade;
+    proxy_set_header Connection "upgrade";
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $remote_addr;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_set_header X-Forwarded-Host $host;
+    proxy_read_timeout 3600s;
+    proxy_send_timeout 3600s;
+    proxy_buffering off;
+}
+
 location ~ ^/(login|recover|forgot|signup|reset/) {
     limit_req zone=edgeshell_auth burst=20 nodelay;
     proxy_pass http://edgeshell;

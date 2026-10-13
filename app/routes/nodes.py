@@ -5,9 +5,8 @@ from flask import (Blueprint, render_template, request, redirect, url_for,
 from flask_login import login_required, current_user
 from app import db
 from app.models.node import Node
-from app.models import Deployment
 from app.services.activity_service import log_activity
-from app.services import orgui_service, ansible_service
+from app.services import orgui_service
 from app.services.rbac import operator_required, admin_required
 
 nodes_bp = Blueprint('nodes', __name__, url_prefix='/nodes')
@@ -244,11 +243,25 @@ def orgui_status(node_id):
 @login_required
 @operator_required
 def orgui_install(node_id):
+    """Guided install on one node as a background job (steps + live log)."""
     node = Node.query.get_or_404(node_id)
-    ok, output = orgui_service.install(node)
-    log_activity('OpenRemoteGUI install', node=node.name,
-                 response=output[-500:], status='success' if ok else 'failure')
-    return jsonify({'success': ok, 'output': output[-4000:]})
+    jid = _jobs.run_task('orgui-install', f'Installing OpenRemoteGUI on {node.name}',
+                         current_user.id, 1,
+                         lambda task: orgui_service.install_task(task, [node.id]),
+                         summary=_orgui_summary)
+    log_activity('OpenRemoteGUI install started', node=node.name, status='info')
+    return jsonify({'success': True, 'job_id': jid})
+
+
+def _orgui_summary(job):
+    parts = [f"{job['ok']} installed"]
+    skipped = sum(1 for i in job['items'] if i.get('state') == 'skipped')
+    failed = job['failed'] - skipped
+    if failed:
+        parts.append(f'{failed} failed')
+    if skipped:
+        parts.append(f'{skipped} skipped (see the reasons)')
+    return ', '.join(parts)
 
 
 @nodes_bp.route('/orgui/scan', methods=['POST'])
@@ -267,30 +280,22 @@ def orgui_scan():
 @login_required
 @operator_required
 def orgui_install_all():
-    nodes = Node.query.filter_by(is_active=True).all()
-    missing = [n for n in nodes if n.orgui_installed is not True]
-    targets = missing or nodes
-    playbook = current_app.config['ANSIBLE_PLAYBOOK_DIR'] + '/orgui_install.yml'
-    results = ansible_service.run_playbook(targets, playbook)
-
-    ok = sum(1 for r in results.values() if r['success'])
-    fail = len(results) - ok
-    dep = Deployment(user=current_user.username, filename='orgui_install.yml',
-                     target_path='fleet', nodes=json.dumps([n.name for n in targets]),
-                     status='success' if fail == 0 else 'partial',
-                     success_count=ok, failure_count=fail,
-                     result=json.dumps(results))
-    db.session.add(dep)
-    for n in targets:
-        r = results.get(n.name, {})
-        if r.get('success'):
-            n.orgui_installed = True
-            n.orgui_checked_at = datetime.utcnow()
-    db.session.commit()
-    log_activity('OpenRemoteGUI fleet install',
-                 response=f'{ok} ok, {fail} failed', status='success' if fail == 0 else 'warning')
-    return jsonify({'success': fail == 0, 'ok': ok, 'failed': fail,
-                    'results': results})
+    """Install on every online node that does not run it yet, one node at a
+    time, stopping at the first failure so a problem cannot spread across a
+    production fleet. Nodes that fail the safety checks are skipped."""
+    nodes = (Node.query.filter(Node.is_active.is_(True), Node.is_deleted.isnot(True),
+                               Node.status == 'online')
+             .filter(db.or_(Node.orgui_installed.is_(None), Node.orgui_installed.is_(False)))
+             .order_by(Node.name).all())
+    if not nodes:
+        return jsonify({'success': False, 'message': 'Every online node already runs OpenRemoteGUI.'})
+    ids = [n.id for n in nodes]
+    jid = _jobs.run_task('orgui-install', f'Installing OpenRemoteGUI on {len(ids)} node(s)',
+                         current_user.id, len(ids),
+                         lambda task: orgui_service.install_task(task, ids, stop_on_failure=True),
+                         summary=_orgui_summary)
+    log_activity('OpenRemoteGUI fleet install started', response=f'{len(ids)} node(s)', status='info')
+    return jsonify({'success': True, 'job_id': jid, 'count': len(ids)})
 
 
 # ── Bulk import (CSV / TXT / JSON) ───────────────────────────────────────────
@@ -438,6 +443,15 @@ def bulk_import_commit():
 def jobs_status():
     """Background jobs of the signed-in user (polled by every page)."""
     return jsonify({'jobs': _jobs.for_user(current_user.id)})
+
+
+@nodes_bp.route('/jobs/<job_id>')
+@login_required
+def job_detail(job_id):
+    job = _jobs.get(job_id, current_user.id)
+    if not job:
+        return jsonify({'error': 'not found'}), 404
+    return jsonify(job)
 
 
 # ── Fleet capabilities (Docker / Node-RED / OpenRemoteGUI) ───────────────────

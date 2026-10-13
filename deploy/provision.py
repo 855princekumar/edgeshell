@@ -363,7 +363,7 @@ def write_env(cfg, sec, cookie_secure=False):
     if cfg['domain'] and cookie_secure:
         vals['PUBLIC_URL'] = f"https://{cfg['domain']}"
     vals.setdefault('SINGLE_SESSION', 'true')
-    vals.setdefault('GUNICORN_THREADS', '16')
+    vals.setdefault('GUNICORN_THREADS', '32')   # interactive terminals hold a thread each
     vals.setdefault('VPN_BACKEND', 'tailscale')
     for k in [k for k, v in vals.items() if not usable(v) and k not in ('EDGESHELL_DOMAIN', 'LETSENCRYPT_EMAIL')]:
         vals.pop(k)
