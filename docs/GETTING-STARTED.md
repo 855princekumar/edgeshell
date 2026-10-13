@@ -43,7 +43,7 @@ Step-by-step instructions, backups and upgrades are on the
 
 ## 4. Production host (EC2 or bare metal) with `run.py`
 
-On Ubuntu 22.04/24.04 or Debian 12, with Tailscale already up, a DNS record
+On Ubuntu 22.04, 24.04 or 26.04, or Debian 12, with Tailscale already up, a DNS record
 pointing at the host and ports 80 and 443 open:
 
 ```bash

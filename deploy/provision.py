@@ -185,7 +185,7 @@ def preflight():
     if os.geteuid() != 0:
         die('Run as root: sudo python3 run.py')
     if not shutil.which('apt-get'):
-        die('Only Debian/Ubuntu (apt) are supported. Recommended: Ubuntu 24.04 LTS on EC2.')
+        die('Only Debian/Ubuntu (apt) are supported. Recommended: Ubuntu 24.04 or 26.04 LTS on EC2.')
     if not NO_SYSTEMD and not os.path.isdir('/run/systemd/system'):
         die('systemd is not running on this host.')
     if sys.version_info < (3, 10):

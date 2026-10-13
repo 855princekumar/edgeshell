@@ -6,7 +6,7 @@ One command installs and updates: `python3 run.py`. It is idempotent; re-run it 
 
 | Item | Requirement |
 |---|---|
-| OS | Ubuntu 24.04 / 22.04 LTS or Debian 12 (apt + systemd) |
+| OS | Ubuntu 26.04 / 24.04 / 22.04 LTS or Debian 12 (apt + systemd) |
 | Size | t3.small or larger (2 GB RAM recommended for MariaDB + app) |
 | Tailscale | Already installed and logged in on the instance. EdgeShell only reads it, never reconfigures it |
 | Elastic IP | Associate one with the instance |
