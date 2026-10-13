@@ -2,7 +2,16 @@
 
 All notable changes are documented here. Format loosely follows Keep a Changelog.
 
-## [1.3.4] - 2026-10-13
+## [1.3.5] - 2026-10-13
+
+Ships the 1.3.4 changes below; the 1.3.4 tag was never published because a
+timing-sensitive test stopped its release.
+
+### Fixed
+- The bulk import test read job progress through the app while the job was writing; with the in-memory test database that could roll a write back. It now watches the job registry directly.
+- Terminal commands, Select All and other page actions failed on 1.3.3 servers with `Unexpected token '<' ... is not valid JSON`: the shared page script did not run, so requests lacked their CSRF token (fixed in the changes below).
+
+## [1.3.4] - 2026-10-13 (not published)
 
 ### Fixed
 - **Buttons and actions driven by JavaScript stopped working on every page in 1.3.0** (Select All, toasts, the session watcher, the CSRF header on background requests): an apostrophe in the "still there?" prompt ended a JavaScript string early, so the shared page script never ran. Fixed, and a test now renders every main page and checks each inline script with Node.js.
