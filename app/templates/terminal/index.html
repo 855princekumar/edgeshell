@@ -9,10 +9,10 @@
   </div>
 </div>
 
-<div class="row g-0" style="height:calc(100vh - 150px);min-height:500px">
+<div class="row g-0 term-layout" style="height:calc(100vh - 150px);min-height:420px">
 
   <!-- ── Node Panel ─────────────────────────────────── -->
-  <div class="col-auto" style="width:260px;display:flex;flex-direction:column;border-right:1px solid #e5e7eb;background:#fff;border-radius:12px 0 0 12px;overflow:hidden">
+  <div class="col-auto term-nodes" style="width:260px;max-height:100%;min-height:0;display:flex;flex-direction:column;border-right:1px solid #e5e7eb;background:#fff;border-radius:12px 0 0 12px;overflow:hidden">
 
     <!-- Search -->
     <div class="p-2 border-bottom">
@@ -30,7 +30,7 @@
     </div>
 
     <!-- Node list -->
-    <div style="flex:1;overflow-y:auto" id="nodeList">
+    <div style="flex:1 1 0;min-height:0;overflow-y:auto" id="nodeList">
       {% for node in nodes %}
       <label class="node-item d-flex align-items-center gap-2 px-3 py-2"
              data-id="{{ node.id }}"
@@ -99,7 +99,7 @@
   </div>
 
   <!-- ── Terminal ───────────────────────────────────── -->
-  <div class="col" style="display:flex;flex-direction:column;background:#0d1117;border-radius:0 12px 12px 0;overflow:hidden">
+  <div class="col term-main" style="display:flex;flex-direction:column;min-width:0;min-height:0;max-height:100%;background:#0d1117;border-radius:0 12px 12px 0;overflow:hidden">
 
     <!-- Terminal title bar -->
     <div style="background:#161b22;border-bottom:1px solid #21262d;padding:8px 16px;display:flex;align-items:center;gap:10px;flex-shrink:0">
@@ -122,7 +122,7 @@
     </div>
 
     <!-- Output -->
-    <div id="termOut" style="flex:1;overflow-y:auto;padding:14px 18px;font-family:'JetBrains Mono',monospace;font-size:12.5px;line-height:1.65;color:#c9d1d9;scroll-behavior:smooth">
+    <div id="termOut" style="flex:1 1 0;min-height:0;overflow-y:auto;overflow-x:auto;white-space:pre-wrap;overflow-wrap:anywhere;padding:14px 18px;font-family:'JetBrains Mono',monospace;font-size:12.5px;line-height:1.65;color:#c9d1d9;scroll-behavior:smooth">
       <div style="color:#30363d;user-select:none">
 ╔══════════════════════════════════════════════════╗<br>
 ║        EdgeShell Remote Terminal  v1.0           ║<br>
@@ -157,6 +157,12 @@ Use ↑ ↓ arrow keys to navigate command history<br>
 </div>
 
 <style>
+/* Fit the screen: the node list and the output scroll inside their panes. */
+@media (max-width: 767.98px) {
+  .term-layout { height: auto !important; }
+  .term-nodes { width: 100% !important; max-height: 40vh !important; border-right: 0 !important; border-radius: 12px 12px 0 0 !important; }
+  .term-main { height: 60vh; border-radius: 0 0 12px 12px !important; }
+}
 .btn-xs { padding: 2px 7px !important; font-size: .7rem !important; }
 .node-item { cursor:pointer; border-bottom:1px solid #f3f4f6; transition:background .1s; }
 .node-item:hover { background:#f8faff; }

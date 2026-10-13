@@ -2,6 +2,15 @@
 
 All notable changes are documented here. Format loosely follows Keep a Changelog.
 
+## [1.3.4] - 2026-10-13
+
+### Fixed
+- **Buttons and actions driven by JavaScript stopped working on every page in 1.3.0** (Select All, toasts, the session watcher, the CSRF header on background requests): an apostrophe in the "still there?" prompt ended a JavaScript string early, so the shared page script never ran. Fixed, and a test now renders every main page and checks each inline script with Node.js.
+- **Bulk import returned 502 for larger files.** Every parsed row was stored in the session cookie, which outgrew nginx's header buffer (and browsers' 4 KB cookie limit). Rows now wait on the server under a single-use token; nginx also has larger header buffers.
+- **Bulk import waited for SSH checks of the whole fleet** inside the request, one node at a time. It now creates the nodes at once and checks only the new ones in the background (8 in parallel on MariaDB), with a progress card at the bottom of every page; you can keep working or refresh.
+- Long node names pushed status badges out of the dashboard cards and under the checkbox on Node Fleet: a missing `min-w-0` utility meant flex items could not shrink. Names now truncate (full name on hover), and cards, badges and table cells are guarded against overflow app-wide.
+- The Terminal node list grew past the screen with a large fleet. The list and the output now scroll inside their panes, and on phones the panes stack.
+
 ## [1.3.3] - 2026-10-13
 
 ### Fixed

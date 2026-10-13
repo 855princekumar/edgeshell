@@ -43,6 +43,13 @@
         }
 
         *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+        /* Layout safety: flex children may shrink, so long names truncate or wrap
+           instead of pushing badges and numbers out of their card. */
+        .min-w-0 { min-width: 0 !important; }
+        .card, .card-body, .stat-card, .node-card { min-width: 0; }
+        .card-body, .stat-card { overflow-wrap: anywhere; }
+        .badge, .status-badge, .arch-badge, .btn { white-space: nowrap; }
+        .table td { overflow-wrap: anywhere; }
 
         body {
             font-family: var(--font);
@@ -245,6 +252,7 @@
 
         .node-card-header {
             display: flex; align-items: center; gap: 10px; margin-bottom: 14px;
+            padding-right: 26px;  /* room for the selection checkbox */ min-width: 0;
         }
 
         .node-card .checkbox-col {
@@ -642,7 +650,7 @@
                   + '<div style="font-size:17px;font-weight:700;color:#111827;margin-bottom:6px">Are you still there?</div>'
                   + '<div style="font-size:14px;color:#4b5563;margin-bottom:16px">For security, this session signs out in '
                   + '<strong id="esIdleLeft"></strong> unless you confirm you are still using it.</div>'
-                  + '<button id="esIdleStay" style="width:100%;background:#1a56db;color:#fff;border:0;padding:10px;border-radius:8px;font-weight:600;cursor:pointer">I'm still here</button></div>';
+                  + '<button id="esIdleStay" style="width:100%;background:#1a56db;color:#fff;border:0;padding:10px;border-radius:8px;font-weight:600;cursor:pointer">Keep me signed in</button></div>';
                 document.body.appendChild(o);
                 let left = Math.max(1, Math.floor(secondsLeft));
                 const label = document.getElementById('esIdleLeft');
@@ -682,6 +690,76 @@
             }
             setInterval(check, 15000);
             document.addEventListener('visibilitychange', function(){ if (!document.hidden) check(); });
+        })();
+
+        // Background jobs (for example the SSH check after a bulk import):
+        // a progress card at the bottom of every page. Polls only while a job
+        // runs, so pages stay usable and a refresh never interrupts the job.
+        (function(){
+            const url = "{{ url_for('nodes.jobs_status') }}";
+            let timer = null;
+            function seen() { try { return JSON.parse(sessionStorage.getItem('esJobsSeen') || '[]'); } catch (e) { return []; } }
+            function markSeen(id) { try { const s = seen(); s.push(id); sessionStorage.setItem('esJobsSeen', JSON.stringify(s.slice(-50))); } catch (e) {} }
+            function box() {
+                let b = document.getElementById('esJobs');
+                if (!b) {
+                    b = document.createElement('div');
+                    b.id = 'esJobs';
+                    b.style.cssText = 'position:fixed;right:16px;bottom:16px;z-index:9990;width:min(360px,calc(100vw - 32px));display:flex;flex-direction:column;gap:8px';
+                    document.body.appendChild(b);
+                }
+                return b;
+            }
+            function card(j) {
+                const pct = j.total ? Math.round(100 * j.done / j.total) : 100;
+                const running = j.state === 'running';
+                const el = document.createElement('div');
+                el.style.cssText = 'background:#fff;border:1px solid #e5e7eb;border-radius:10px;box-shadow:0 6px 24px rgba(0,0,0,.12);padding:12px 14px;font-size:13px;color:#374151';
+                const head = document.createElement('div');
+                head.style.cssText = 'display:flex;justify-content:space-between;gap:8px;font-weight:600;margin-bottom:6px;min-width:0';
+                const title = document.createElement('span');
+                title.style.cssText = 'overflow:hidden;text-overflow:ellipsis;white-space:nowrap';
+                title.textContent = running ? j.title : (j.state === 'done' ? 'Done: ' : 'Stopped: ') + j.title;
+                const count = document.createElement('span');
+                count.style.cssText = 'flex-shrink:0;color:#6b7280;font-weight:500';
+                count.textContent = j.done + ' / ' + j.total;
+                head.appendChild(title); head.appendChild(count);
+                const bar = document.createElement('div');
+                bar.style.cssText = 'height:6px;background:#e5e7eb;border-radius:4px;overflow:hidden';
+                const fill = document.createElement('div');
+                fill.style.cssText = 'height:100%;width:' + pct + '%;background:' + (j.state === 'error' ? '#dc2626' : '#1a56db') + ';transition:width .4s';
+                bar.appendChild(fill);
+                const note = document.createElement('div');
+                note.style.cssText = 'margin-top:6px;color:#6b7280;display:flex;justify-content:space-between;gap:8px';
+                const txt = document.createElement('span');
+                txt.textContent = running ? (j.ok + ' reachable, ' + j.failed + ' not reachable so far. You can keep working.') : (j.message || '');
+                note.appendChild(txt);
+                if (!running) {
+                    const a = document.createElement('a');
+                    a.href = '#'; a.textContent = 'Refresh';
+                    a.style.cssText = 'flex-shrink:0;color:#1a56db;font-weight:600;text-decoration:none';
+                    a.addEventListener('click', function(e){ e.preventDefault(); markSeen(j.id); location.reload(); });
+                    note.appendChild(a);
+                }
+                el.appendChild(head); el.appendChild(bar); el.appendChild(note);
+                return el;
+            }
+            function poll() {
+                fetch(url, {credentials: 'same-origin'}).then(function(r){ return r.ok ? r.json() : {jobs: []}; }).then(function(d){
+                    const s = seen();
+                    const jobs = (d.jobs || []).filter(function(j){ return j.state === 'running' || s.indexOf(j.id) < 0; });
+                    const b = box();
+                    b.innerHTML = '';
+                    jobs.forEach(function(j){ b.appendChild(card(j)); });
+                    const running = jobs.some(function(j){ return j.state === 'running'; });
+                    jobs.filter(function(j){ return j.state !== 'running'; }).forEach(function(j){
+                        setTimeout(function(){ markSeen(j.id); poll(); }, 20000);
+                    });
+                    clearTimeout(timer);
+                    if (running) timer = setTimeout(poll, 2000);
+                }).catch(function(){});
+            }
+            document.addEventListener('DOMContentLoaded', poll);
         })();
         {% endif %}
 

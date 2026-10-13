@@ -70,6 +70,11 @@ proxy_hide_header Server;
 proxy_hide_header X-Powered-By;
 proxy_read_timeout 600s;
 proxy_send_timeout 600s;
+# Room for large response headers (a big session cookie used to exceed the
+# 4 KB default and turn into a 502).
+proxy_buffer_size 16k;
+proxy_buffers 8 16k;
+proxy_busy_buffers_size 32k;
 EOF
 }
 
