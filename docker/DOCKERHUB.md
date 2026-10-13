@@ -35,8 +35,8 @@ curl -fsSLo nginx/entrypoint.sh $base/nginx/entrypoint.sh
 curl -fsSLo nginx/certbot.sh $base/nginx/certbot.sh
 curl -fsSLo .env $base/.env.example && chmod 600 .env
 
-# Generate the seven secrets
-for k in SECRET_KEY CREDENTIAL_KEY DB_PASSWORD DB_ROOT_PASSWORD MFA_ADMIN_PASSWORD MFA_PEPPER MFA_DB_PASSWORD; do
+# Generate the eight secrets
+for k in SECRET_KEY CREDENTIAL_KEY DB_PASSWORD DB_ROOT_PASSWORD MFA_ADMIN_PASSWORD MFA_PEPPER MFA_DB_PASSWORD MFA_SECRET_KEY; do
   sed -i "s|^$k=.*|$k=$(openssl rand -hex 32)|" .env
 done
 
@@ -133,7 +133,7 @@ edgeshell/
 | `PUBLIC_URL` + `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`, `SMTP_FROM`, `SMTP_SECURITY` | no | | Emailed reset links for administrators. `PUBLIC_URL` is the address users open, e.g. `https://fleet.yourdomain.com` |
 | `IDLE_MINUTES` / `IDLE_WARNING_MINUTES` | no | `10` / `5` | "Still there?" prompt after this much inactivity, then sign-out (`0` turns it off) |
 | `SIGNUP_ENABLED` | no | `true` | Let people request an account (an admin approves it with a role) |
-| `EDGESHELL_TAG` | no | `1.3.1` | Image version |
+| `EDGESHELL_TAG` | no | `1.3.2` | Image version |
 | `DISPLAY_TZ` | no | `UTC` | Time zone shown in the UI (the database stores UTC) |
 | `SESSION_HOURS` | no | `8` | Idle session lifetime |
 | `SINGLE_SESSION` | no | `true` | Enforce each user's device limit (1 by default, up to 4 per user) |
@@ -154,24 +154,26 @@ The app refuses to start if any required value is missing.
 | Restore the databases | `gunzip -c edgeshell-YYYY-MM-DD.sql.gz \| docker compose exec -T mariadb sh -c 'mariadb -uroot -p"$MARIADB_ROOT_PASSWORD"'` |
 | Stop | `docker compose down` (data in `./data` is kept) |
 
-### Upgrading from 1.2.x
+### Upgrading from 1.2.x or 1.3.x
 
-1.3.0 adds the `privacyidea` and `mfa-db-init` services and replaces Caddy
-with nginx and certbot. Fetch the new files, add the three new secrets to your
-existing `.env`, then start as usual; users, nodes and passwords are kept, and
-everyone sets up 2FA at their next sign-in:
+1.3.0 added the `privacyidea` and `mfa-db-init` services and replaced Caddy
+with nginx and certbot; 1.3.2 adds `MFA_SECRET_KEY`. Fetch the current files,
+add any missing secrets to your existing `.env` (the loop below only adds what
+is missing), then start as usual. Users, nodes, passwords and 2FA enrollments
+are kept; coming from 1.2.x, everyone sets up 2FA at their next sign-in:
 
 ```bash
 base=https://raw.githubusercontent.com/855princekumar/edgeshell/main/docker
 mkdir -p nginx
 curl -fsSLO $base/compose.yaml
+curl -fsSLO $base/host-hardening.sh
 curl -fsSLo nginx/entrypoint.sh $base/nginx/entrypoint.sh
 curl -fsSLo nginx/certbot.sh $base/nginx/certbot.sh
 sed -i 's|^EDGESHELL_DOMAIN=:80$|EDGESHELL_DOMAIN=|' .env    # IP mode is now an empty value
-for k in MFA_ADMIN_PASSWORD MFA_PEPPER MFA_DB_PASSWORD; do
+for k in MFA_ADMIN_PASSWORD MFA_PEPPER MFA_DB_PASSWORD MFA_SECRET_KEY; do
   grep -q "^$k=" .env || echo "$k=$(openssl rand -hex 32)" >> .env
 done
-sed -i 's|^EDGESHELL_TAG=.*|EDGESHELL_TAG=1.3.0|' .env
+sed -i 's|^EDGESHELL_TAG=.*|EDGESHELL_TAG=1.3.2|' .env
 docker compose pull && docker compose up -d --remove-orphans   # removes the old caddy container
 ```
 
@@ -225,4 +227,4 @@ Report vulnerabilities privately: see
 | Tag | Meaning |
 |---|---|
 | `latest` | Newest release |
-| `1.3.1`, `1.3`, `1` | Specific versions; pin one in production |
+| `1.3.2`, `1.3`, `1` | Specific versions; pin one in production |

@@ -60,7 +60,7 @@ curl -fsSLO $base/host-hardening.sh
 curl -fsSLo nginx/entrypoint.sh $base/nginx/entrypoint.sh
 curl -fsSLo nginx/certbot.sh $base/nginx/certbot.sh
 curl -fsSLo .env $base/.env.example && chmod 600 .env
-for k in SECRET_KEY CREDENTIAL_KEY DB_PASSWORD DB_ROOT_PASSWORD MFA_ADMIN_PASSWORD MFA_PEPPER MFA_DB_PASSWORD; do
+for k in SECRET_KEY CREDENTIAL_KEY DB_PASSWORD DB_ROOT_PASSWORD MFA_ADMIN_PASSWORD MFA_PEPPER MFA_DB_PASSWORD MFA_SECRET_KEY; do
   sed -i "s|^$k=.*|$k=$(openssl rand -hex 32)|" .env; done
 docker compose up -d
 docker compose ps          # all services "healthy" after about a minute
