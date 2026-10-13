@@ -631,7 +631,7 @@ Dependabot keeps Python packages, the base image and Actions up to date.
 | Doc | Contents |
 |---|---|
 | [Getting started](docs/GETTING-STARTED.md) | Local, Docker, and production setup |
-| [Deploy on EC2](docs/DEPLOY-EC2.md) | Full production guide, operations, and troubleshooting |
+| [Deploy on EC2](docs/DEPLOY-EC2.md) | Step-by-step AWS guide: Docker stack (nginx, HTTPS, 2FA, fail2ban, Tailscale) or native install |
 | [Architecture](docs/ARCHITECTURE.md) | Components, data model, monitoring contract |
 | [Roles and access](docs/RBAC.md) | Roles, enforcement, lockout, sessions |
 | [VPN and network](docs/VPN-NETWORK.md) | Tailscale, WireGuard, container networking |
