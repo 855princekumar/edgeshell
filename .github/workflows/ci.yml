@@ -82,6 +82,33 @@ jobs:
           FLASK_ENV: testing
         run: python -W ignore tools/perf.py --nodes 300 --runs 10 --budget-ms 300
 
+  ui:
+    name: Browser UI (1500 nodes, phone to desktop, zoom 67 to 200%)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -r requirements.txt playwright==1.55.0
+      - run: python -m playwright install --with-deps chromium
+      - name: Emulated Raspberry Pi for the SSH terminal (Pi Fleet Emulator)
+        run: |
+          docker run -d --name ui-pi -p 2299:22 devprincekumar/pi-fleet-node:1.0.0
+          for i in $(seq 1 30); do nc -z 127.0.0.1 2299 && break; sleep 1; done
+      - name: Every page on every screen size and zoom, plus interactions
+        env:
+          FLASK_ENV: testing
+        run: python -W ignore tools/ui_test.py --nodes 1500 --ssh 127.0.0.1:2299 --out ui-report
+      - name: Screenshots of failures
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ui-report
+          path: ui-report/*.png
+          if-no-files-found: ignore
+
   image:
     name: Image build (amd64 + arm64) and hardening audit
     needs: [lint, secrets]

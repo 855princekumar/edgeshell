@@ -114,8 +114,39 @@ class SystemMetrics(db.Model):
     network_tx = db.Column(db.BigInteger)
     docker_running = db.Column(db.Boolean)
     nodered_running = db.Column(db.Boolean)
+    status = db.Column(db.String(16))           # online | offline | auth_failed (null: older rows, online)
 
     node = db.relationship('Node', backref='metrics')
+
+
+class MetricsHourly(db.Model):
+    """One row per node per hour, rolled up from system_metrics and kept for
+    good: the long-term history behind the stats export (uptime, resource use,
+    reboots), for reports and for training health-prediction models."""
+    __tablename__ = 'metrics_hourly'
+    __table_args__ = (db.UniqueConstraint('node_id', 'hour', name='uq_metrics_hourly_node_hour'),)
+
+    id = db.Column(db.Integer, primary_key=True)
+    node_id = db.Column(db.Integer, db.ForeignKey('nodes.id'), index=True)
+    hour = db.Column(db.DateTime, index=True)    # UTC, start of the hour
+    samples = db.Column(db.Integer, default=0)
+    online = db.Column(db.Integer, default=0)
+    offline = db.Column(db.Integer, default=0)
+    auth_failed = db.Column(db.Integer, default=0)
+    cpu_avg = db.Column(db.Float)
+    cpu_max = db.Column(db.Float)
+    ram_avg = db.Column(db.Float)
+    ram_max = db.Column(db.Float)
+    disk_avg = db.Column(db.Float)
+    disk_max = db.Column(db.Float)
+    temp_avg = db.Column(db.Float)
+    temp_max = db.Column(db.Float)
+    load1_avg = db.Column(db.Float)
+    load1_max = db.Column(db.Float)
+    uptime_max_s = db.Column(db.Integer)
+    reboots = db.Column(db.Integer, default=0)
+    net_rx_bytes = db.Column(db.BigInteger)
+    net_tx_bytes = db.Column(db.BigInteger)
 
 
 class VpnStatus(db.Model):

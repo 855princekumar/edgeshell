@@ -2,12 +2,12 @@
 {% block title %}System Monitoring - EdgeShell{% endblock %}
 
 {% block content %}
-<div class="d-flex align-items-center justify-content-between mb-4">
+<div class="d-flex align-items-center justify-content-between mb-4 flex-wrap gap-2">
   <div>
     <h4 class="fw-bold mb-0">System Monitoring</h4>
     <small class="text-muted">Real-time metrics from fleet nodes</small>
   </div>
-  <div class="d-flex gap-2 align-items-center">
+  <div class="d-flex gap-2 align-items-center flex-wrap">
     <span class="text-muted small me-2" id="last-refresh"> n/a </span>
     <button class="btn btn-sm btn-outline-primary" onclick="refreshAll()" id="refreshAllBtn"
             title="Collect every node now (the background collector also refreshes every 30 s)">
@@ -29,37 +29,37 @@
 
 <!-- Fleet Summary Bar -->
 <div class="row g-3 mb-4">
-  <div class="col-6 col-md-2">
+  <div class="col-6 col-sm-4 col-xl-2">
     <div class="stat-card">
       <div class="stat-value text-primary" id="sum-online"> n/a </div>
       <div class="stat-label">Online</div>
     </div>
   </div>
-  <div class="col-6 col-md-2">
+  <div class="col-6 col-sm-4 col-xl-2">
     <div class="stat-card">
       <div class="stat-value text-danger" id="sum-offline"> n/a </div>
       <div class="stat-label">Offline</div>
     </div>
   </div>
-  <div class="col-6 col-md-2">
+  <div class="col-6 col-sm-4 col-xl-2">
     <div class="stat-card">
       <div class="stat-value text-warning" id="sum-high-cpu"> n/a </div>
       <div class="stat-label">High CPU</div>
     </div>
   </div>
-  <div class="col-6 col-md-2">
+  <div class="col-6 col-sm-4 col-xl-2">
     <div class="stat-card">
       <div class="stat-value text-warning" id="sum-high-mem"> n/a </div>
       <div class="stat-label">High Mem</div>
     </div>
   </div>
-  <div class="col-6 col-md-2">
+  <div class="col-6 col-sm-4 col-xl-2">
     <div class="stat-card">
       <div class="stat-value text-info" id="sum-docker"> n/a </div>
       <div class="stat-label">Docker Up</div>
     </div>
   </div>
-  <div class="col-6 col-md-2">
+  <div class="col-6 col-sm-4 col-xl-2">
     <div class="stat-card">
       <div class="stat-value text-success" id="sum-nodered"> n/a </div>
       <div class="stat-label">Node-RED Up</div>
