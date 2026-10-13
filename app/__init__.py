@@ -204,6 +204,7 @@ def _ensure_schema():
             'docker_installed': 'BOOLEAN',
             'nodered_installed': 'BOOLEAN',
             'capabilities_checked_at': 'DATETIME',
+            'last_error': 'VARCHAR(256)',
         },
         'users': {
             # Sessions moved to the user_sessions table (created by

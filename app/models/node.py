@@ -22,7 +22,8 @@ class Node(db.Model):
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     last_seen = db.Column(db.DateTime)
-    status = db.Column(db.String(16), default='unknown')  # online, offline, warning, failed, unknown
+    status = db.Column(db.String(16), default='unknown')  # online, offline, auth_failed, unknown
+    last_error = db.Column(db.String(256))        # why the last check failed, shown on the card
     vpn_status = db.Column(db.String(16), default='unknown')
     arch = db.Column(db.String(32))               # armv7l, aarch64, x86_64
     nodered_port = db.Column(db.Integer, default=1880)
@@ -81,6 +82,7 @@ class Node(db.Model):
             'is_active': self.is_active,
             'last_seen': iso_utc(self.last_seen),
             'status': self.status,
+            'last_error': self.last_error,
             'vpn_status': self.vpn_status,
             'cpu_percent': self.cpu_percent,
             'ram_percent': self.ram_percent,

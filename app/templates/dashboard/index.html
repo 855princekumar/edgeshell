@@ -347,7 +347,9 @@ function renderNodeGrid() {
   }
 
   grid.innerHTML = nodes.map(n => {
-    const st      = n.status === 'online' ? 'success' : n.status === 'offline' ? 'danger' : 'secondary';
+    const st      = n.status === 'online' ? 'success' : n.status === 'offline' ? 'danger'
+                  : n.status === 'auth_failed' ? 'warning' : 'secondary';
+    const stLabel = n.status === 'auth_failed' ? 'login failed' : n.status;
     const stIcon  = n.status === 'online' ? '●' : '○';
     const is32    = (n.tags||'').includes('32bit') || (n.arch||'').includes('armv7');
     const archLbl = is32 ? '32-bit' : '64-bit';
@@ -372,7 +374,7 @@ function renderNodeGrid() {
             </div>
             <div class="d-flex gap-1 flex-shrink-0 ms-2">
               <span class="arch-badge ${archCol}">${archLbl}</span>
-              <span class="badge bg-${st} bg-opacity-10 text-${st} border border-${st} border-opacity-25" style="font-size:.65rem">${stIcon} ${n.status}</span>
+              <span class="badge bg-${st} bg-opacity-10 text-${st} border border-${st} border-opacity-25" style="font-size:.65rem">${stIcon} ${escHtml(stLabel)}</span>
             </div>
           </div>
 
@@ -390,11 +392,18 @@ function renderNodeGrid() {
             <span><i class="bi bi-thermometer-half me-1"></i>${temp}</span>
             <span class="font-monospace" title="Load 1m/5m/15m">${load}</span>
             <span><i class="bi bi-clock me-1"></i>${seen}</span>
+          </div>` : n.status === 'auth_failed' ? `
+          <div class="text-center py-2">
+            <i class="bi bi-shield-lock fs-3 d-block mb-1 text-warning"></i>
+            <small class="fw-semibold">SSH login failed</small><br>
+            <small class="text-muted d-block text-truncate" title="${escHtml(n.last_error || '')}">Wrong username or password</small>
+            <button class="btn btn-sm btn-warning mt-2" onclick="event.stopPropagation(); esFixCreds(${n.id}, ${escHtml(JSON.stringify(n.name))}, ${escHtml(JSON.stringify(n.username || ''))}, null, fetchAll)">
+              <i class="bi bi-key me-1"></i>Fix login</button>
           </div>` : `
           <div class="text-center text-muted py-3">
             <i class="bi bi-wifi-off fs-3 d-block mb-1 text-danger opacity-50"></i>
             <small>Node unreachable</small><br>
-            <small class="text-muted">Last seen: ${seen}</small>
+            <small class="text-muted d-block text-truncate" title="${escHtml(n.last_error || '')}">${escHtml(n.last_error || ('Last seen: ' + seen))}</small>
           </div>`}
         </div>
       </div>
@@ -550,7 +559,7 @@ function openNodeRed() {
 // ── Helpers ──────────────────────────────────────────────────
 function setText(id, val) { const el=document.getElementById(id); if(el) el.textContent=val; }
 function fmt(v, suffix) { return v != null ? v + suffix : 'n/a'; }
-function escHtml(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+function escHtml(s) { return String(s == null ? '' : s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
 function timeSince(iso) {
   const s = Math.floor((Date.now() - new Date(iso)) / 1000);
   if (s < 60)  return s + 's ago';

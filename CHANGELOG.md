@@ -2,6 +2,24 @@
 
 All notable changes are documented here. Format loosely follows Keep a Changelog.
 
+## [1.4.0] - 2026-10-13
+
+Fast fleet monitoring. Measured on a live 122-node Tailscale fleet, one full
+refresh went from about 11 minutes to under 30 seconds cold and 5 to 8
+seconds warm.
+
+### Added
+- **Background metrics collector.** One SSH connection per node is kept open and reused; metrics come from a single shell command reading `/proc` (no Python started on the node); the fleet is polled in parallel (`COLLECTOR_WORKERS`, default 48) every `COLLECTOR_INTERVAL` seconds (default 30), outside any web request. Pages read the stored results, so the dashboard and Monitoring load instantly; "Refresh All" collects live, in parallel.
+- **Login problems show on the card.** Failures are classified: wrong SSH username or password shows "Login failed" with a **Fix login** button on the dashboard, Node Fleet and Monitoring cards, which saves the new username, password and port and re-checks the node at once. Unreachable nodes show the reason.
+- Failing nodes back off instead of being retried every cycle; a wrong password is retried only every 10 minutes, so a node's own fail2ban does not lock EdgeShell out. Saving new credentials retries immediately.
+- Adding a node returns at once; its login is checked in the background and the card updates within seconds.
+- `tools/perf.py`: times every page, API and node action against a large simulated fleet. CI fails if any read endpoint's median exceeds 300 ms with 300 nodes.
+
+### Changed
+- Node password encryption derived its key (PBKDF2, 100,000 rounds) on every encrypt and decrypt, 17 ms each: a 500-node import or metrics pass spent over 8 seconds on it. The derived key is now cached per process (ciphertext unchanged): 0.01 ms per call. A 500-row import commit went from 8.6 s to 0.1 s.
+- Bulk import checks the new nodes in batches through the collector (parallel SSH, one database writer): 500 nodes in about 4 s at 300 ms per node. It no longer runs the OpenRemoteGUI check per node; use "Check OpenRemoteGUI" on Node Fleet.
+- Metrics history is stored at most once a minute per node, and history older than `METRICS_RETENTION_DAYS` is purged automatically.
+
 ## [1.3.5] - 2026-10-13
 
 Ships the 1.3.4 changes below; the 1.3.4 tag was never published because a

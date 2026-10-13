@@ -6,7 +6,6 @@ from flask_login import login_required, current_user
 from app import db
 from app.models.node import Node
 from app.models import Deployment
-from app.services.ssh_service import test_connection, collect_metrics
 from app.services.activity_service import log_activity
 from app.services import orgui_service, ansible_service
 from app.services.rbac import operator_required, admin_required
@@ -84,8 +83,11 @@ def add():
         node.password = password
         db.session.add(node)
         db.session.commit()
+        from app.services.collector import COLLECTOR
+        COLLECTOR.kick([node.id])
         log_activity('Add Node', node=name, status='success')
-        flash(f'Node "{name}" added successfully.', 'success')
+        flash(f'Node "{name}" added. Its SSH login is being checked in the background; '
+              'the card updates in a few seconds.', 'success')
         return redirect(url_for('nodes.index'))
     return render_template('nodes/add.html')
 
@@ -164,40 +166,60 @@ def toggle(node_id):
 @nodes_bp.route('/<int:node_id>/test', methods=['POST'])
 @login_required
 def test(node_id):
+    from app.services.collector import COLLECTOR
     node = Node.query.get_or_404(node_id)
-    success, message = test_connection(node)
-    node.status = 'online' if success else 'offline'
-    node.last_seen = datetime.utcnow() if success else node.last_seen
-    if success:
-        # capture architecture so the fleet can categorize 32 vs 64 bit
-        from app.services.ssh_service import execute_command
-        r = execute_command(node, 'uname -m', timeout=10)
-        lines = [l.strip() for l in (r.get('stdout') or '').splitlines() if l.strip()]
-        if lines:
-            node.arch = lines[-1]
-    db.session.commit()
+    r = COLLECTOR.run_cycle(node_ids=[node.id], force=True).get(node.id)
+    node = db.session.get(Node, node_id)
+    ok = bool(r and r['ok'])
+    message = 'Connection successful' if ok else (r['message'] if r else 'Node is inactive')
     log_activity('Test Connection', node=node.name, response=message,
-                 status='success' if success else 'failure')
-    return jsonify({'success': success, 'message': message,
+                 status='success' if ok else 'failure')
+    return jsonify({'success': ok, 'message': message, 'status': node.status,
+                    'kind': None if ok else (r or {}).get('kind'),
+                    'seconds': (r or {}).get('seconds'),
                     'arch': node.arch, 'arch_bits': node.arch_bits})
 
 
 @nodes_bp.route('/<int:node_id>/metrics', methods=['POST'])
 @login_required
 def metrics(node_id):
+    from app.services.collector import COLLECTOR
     node = Node.query.get_or_404(node_id)
-    data = collect_metrics(node)
-    if data:
-        node.cpu_percent = data.get('cpu_percent')
-        node.ram_percent = data.get('mem_percent')       # fixed key
-        node.disk_percent = data.get('disk_percent')
-        node.load_average = f"{data.get('load_1',0)} {data.get('load_5',0)} {data.get('load_15',0)}"
-        node.arch = data.get('arch', node.arch)
-        node.status = 'online'
-        node.last_seen = datetime.utcnow()
-        db.session.commit()
-        return jsonify({'success': True, 'metrics': data})
-    return jsonify({'success': False, 'message': 'Could not collect metrics'})
+    r = COLLECTOR.run_cycle(node_ids=[node.id], force=True).get(node.id)
+    if r and r['ok']:
+        return jsonify({'success': True, 'metrics': r['metrics']})
+    return jsonify({'success': False, 'message': (r or {}).get('message') or 'Could not collect metrics',
+                    'kind': (r or {}).get('kind')})
+
+
+@nodes_bp.route('/<int:node_id>/credentials', methods=['POST'])
+@login_required
+@operator_required
+def credentials(node_id):
+    """Fix a node's SSH login from its card, then check it right away."""
+    from app.services.collector import COLLECTOR, POOL
+    node = Node.query.get_or_404(node_id)
+    data = request.get_json(silent=True) or request.form
+    username = (data.get('username') or '').strip()
+    password = data.get('password') or ''
+    port = str(data.get('ssh_port') or node.ssh_port or 22).strip()
+    if not username or not port.isdigit() or not 0 < int(port) < 65536:
+        return jsonify({'success': False, 'message': 'Enter a username and a valid SSH port.'}), 400
+    node.username = username
+    node.ssh_port = int(port)
+    if password:
+        node.password = password
+    db.session.commit()
+    POOL.drop(node.id)
+    r = COLLECTOR.run_cycle(node_ids=[node.id], force=True).get(node.id) or {}
+    node = db.session.get(Node, node_id)
+    log_activity('Update SSH credentials', node=node.name,
+                 response='login ok' if r.get('ok') else r.get('message'),
+                 status='success' if r.get('ok') else 'warning')
+    return jsonify({'success': bool(r.get('ok')), 'status': node.status,
+                    'kind': r.get('kind'), 'seconds': r.get('seconds'),
+                    'message': 'Saved. SSH login works.' if r.get('ok')
+                    else f"Saved, but the check failed: {r.get('message')}"})
 
 
 # ── OpenRemoteGUI ────────────────────────────────────────────────────────────
@@ -276,7 +298,6 @@ import time as _time
 from flask import session as _session
 from app.services import import_service as _imp
 from app.services import jobs as _jobs
-from app.services.ssh_service import test_connection as _testconn
 
 _STAGING_TTL_S = 24 * 3600
 
@@ -348,16 +369,12 @@ def bulk_import():
     return render_template('nodes/import.html')
 
 
-def _check_imported_node(node_id):
-    node = db.session.get(Node, node_id)
-    if not node:
-        return False
-    ok, _ = _testconn(node)
-    node.status = 'online' if ok else 'offline'
-    if ok:
-        orgui_service.persist_check(node)
-    db.session.commit()
-    return ok
+def _check_imported_nodes(node_ids):
+    """One collector pass over a batch: SSH in parallel, one database writer.
+    Wrong passwords are marked 'auth_failed' so the cards offer Fix login."""
+    from app.services.collector import COLLECTOR
+    results = COLLECTOR.run_cycle(node_ids=node_ids, force=True)
+    return sum(1 for r in results.values() if r['ok'])
 
 
 @nodes_bp.route('/import/commit', methods=['POST'])
@@ -400,12 +417,11 @@ def bulk_import_commit():
 
     msg = f'Imported {created} node(s), skipped {skipped} already present.'
     if new_nodes:
-        # MariaDB takes parallel writers; SQLite (native or dev installs) one.
-        workers = 8 if db.engine.dialect.name != 'sqlite' else 1
-        _jobs.run_each(
+        _jobs.run_batches(
             'import-check', f'Checking {created} imported node(s)', current_user.id,
-            [n.id for n in new_nodes], _check_imported_node, workers=workers,
-            summary=lambda j: f"{j['ok']} of {j['total']} imported node(s) reachable over SSH")
+            [n.id for n in new_nodes], _check_imported_nodes,
+            summary=lambda j: f"{j['ok']} of {j['total']} imported node(s) log in over SSH"
+                              + (f"; {j['failed']} need attention (see their cards)" if j['failed'] else ''))
         msg += ' Their SSH connection is being checked in the background; progress shows at the bottom of the page.'
     flash(msg, 'success')
     return redirect(url_for('nodes.index'))

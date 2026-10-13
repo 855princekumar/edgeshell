@@ -309,6 +309,8 @@
         .status-online { background: var(--success-bg); color: var(--success); }
         .status-offline { background: var(--gray-100); color: var(--gray-500); }
         .status-warning { background: var(--warning-bg); color: var(--warning); }
+        .status-auth_failed { background: var(--warning-bg); color: var(--warning); }
+        .dot-auth_failed { background: var(--warning) !important; }
         .status-failed { background: var(--danger-bg); color: var(--danger); }
         .status-unknown { background: var(--gray-100); color: var(--gray-400); }
 
@@ -762,6 +764,60 @@
             document.addEventListener('DOMContentLoaded', poll);
         })();
         {% endif %}
+
+        // "Fix SSH login" dialog used by node cards everywhere. Saves the new
+        // credentials and re-checks the node at once; calls onDone(result).
+        function esFixCreds(id, name, username, port, onDone) {
+            const old = document.getElementById('esCredsOverlay');
+            if (old) old.remove();
+            const o = document.createElement('div');
+            o.id = 'esCredsOverlay';
+            o.style.cssText = 'position:fixed;inset:0;z-index:99997;background:rgba(15,23,42,.55);display:flex;align-items:center;justify-content:center;padding:16px';
+            const box = document.createElement('form');
+            box.style.cssText = 'background:#fff;border-radius:14px;width:100%;max-width:420px;padding:22px;box-shadow:0 10px 40px rgba(0,0,0,.25);font-size:14px;color:#374151';
+            box.innerHTML = '<div style="font-size:17px;font-weight:700;color:#111827;margin-bottom:2px">Fix SSH login</div>'
+              + '<div id="esCredsNode" style="color:#6b7280;margin-bottom:14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"></div>'
+              + '<label style="display:block;font-weight:600;margin-bottom:4px">Username</label>'
+              + '<input name="username" required autocomplete="off" style="width:100%;padding:9px 11px;border:1.5px solid #d1d5db;border-radius:8px;margin-bottom:10px">'
+              + '<label style="display:block;font-weight:600;margin-bottom:4px">Password</label>'
+              + '<input name="password" type="password" placeholder="Leave empty to keep the current one" autocomplete="new-password" style="width:100%;padding:9px 11px;border:1.5px solid #d1d5db;border-radius:8px;margin-bottom:10px">'
+              + '<label style="display:block;font-weight:600;margin-bottom:4px">SSH port</label>'
+              + '<input name="ssh_port" inputmode="numeric" style="width:100%;padding:9px 11px;border:1.5px solid #d1d5db;border-radius:8px;margin-bottom:12px">'
+              + '<div id="esCredsMsg" style="min-height:20px;font-size:13px;margin-bottom:10px"></div>'
+              + '<div style="display:flex;gap:10px;justify-content:flex-end">'
+              + '<button type="button" id="esCredsCancel" style="padding:9px 16px;border-radius:8px;border:1.5px solid #d1d5db;background:#fff;font-weight:600">Close</button>'
+              + '<button type="submit" id="esCredsSave" style="padding:9px 16px;border-radius:8px;border:0;background:#1a56db;color:#fff;font-weight:600">Save and test</button></div>';
+            o.appendChild(box);
+            document.body.appendChild(o);
+            document.getElementById('esCredsNode').textContent = name;
+            box.username.value = username || '';
+            box.ssh_port.value = port || 22;
+            box.username.focus();
+            const close = function(){ o.remove(); };
+            document.getElementById('esCredsCancel').addEventListener('click', close);
+            o.addEventListener('click', function(e){ if (e.target === o) close(); });
+            box.addEventListener('submit', function(e){
+                e.preventDefault();
+                const msg = document.getElementById('esCredsMsg');
+                const btn = document.getElementById('esCredsSave');
+                btn.disabled = true; btn.textContent = 'Testing...';
+                msg.style.color = '#6b7280'; msg.textContent = 'Saving and connecting to the node...';
+                fetch('/nodes/' + id + '/credentials', {
+                    method: 'POST', headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({username: box.username.value.trim(), password: box.password.value,
+                                          ssh_port: box.ssh_port.value.trim()})
+                }).then(function(r){ return r.json(); }).then(function(d){
+                    btn.disabled = false; btn.textContent = 'Save and test';
+                    msg.style.color = d.success ? '#059669' : '#dc2626';
+                    msg.textContent = d.message || (d.success ? 'Saved.' : 'Could not save.');
+                    if (typeof onDone === 'function') onDone(d);
+                    if (d.success) setTimeout(close, 1200);
+                }).catch(function(){
+                    btn.disabled = false; btn.textContent = 'Save and test';
+                    msg.style.color = '#dc2626'; msg.textContent = 'The server did not answer. Try again.';
+                });
+            });
+        }
 
         function apiPost(url, data, formData = false) {
             if (formData) {

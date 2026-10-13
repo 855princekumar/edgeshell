@@ -459,7 +459,15 @@ def test_large_import_stays_out_of_the_cookie_and_checks_in_background(app, clie
     import io
     import time
     import app.routes.nodes as nodes_routes
-    monkeypatch.setattr(nodes_routes, '_testconn', lambda n: (n.name.endswith('0'), 'stub'))
+    import app.services.collector as collector
+
+    def fake_collect(t):            # every tenth node answers, the rest refuse the login
+        if t['id'] % 10 == 0:
+            return {'ok': True, 'metrics': collector.parse_metrics(SAMPLE_PROC), 'kind': None,
+                    'message': None, 'seconds': 0.01, 'reconnected': False}
+        return {'ok': False, 'metrics': None, 'kind': 'auth', 'message': 'Authentication failed',
+                'seconds': 0.01, 'reconnected': True}
+    monkeypatch.setattr(collector, 'collect_one', fake_collect)
     monkeypatch.setattr(nodes_routes.orgui_service, 'persist_check', lambda n: None)
     _login(app, client)
     csv = 'name,ip,username,password\n' + '\n'.join(
@@ -505,3 +513,138 @@ def test_large_import_stays_out_of_the_cookie_and_checks_in_background(app, clie
     assert online == 40
     r = client.post('/nodes/import/commit', data={})          # token is single use
     assert r.status_code == 302 and '/nodes/import' in r.headers['Location']
+
+
+# /proc output of a Raspberry Pi as returned by collector.METRICS_CMD
+SAMPLE_PROC = """cpu  2255 34 2290 22625563 6290 127 456 0 0 0
+cpu  2275 34 2300 22625583 6290 127 456 0 0 0
+@@
+0.52 0.41 0.30 1/312 4210
+@@
+MemTotal:        3884328 kB
+MemFree:         1834212 kB
+MemAvailable:    2911232 kB
+@@
+/dev/root         30509732 6213352 23005472  22% /
+@@
+86400.12 345000.40
+@@
+temp=48.3'C
+@@
+5032148 1204411
+@@
+aarch64
+@@
+docker_installed
+docker_running
+nodered_installed
+nodered_running
+@@
+"""
+
+
+def test_metrics_command_output_is_parsed():
+    import app.services.collector as collector
+    m = collector.parse_metrics(SAMPLE_PROC)
+    assert m['cpu_percent'] == 60.0                    # 30 busy of 50 jiffies
+    assert m['mem_percent'] == 25.1 and m['mem_total_mb'] == 3793
+    assert m['disk_percent'] == 21.3 and m['disk_total_gb'] == 29.1
+    assert (m['load_1'], m['load_15'], m['load_trend']) == (0.52, 0.30, 'rising')
+    assert m['uptime'] == '1d 0h 0m' and m['temperature'] == 48.3
+    assert (m['net_rx_bytes'], m['net_tx_bytes']) == (5032148, 1204411)
+    assert m['arch'] == 'aarch64' and m['docker_running'] and m['nodered_running']
+    t = collector.parse_metrics(SAMPLE_PROC.replace("temp=48.3'C", '51234'))
+    assert t['temperature'] == 51.2
+
+
+def test_ssh_failures_are_classified():
+    import socket
+    import paramiko
+    from app.services.collector import classify
+    assert classify(paramiko.AuthenticationException('x'))[0] == 'auth'
+    assert classify(socket.timeout())[0] == 'unreachable'
+    assert classify(ConnectionRefusedError())[0] == 'unreachable'
+    assert classify(paramiko.SSHException('banner'))[0] == 'error'
+
+
+def test_auth_failure_shows_on_the_card_and_credentials_fix_it(app, client, monkeypatch):
+    import app.services.collector as collector
+    _login(app, client)
+    with app.app_context():
+        from app.models.node import Node
+        n = Node(name='plant-gateway', ip_address='100.64.0.9', username='pi', status='unknown')
+        n.password = 'wrong'
+        db.session.add(n)
+        db.session.commit()
+        nid = n.id
+    seen = []
+
+    def fake_collect(t):
+        seen.append((t['username'], t['password'], t['port']))
+        if t['password'] == 'right':
+            return {'ok': True, 'metrics': collector.parse_metrics(SAMPLE_PROC), 'kind': None,
+                    'message': None, 'seconds': 0.3, 'reconnected': True}
+        return {'ok': False, 'metrics': None, 'kind': 'auth', 'seconds': 0.9, 'reconnected': True,
+                'message': 'Authentication failed: check the SSH username and password'}
+    monkeypatch.setattr(collector, 'collect_one', fake_collect)
+
+    r = client.post(f'/nodes/{nid}/test').get_json()
+    assert not r['success'] and r['kind'] == 'auth' and r['status'] == 'auth_failed'
+    summary = client.get('/monitoring/fleet-summary').get_json()
+    card = [x for x in summary['nodes'] if x['id'] == nid][0]
+    assert card['status'] == 'auth_failed' and 'Authentication failed' in card['last_error']
+    assert summary['auth_failed'] == 1
+    cached = client.post('/monitoring/poll', json={'node_ids': [nid], 'cached': True}).get_json()
+    assert cached['results'][str(nid)]['kind'] == 'auth'
+
+    r = client.post(f'/nodes/{nid}/credentials', json={'username': 'admin-pi', 'password': 'right',
+                                                       'ssh_port': 2222}).get_json()
+    assert r['success'] and r['status'] == 'online'
+    assert seen[-1] == ('admin-pi', 'right', 2222)
+    with app.app_context():
+        from app.models.node import Node
+        n = db.session.get(Node, nid)
+        assert n.status == 'online' and n.last_error is None and n.cpu_percent == 60.0
+    live = client.post('/monitoring/poll', json={'node_ids': [nid]}).get_json()
+    assert live['results'][str(nid)]['success'] is True
+
+
+def test_failing_nodes_back_off_instead_of_retrying_every_cycle(app, monkeypatch):
+    import app.services.collector as collector
+    calls = []
+    monkeypatch.setattr(collector, 'collect_one', lambda t: calls.append(t['id']) or {
+        'ok': False, 'metrics': None, 'kind': 'auth', 'message': 'no', 'seconds': 0, 'reconnected': True})
+    c = collector.Collector()
+    with app.app_context():
+        from app.models.node import Node
+        db.session.add(Node(name='locked-out', ip_address='10.0.0.2', username='pi'))
+        db.session.commit()
+        c.run_cycle()
+        c.run_cycle()                                   # within the 10 min auth retry window
+        assert len(calls) == 1
+        c.kick()
+        c.run_cycle()                                   # credentials changed: retry now
+        assert len(calls) == 2
+
+
+def test_fleet_poll_runs_in_parallel(app, monkeypatch):
+    """60 nodes that each take 0.3 s (one SSH round trip) finish in about one
+    round trip, not 18 s."""
+    import time
+    import app.services.collector as collector
+
+    def slow(t):
+        time.sleep(0.3)
+        return {'ok': True, 'metrics': collector.parse_metrics(SAMPLE_PROC), 'kind': None,
+                'message': None, 'seconds': 0.3, 'reconnected': False}
+    monkeypatch.setattr(collector, 'collect_one', slow)
+    with app.app_context():
+        from app.models.node import Node
+        for i in range(60):
+            db.session.add(Node(name=f'par-{i}', ip_address=f'10.1.0.{i + 1}', username='pi'))
+        db.session.commit()
+        t0 = time.time()
+        res = collector.Collector().run_cycle()
+        took = time.time() - t0
+    assert len(res) == 60 and all(r['ok'] for r in res.values())
+    assert took < 3, f'fleet pass took {took:.1f}s'

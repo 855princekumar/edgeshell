@@ -156,6 +156,13 @@ class Config:
     RATELIMIT_DEFAULT = os.environ.get('RATELIMIT_DEFAULT', '20000 per day;2000 per hour')
     RATELIMIT_STORAGE_URI = os.environ.get('RATELIMIT_STORAGE_URI', 'memory://')
 
+    # Background metrics collector (persistent SSH, parallel, off the request
+    # path). Interval in seconds between fleet passes; workers = nodes polled
+    # at once.
+    COLLECTOR_ENABLED = _env_bool('COLLECTOR_ENABLED', True)
+    COLLECTOR_INTERVAL = int(os.environ.get('COLLECTOR_INTERVAL', '30'))
+    COLLECTOR_WORKERS = int(os.environ.get('COLLECTOR_WORKERS', '48'))
+
     # Fleet / integrations
     ORGUI_REPO = os.environ.get(
         'ORGUI_REPO', 'https://github.com/855princekumar/OpenRemoteGUI.git'

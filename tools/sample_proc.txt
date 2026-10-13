@@ -1,0 +1,24 @@
+cpu  2255 34 2290 22625563 6290 127 456 0 0 0
+cpu  2275 34 2300 22625583 6290 127 456 0 0 0
+@@
+0.52 0.41 0.30 1/312 4210
+@@
+MemTotal:        3884328 kB
+MemFree:         1834212 kB
+MemAvailable:    2911232 kB
+@@
+/dev/root         30509732 6213352 23005472  22% /
+@@
+86400.12 345000.40
+@@
+temp=48.3'C
+@@
+5032148 1204411
+@@
+aarch64
+@@
+docker_installed
+docker_running
+nodered_installed
+nodered_running
+@@

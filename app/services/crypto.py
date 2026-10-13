@@ -10,6 +10,7 @@ new key), or re-enter node passwords. decrypt_value fails soft (returns '') so
 a rotated key never crashes the app; it surfaces as an auth failure on connect.
 """
 import base64
+import functools
 from cryptography.fernet import Fernet
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
@@ -30,7 +31,15 @@ def _resolve_key():
 
 
 def _fernet(key_str=None):
-    key_str = key_str or _resolve_key()
+    return _fernet_for(key_str or _resolve_key())
+
+
+@functools.lru_cache(maxsize=8)
+def _fernet_for(key_str):
+    """Derive once per key: PBKDF2 with 100,000 rounds costs about 17 ms, and
+    deriving on every call made a 500-node import or metrics pass spend 8 s on
+    it. The key is already in memory, so caching the derived key adds no risk;
+    ciphertext is unchanged."""
     key_bytes = key_str.encode('utf-8').ljust(32)[:32]
     kdf = PBKDF2HMAC(algorithm=hashes.SHA256(), length=32,
                      salt=b'edgeshell_salt_v1', iterations=100000)
