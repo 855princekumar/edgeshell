@@ -33,7 +33,13 @@ def index():
     nodes = Node.query.filter(Node.is_deleted.isnot(True)).all()
     deleted = Node.query.filter(Node.is_deleted.is_(True)) \
         .order_by(Node.deleted_at.desc()).all()
-    return render_template('nodes/index.html', nodes=nodes, deleted=deleted)
+    from app.services import categories as cats
+    categories = cats.load()
+    for n in nodes:
+        n.category = cats.category_of(n.node_type, categories)
+    return render_template('nodes/index.html', nodes=nodes, deleted=deleted,
+                           categories=categories,
+                           has_other=any(n.category == 'Other' for n in nodes))
 
 
 @nodes_bp.route('/add', methods=['GET', 'POST'])

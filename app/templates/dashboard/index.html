@@ -19,11 +19,20 @@
   </div>
 </div>
 
+<!-- Device categories: one card each; clicking one scopes everything below -->
+<div class="d-flex align-items-center justify-content-between mb-2 flex-wrap gap-2">
+  <div class="fw-semibold">Device categories <small class="text-muted ms-1" id="cat-scope">Showing all nodes</small></div>
+  {% if current_user.is_admin() %}
+  <button class="btn btn-sm btn-outline-secondary" onclick="openCatEditor()"><i class="bi bi-sliders me-1"></i>Edit categories</button>
+  {% endif %}
+</div>
+<div class="row g-3 mb-4" id="catCards"></div>
+
 <!-- SLA Bar -->
 <div class="card border-0 shadow-sm mb-4">
   <div class="card-body py-3 px-4">
     <div class="d-flex align-items-center justify-content-between mb-2">
-      <span class="fw-semibold">Fleet Availability (SLA)</span>
+      <span class="fw-semibold" id="sla-title">Fleet Availability (SLA)</span>
       <span class="fw-bold fs-4" id="sla-pct" style="color:#1a56db">...</span>
     </div>
     <div class="progress mb-2" style="height:10px;border-radius:6px;background:#e5e7eb">
@@ -198,6 +207,9 @@
 <style>
 @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.3} }
 .node-card { cursor:pointer; transition:transform .15s,box-shadow .15s; }
+.cat-card { cursor:pointer; transition:box-shadow .15s, outline-color .15s; outline:2px solid transparent; }
+.cat-card:hover { box-shadow:0 6px 18px rgba(0,0,0,.10)!important; }
+.cat-card.cat-active { outline-color:#1a56db; }
 .node-card:hover { transform:translateY(-2px); box-shadow:0 8px 24px rgba(0,0,0,.12)!important; }
 .metric-row { display:flex; align-items:center; gap:8px; margin-bottom:6px; }
 .metric-label { font-size:.72rem; color:#6b7280; width:36px; flex-shrink:0; }
@@ -265,8 +277,87 @@ function fetchAll() {
     .catch(e=>console.error('Fleet fetch failed:', e));
 }
 
+// ── Categories ───────────────────────────────────────────────
+let lastFleet = null;
+let activeCat = 'all';
+
+function catOf(n, cats) {
+  const t = (n.node_type || '').trim().toLowerCase();
+  const c = cats.find(c => (c.types || []).includes(t));
+  return c ? c.name : 'Other';
+}
+
+function statsFor(nodes) {
+  const on = nodes.filter(n => n.status === 'online');
+  const avg = k => { const v = on.map(n => n[k]).filter(x => x != null); return v.length ? Math.round(v.reduce((a, b) => a + b, 0) / v.length * 10) / 10 : null; };
+  return {
+    total: nodes.length, online: on.length,
+    offline: nodes.filter(n => n.status === 'offline').length,
+    auth: nodes.filter(n => n.status === 'auth_failed').length,
+    notOnline: nodes.length - on.length,
+    sla: nodes.length ? Math.round(on.length / nodes.length * 1000) / 10 : 0,
+    cpu: avg('cpu'), mem: avg('mem'), disk: avg('disk'), temp: avg('temp'),
+    l1: avg('load_1'), l5: avg('load_5'), l15: avg('load_15'),
+  };
+}
+
+function renderCategories(d) {
+  const cats = d.categories || [];
+  const nodes = d.nodes || [];
+  const groups = [{key: 'all', name: 'All nodes', icon: 'grid-3x3-gap', nodes: nodes, target: null}];
+  cats.forEach(c => groups.push({key: c.name, name: c.name, icon: c.icon || 'box', target: c.sla_target,
+                                  nodes: nodes.filter(n => catOf(n, cats) === c.name)}));
+  const other = nodes.filter(n => catOf(n, cats) === 'Other');
+  if (other.length) groups.push({key: 'Other', name: 'Other', icon: 'question-circle', nodes: other, target: null});
+  if (activeCat !== 'all' && !groups.some(g => g.key === activeCat)) activeCat = 'all';
+
+  const wrap = document.getElementById('catCards');
+  wrap.innerHTML = '';
+  groups.forEach(g => {
+    const st = statsFor(g.nodes);
+    const target = g.target != null ? g.target : 99;
+    const col = st.sla >= target ? '#059669' : st.sla >= target - 10 ? '#d97706' : '#dc2626';
+    const col6 = document.createElement('div');
+    col6.className = 'col-12 col-sm-6 col-xl-3';
+    const card = document.createElement('div');
+    card.className = 'card border-0 shadow-sm h-100 cat-card' + (g.key === activeCat ? ' cat-active' : '');
+    card.setAttribute('role', 'button');
+    card.innerHTML = '<div class="card-body p-3">'
+      + '<div class="d-flex align-items-center gap-2 mb-2 min-w-0">'
+      + '<i class="bi bi-' + escHtml(g.icon) + ' fs-5 text-primary flex-shrink-0"></i>'
+      + '<div class="fw-semibold text-truncate flex-grow-1 min-w-0" title="' + escHtml(g.name) + '">' + escHtml(g.name) + '</div>'
+      + '<span class="small text-muted flex-shrink-0">' + st.online + '/' + st.total + ' online</span></div>'
+      + '<div class="d-flex align-items-baseline justify-content-between">'
+      + '<div class="fw-bold fs-4" style="color:' + col + '">' + st.sla + '%</div>'
+      + '<div class="small text-muted">SLA' + (g.target != null ? ' target ' + target + '%' : '') + '</div></div>'
+      + '<div class="progress my-2" style="height:6px"><div class="progress-bar" style="width:' + st.sla + '%;background:' + col + '"></div></div>'
+      + '<div class="d-flex justify-content-between small text-muted flex-wrap gap-1">'
+      + '<span>CPU ' + (st.cpu != null ? st.cpu + '%' : 'n/a') + ' &middot; RAM ' + (st.mem != null ? st.mem + '%' : 'n/a') + '</span>'
+      + '<span>' + (st.auth ? '<span class="text-warning fw-semibold">' + st.auth + ' login failed</span>' : '')
+      + (st.auth && st.offline ? ' &middot; ' : '') + (st.offline ? '<span class="text-danger">' + st.offline + ' offline</span>' : '')
+      + (!st.auth && !st.offline ? 'all reachable' : '') + '</span></div></div>';
+    card.addEventListener('click', () => { activeCat = g.key; renderAll(lastFleet); });
+    col6.appendChild(card);
+    wrap.appendChild(col6);
+  });
+  const scope = groups.find(g => g.key === activeCat);
+  document.getElementById('cat-scope').textContent = activeCat === 'all' ? 'Showing all nodes'
+    : 'Showing ' + scope.name + ' (' + scope.nodes.length + ' nodes). Click "All nodes" to reset.';
+  return scope.nodes;
+}
+
 function renderAll(d) {
+  if (!d) return;
+  lastFleet = d;
+  const scoped = renderCategories(d);
+  const st = statsFor(scoped);
+  d = Object.assign({}, d, {
+    nodes: scoped, total: st.total, online: st.online, offline: st.notOnline, sla_percent: st.sla,
+    avg_cpu: st.cpu, avg_mem: st.mem, avg_disk: st.disk, avg_temp: st.temp,
+    avg_load_1: st.l1, avg_load_5: st.l5, avg_load_15: st.l15, _auth: st.auth, _down: st.offline,
+  });
   // SLA bar
+  setText('sla-title', (activeCat === 'all' ? 'Fleet' : activeCat) + ' Availability (SLA)');
   const pct = d.sla_percent || 0;
   const barColor = pct>=90 ? '#059669' : pct>=70 ? '#d97706' : '#dc2626';
   document.getElementById('sla-pct').textContent  = pct + '%';
@@ -305,11 +396,11 @@ function renderAll(d) {
 
   // Pie chart
   const online  = d.online  || 0;
-  const offline = d.offline || 0;
-  const unknown = (d.total||0) - online - offline;
+  const unknown = (d.total||0) - online - d._down - d._auth;
   pieChart.setOption({ series:[{ data:[
     {value:online,  name:'Online'},
-    {value:offline, name:'Offline'},
+    {value:d._down, name:'Offline'},
+    {value:d._auth, name:'Login failed'},
     {value:Math.max(0,unknown), name:'Unknown'},
   ]}]});
 
@@ -319,6 +410,80 @@ function renderAll(d) {
 
   // Last heartbeat
   document.getElementById('last-hb').textContent = 'Last heartbeat: ' + new Date().toLocaleTimeString();
+}
+
+// ── Category editor (administrators) ─────────────────────────
+function openCatEditor() {
+  fetch('/monitoring/categories', {credentials: 'same-origin'}).then(r => r.json()).then(info => {
+    const old = document.getElementById('catEditor'); if (old) old.remove();
+    const o = document.createElement('div');
+    o.id = 'catEditor';
+    o.style.cssText = 'position:fixed;inset:0;z-index:99996;background:rgba(15,23,42,.55);display:flex;align-items:center;justify-content:center;padding:16px';
+    const box = document.createElement('div');
+    box.style.cssText = 'background:#fff;border-radius:14px;width:100%;max-width:760px;max-height:calc(100vh - 32px);display:flex;flex-direction:column;box-shadow:0 10px 40px rgba(0,0,0,.25)';
+    const types = info.types || {};
+    const typeHint = Object.keys(types).sort().map(t => t + ' (' + types[t] + ')').join(', ');
+    box.innerHTML = '<div style="padding:18px 20px;border-bottom:1px solid #e5e7eb"><div style="font-size:17px;font-weight:700">Device categories</div>'
+      + '<div class="small text-muted">Each category groups nodes by their node type and gets its own dashboard card and SLA target.</div>'
+      + '<div class="small text-muted mt-1">Node types in your fleet: <span id="catTypes"></span></div></div>'
+      + '<div id="catRows" style="padding:14px 20px;overflow:auto;flex:1"></div>'
+      + '<div style="padding:14px 20px;border-top:1px solid #e5e7eb;display:flex;gap:10px;align-items:center;flex-wrap:wrap">'
+      + '<button type="button" class="btn btn-sm btn-outline-primary" id="catAdd"><i class="bi bi-plus-lg me-1"></i>Add category</button>'
+      + '<span class="small" id="catMsg" style="flex:1"></span>'
+      + '<button type="button" class="btn btn-sm btn-outline-secondary" id="catClose">Close</button>'
+      + '<button type="button" class="btn btn-sm btn-primary" id="catSave">Save</button></div>';
+    o.appendChild(box);
+    document.body.appendChild(o);
+    document.getElementById('catTypes').textContent = typeHint || 'none yet';
+    const rows = document.getElementById('catRows');
+    const list = document.createElement('datalist'); list.id = 'catTypeList';
+    Object.keys(types).forEach(t => { const op = document.createElement('option'); op.value = t; list.appendChild(op); });
+    box.appendChild(list);
+
+    function row(c) {
+      const r = document.createElement('div');
+      r.className = 'cat-row d-flex gap-2 align-items-center flex-wrap mb-2 p-2 border rounded';
+      r.innerHTML = '<input class="form-control form-control-sm" data-f="name" placeholder="Name" style="flex:1 1 160px;min-width:0">'
+        + '<input class="form-control form-control-sm" data-f="types" list="catTypeList" placeholder="node types, comma separated" style="flex:2 1 200px;min-width:0">'
+        + '<select class="form-select form-select-sm" data-f="icon" style="flex:0 1 150px"></select>'
+        + '<div class="input-group input-group-sm" style="flex:0 1 130px"><span class="input-group-text">SLA</span><input class="form-control" data-f="sla" inputmode="decimal"><span class="input-group-text">%</span></div>'
+        + '<div class="btn-group btn-group-sm"><button type="button" class="btn btn-outline-secondary" data-a="up" title="Move up"><i class="bi bi-arrow-up"></i></button>'
+        + '<button type="button" class="btn btn-outline-secondary" data-a="down" title="Move down"><i class="bi bi-arrow-down"></i></button>'
+        + '<button type="button" class="btn btn-outline-danger" data-a="del" title="Remove"><i class="bi bi-trash"></i></button></div>';
+      const sel = r.querySelector('[data-f=icon]');
+      (info.icons || []).forEach(i => { const op = document.createElement('option'); op.value = i; op.textContent = i; sel.appendChild(op); });
+      r.querySelector('[data-f=name]').value = c.name || '';
+      r.querySelector('[data-f=types]').value = (c.types || []).join(', ');
+      sel.value = c.icon || 'box';
+      r.querySelector('[data-f=sla]').value = c.sla_target != null ? c.sla_target : 99;
+      r.addEventListener('click', e => {
+        const a = e.target.closest('[data-a]'); if (!a) return;
+        if (a.dataset.a === 'del') r.remove();
+        if (a.dataset.a === 'up' && r.previousElementSibling) rows.insertBefore(r, r.previousElementSibling);
+        if (a.dataset.a === 'down' && r.nextElementSibling) rows.insertBefore(r.nextElementSibling, r);
+      });
+      rows.appendChild(r);
+    }
+    (info.categories || []).forEach(row);
+    document.getElementById('catAdd').addEventListener('click', () => row({sla_target: 99, icon: 'box'}));
+    document.getElementById('catClose').addEventListener('click', () => o.remove());
+    document.getElementById('catSave').addEventListener('click', () => {
+      const cats = [...rows.querySelectorAll('.cat-row')].map(r => ({
+        name: r.querySelector('[data-f=name]').value.trim(),
+        types: r.querySelector('[data-f=types]').value.split(',').map(x => x.trim()).filter(Boolean),
+        icon: r.querySelector('[data-f=icon]').value,
+        sla_target: parseFloat(r.querySelector('[data-f=sla]').value),
+      }));
+      const msg = document.getElementById('catMsg');
+      fetch('/monitoring/categories', {method: 'POST', headers: {'Content-Type': 'application/json'},
+                                       body: JSON.stringify({categories: cats})})
+        .then(r => r.json()).then(res => {
+          msg.style.color = res.success ? '#059669' : '#dc2626';
+          msg.textContent = res.success ? 'Saved.' : (res.message || 'Could not save.');
+          if (res.success) { activeCat = 'all'; fetchAll(); setTimeout(() => o.remove(), 700); }
+        }).catch(() => { msg.style.color = '#dc2626'; msg.textContent = 'The server did not answer.'; });
+    });
+  });
 }
 
 // ── Node grid ────────────────────────────────────────────────
