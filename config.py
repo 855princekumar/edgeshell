@@ -10,6 +10,7 @@ Security posture:
     at the reverse proxy / load balancer).
 """
 import os
+import tempfile
 from datetime import timedelta
 from dotenv import load_dotenv
 
@@ -220,7 +221,11 @@ ProductionConfig.CREDENTIAL_KEY = os.environ.get('CREDENTIAL_KEY')
 class TestingConfig(Config):
     TESTING = True
     WTF_CSRF_ENABLED = False
-    SQLALCHEMY_DATABASE_URI = os.environ.get('TEST_DATABASE_URL', 'sqlite:///:memory:')
+    # A file, not ':memory:': an in-memory SQLite database shares one
+    # connection across threads, so background jobs in tests behaved unlike
+    # any real install (MariaDB or file SQLite give each session its own).
+    SQLALCHEMY_DATABASE_URI = os.environ.get('TEST_DATABASE_URL') or _normalize_db_uri(
+        _SQLITE_PREFIX + os.path.join(tempfile.gettempdir(), f'edgeshell-test-{os.getpid()}.db'))
     SECRET_KEY = 'testing'
     CREDENTIAL_KEY = 'testing-credential-key'
     # Tests that exercise 2FA turn it on; the rest sign in with a password.
