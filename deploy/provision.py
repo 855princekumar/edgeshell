@@ -537,6 +537,31 @@ def nginx_test_reload():
     systemctl('reload' if active else 'start', 'nginx')
 
 
+NGINX_MAIN = '/etc/nginx/nginx.conf'
+_TOKENS_RE = re.compile(r'^(\s*)server_tokens\s+[^;]*;', re.M)
+
+
+def nginx_common_conf():
+    """EdgeShell's http-level settings without directives nginx.conf already
+    sets. Ubuntu 26.04 ships an active `server_tokens build;` (24.04 had it
+    commented out), and nginx rejects a duplicate. Hide the version either way:
+    switch the distro line to `off`, or set it ourselves when it is absent."""
+    conf = tpl('nginx-common.conf')
+    try:
+        main = open(NGINX_MAIN).read()
+    except OSError:
+        return conf
+    if not _TOKENS_RE.search(main):
+        return conf
+    fixed = _TOKENS_RE.sub(r'\1server_tokens off;', main, count=1)
+    if fixed != main:
+        if not os.path.exists(NGINX_MAIN + '.edgeshell.bak'):
+            shutil.copy2(NGINX_MAIN, NGINX_MAIN + '.edgeshell.bak')
+        write(NGINX_MAIN, fixed)
+        ok('nginx.conf: server_tokens set to off (original kept as nginx.conf.edgeshell.bak).')
+    return '\n'.join(l for l in conf.splitlines() if not l.strip().startswith('server_tokens')) + '\n'
+
+
 def setup_nginx(cfg):
     step('Nginx reverse proxy')
     # Let nginx bind the Tailscale IP even before tailscaled brings it up at boot.
@@ -552,7 +577,7 @@ def setup_nginx(cfg):
     domain = cfg['domain']
     cert = f'/etc/letsencrypt/live/{domain}/fullchain.pem' if domain else None
 
-    write('/etc/nginx/conf.d/edgeshell-common.conf', tpl('nginx-common.conf'))
+    write('/etc/nginx/conf.d/edgeshell-common.conf', nginx_common_conf())
     write('/etc/nginx/snippets/edgeshell-proxy.conf', tpl('nginx-proxy.conf', PORT=cfg['port']))
 
     def apply(tls):
