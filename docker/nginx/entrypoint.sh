@@ -103,6 +103,9 @@ server {
     listen [::]:80 default_server;
     server_name _;
     location /.well-known/acme-challenge/ { root /var/www/certbot; default_type text/plain; }
+    # Answered here, not redirected, so the container health check never
+    # depends on the public address or the certificate.
+    location = /healthz { access_log off; proxy_pass http://edgeshell; include /etc/nginx/edgeshell-proxy.conf; }
     location / { return 301 https://$d\$request_uri; }
 }
 server {

@@ -6,6 +6,7 @@ All notable changes are documented here. Format loosely follows Keep a Changelog
 
 ### Fixed
 - Browsers logged a 404 for `/favicon.ico` on every page. EdgeShell now has an icon, linked from every page, and `/favicon.ico` redirects to it.
+- nginx reported itself unhealthy in HTTPS mode after the server's address changed: its health check followed the HTTP to HTTPS redirect to the public address. `/healthz` is now answered directly on port 80.
 - privacyIDEA signed its internal session tokens with a random 24-character key and warned about the key length. The stack now passes a dedicated `MFA_SECRET_KEY` (add it to an existing `.env` with `echo "MFA_SECRET_KEY=$(openssl rand -hex 32)" >> .env`).
 
 ## [1.3.1] - 2026-10-13
