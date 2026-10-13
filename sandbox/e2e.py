@@ -206,18 +206,21 @@ def main():
     status, location, _ = admin.login('admin', 'admin123')
     check('first sign-in sets up an authenticator (QR + key)', bool(admin.secret))
     check('10 one-time backup codes issued', len(admin.backup_codes) == 10, len(admin.backup_codes))
-    check('default admin must change password', status == 302 and '/change-password' in location,
-          f'{status} {location}')
+    check('after 2FA, the first admin must add a personal email for reset links',
+          status == 302 and '/account/email' in location, f'{status} {location}')
+    status, headers, _ = admin.request('GET', '/nodes/')
+    check('nothing else opens before the email is set',
+          status == 302 and '/account/email' in headers.get('Location', ''), status)
+    admin.get('/account/email')
+    status, headers, _ = admin.post_form('/account/email', {'email': 'owner@example.org',
+                                                            'password': 'admin123'})
+    check('then the default password must be changed',
+          status == 302 and '/change-password' in headers.get('Location', ''), status)
     admin_pw = 'E2e-' + secrets.token_urlsafe(12)
     admin.get('/change-password')
     status, _, _ = admin.post_form('/change-password', {
         'current_password': 'admin123', 'new_password': admin_pw, 'confirm_password': admin_pw})
     check('password changed', status == 302)
-    status, headers, _ = admin.request('GET', '/nodes/')
-    check('admin must add a personal email for reset links',
-          status == 302 and '/account/email' in headers.get('Location', ''), status)
-    admin.get('/account/email')
-    admin.post_form('/account/email', {'email': 'owner@example.org', 'password': admin_pw})
     if ADMIN_PASSWORD_FILE:
         with open(ADMIN_PASSWORD_FILE, 'w') as f:
             json.dump({'password': admin_pw, 'backup': admin.backup_codes[-1]}, f)
