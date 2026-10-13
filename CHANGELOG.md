@@ -2,6 +2,11 @@
 
 All notable changes are documented here. Format loosely follows Keep a Changelog.
 
+## [Unreleased]
+
+### Fixed
+- `python3 run.py` stopped at the Nginx step on Ubuntu 26.04 LTS: its `nginx.conf` sets `server_tokens` itself and nginx rejects the duplicate. The installer now switches that line to `off` (backup kept) instead. Verified on Ubuntu 26.04.1 (Python 3.14, MariaDB 11.8, PHP 8.5): fresh install, a re-run over a half-finished install, a repeat run and a reboot.
+
 ## [1.2.0] - 2026-10-12
 
 Container-first release: multi-arch image, a full sandbox with Pi Fleet

@@ -376,7 +376,7 @@ flowchart LR
 
 | Item | Requirement |
 |---|---|
-| OS | Ubuntu 24.04 / 22.04 LTS or Debian 12 |
+| OS | Ubuntu 26.04 / 24.04 / 22.04 LTS or Debian 12 |
 | Size | `t3.small` or larger (2 GB RAM) |
 | Network | An **Elastic IP** attached to the instance |
 | DNS | An `A` record, e.g. `fleet.yourdomain.com`, pointing to the Elastic IP |
