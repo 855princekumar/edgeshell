@@ -5,7 +5,7 @@
 #
 #   sandbox/run.sh              build EdgeShell from this checkout, test, tear down
 #   sandbox/run.sh --keep       same, but leave everything running afterwards
-#   EDGESHELL_IMAGE=devprincekumar/edgeshell:1.6.0 sandbox/run.sh   test a published image
+#   EDGESHELL_IMAGE=devprincekumar/edgeshell:1.7.0 sandbox/run.sh   test a published image
 #
 # Needs Docker with Compose v2, curl and Python 3. Exit code 0 = all passed.
 set -euo pipefail

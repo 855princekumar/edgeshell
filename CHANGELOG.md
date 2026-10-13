@@ -2,6 +2,20 @@
 
 All notable changes are documented here. Format loosely follows Keep a Changelog.
 
+## [1.7.0] - 2026-10-14
+
+### Added
+- **Stats export on the dashboard.** Choose a period (last 24 hours, 7 days, 30 days, quarter, semester or year), a category (or all) and the detail (one row per node per hour, per day, or for the whole period). The CSV is built in the background with a progress bar, then downloads; the job card on every page also offers the download. Columns: uptime percent, samples online, offline and with a login failure, average and peak CPU, memory, disk, temperature and load, reboots, network traffic, and each node's category, type, location and environment, ready for a data lake and health-prediction models.
+- **Long-term history.** One sample per node per minute whatever its state, so uptime is measured, not guessed (offline and login-failed minutes used to leave no trace), now with temperature and network counters. Hourly rollups are kept for good.
+- **VPN / Tailscale peer filters:** status, operating system, link (direct, relayed, idle, none) and last seen (last hour, 24 hours, 7 days, or not for 7+ days), clickable column sorting, a "showing X of Y" count and Clear; choices are remembered in the browser.
+- **Browser UI test** (`tools/ui_test.py`, a CI job): 1500 nodes, every page on phone, tablet, laptop and desktop sizes and at 67 to 200 percent zoom. It checks that nothing sticks out of its card, no page scrolls sideways, no word or number is broken over lines and no script fails, then drives the filters, Select All, dialogs, the fleet terminal, the VPN filters, the export and a real SSH terminal on an emulated Raspberry Pi.
+- A menu button on phones and narrow windows: the sidebar was unreachable below 768 px.
+
+### Fixed
+- OpenRemoteGUI install runs `sudo bash install.sh` (`./install.sh` fails when the clone has no execute bit).
+- Node Fleet card actions wrap inside the card (Delete no longer sticks out).
+- Phone and zoomed layouts: the top bar, the Node Fleet and Monitoring header buttons, the fleet terminal (its output pane was squeezed to 36 px on phones), Monitoring and Users stat cards (numbers and words broke mid-word), table columns (emails and IPs broke letter by letter; wide tables now scroll inside their card), dashboard metric values and the import sample.
+
 ## [1.6.0] - 2026-10-14
 
 ### Added

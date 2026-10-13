@@ -159,9 +159,10 @@ Use ↑ ↓ arrow keys to navigate command history<br>
 <style>
 /* Fit the screen: the node list and the output scroll inside their panes. */
 @media (max-width: 767.98px) {
-  .term-layout { height: auto !important; }
-  .term-nodes { width: 100% !important; max-height: 40vh !important; border-right: 0 !important; border-radius: 12px 12px 0 0 !important; }
-  .term-main { height: 60vh; border-radius: 0 0 12px 12px !important; }
+  .term-layout { height: auto !important; flex-direction: column; flex-wrap: nowrap; }
+  .term-nodes { width: 100% !important; max-height: none !important; flex: none !important; border-right: 0 !important; border-radius: 12px 12px 0 0 !important; }
+  .term-nodes #nodeList { flex: none !important; max-height: 32vh; }
+  .term-main { width: 100% !important; flex: none !important; height: 65vh; max-height: none !important; border-radius: 0 0 12px 12px !important; }
 }
 .btn-xs { padding: 2px 7px !important; font-size: .7rem !important; }
 .node-item { cursor:pointer; border-bottom:1px solid #f3f4f6; transition:background .1s; }

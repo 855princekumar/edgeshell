@@ -128,7 +128,7 @@ on SSH.
 | Connection | One SSH connection per node, kept open with keepalives and reused. Edited credentials always get a fresh login |
 | Command | One shell command reads `/proc/stat` (twice, 0.2 s apart, for CPU), `/proc/loadavg`, `/proc/meminfo`, `df`, `/proc/uptime`, the temperature, network counters and the Docker and Node-RED state |
 | Fan-out | All due nodes at once, `COLLECTOR_WORKERS` (48) in parallel, every `COLLECTOR_INTERVAL` (30 s) |
-| Storage | Only the collector thread writes: the node row, plus a history row at most once a minute |
+| Storage | Only the collector thread writes: the node row, plus one history sample per node per minute (online, offline or login failed) |
 | Failures | `auth` (wrong username or password: card shows Fix login, retried every 10 min), `unreachable` (backs off up to 5 min), `error` |
 
 Measured on a 122-node Tailscale fleet:
@@ -142,6 +142,23 @@ The remaining time per node is network latency to the device, which a
 faster language would not remove; the collector is Python by design. Run
 `tools/perf.py` to time every page, API and action against a simulated fleet.
 
+
+## Long-term history and the stats export
+
+| Table | What | Kept |
+|---|---|---|
+| `system_metrics` | One sample per active node per minute: state (online, offline, auth_failed), CPU, memory, disk, temperature, load, uptime, network counters | `METRICS_RETENTION_DAYS` (default 14) |
+| `metrics_hourly` | Rolled up every hour from the samples: samples per state (uptime), average and peak of each metric, reboots (uptime going down), network bytes | for good, about 1.3 million rows a year for 150 nodes |
+
+The rollup runs in the collector thread (`app/services/history.py`); a first
+backfill after an upgrade is spread over passes of 24 hours each. The
+dashboard's **Export stats** starts a background job (`jobs.run_task`) that
+brings the rollup up to date, reads the chosen period (24 hours to a year),
+category and detail (hourly, daily or one row per node) and writes a CSV. The
+page polls the job for its progress bar, then downloads the file; an export is
+kept for an hour and only its owner can download it. Every row carries the
+node's category, type, location and environment, so a separate pipeline can
+load the files into a data lake and train health-prediction models on them.
 
 ## Device categories
 

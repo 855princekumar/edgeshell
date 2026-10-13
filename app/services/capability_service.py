@@ -82,7 +82,7 @@ def _install_command(capability):
                 'bash /tmp/nr.sh --confirm-install --confirm-pi --nodered-user="$USER"')
     if capability == 'orgui':
         return ('cd "$HOME"; if [ ! -d OpenRemoteGUI ]; then git clone %s; fi; '
-                'cd OpenRemoteGUI && sudo ./install.sh' % repo)
+                'cd OpenRemoteGUI && sudo bash install.sh' % repo)
     return None
 
 

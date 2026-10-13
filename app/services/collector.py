@@ -256,7 +256,8 @@ class Collector:
         self.latest = {}            # node_id -> last result (metrics or error)
         self.next_at = {}           # node_id -> earliest next attempt (epoch)
         self.failures = {}          # node_id -> consecutive failures
-        self.last_history = {}      # node_id -> epoch of the last history row
+        self.last_sample = 0        # epoch of the last history sample of the fleet
+        self._last_rollup = 0
         self.cycle = {'started': None, 'seconds': None, 'nodes': 0, 'ok': 0,
                       'auth': 0, 'unreachable': 0, 'error': 0, 'skipped': 0}
         self._wake = threading.Event()
@@ -285,6 +286,7 @@ class Collector:
             try:
                 with self._app.app_context():
                     self.run_cycle()
+                    self._roll_up()
                     self._purge_history()
             except Exception as e:
                 self._app.logger.warning('metrics cycle failed: %s', e)
@@ -316,6 +318,11 @@ class Collector:
                 for t, r in zip(targets, pool.map(collect_one, targets)):
                     results[t['id']] = r
         self._store(nodes, results, now)
+        if not node_ids and now - self.last_sample >= HISTORY_EVERY_S:
+            # one history sample per node per minute, whatever its state
+            from app.services import history
+            self.last_sample = now
+            db.session.add_all(history.sample_rows(nodes, self.latest, fresh_s=HISTORY_EVERY_S * 2))
         db.session.commit()
         if not node_ids:
             counts = {'ok': 0, 'auth': 0, 'unreachable': 0, 'error': 0}
@@ -326,8 +333,6 @@ class Collector:
         return results
 
     def _store(self, nodes, results, now):
-        from app import db
-        from app.models import SystemMetrics
         by_id = {n.id: n for n in nodes}
         for nid, r in results.items():
             n = by_id[nid]
@@ -348,13 +353,6 @@ class Collector:
                 n.orgui_checked_at = datetime.utcnow()
                 n.status, n.last_error = 'online', None
                 n.last_seen = datetime.utcnow()
-                if now - self.last_history.get(nid, 0) >= HISTORY_EVERY_S:
-                    self.last_history[nid] = now
-                    db.session.add(SystemMetrics(
-                        node_id=nid, cpu_percent=m['cpu_percent'], ram_percent=m['mem_percent'],
-                        disk_percent=m['disk_percent'], load_avg_1=m['load_1'],
-                        load_avg_5=m['load_5'], load_avg_15=m['load_15'],
-                        uptime_seconds=m['uptime_seconds']))
             else:
                 fails = self.failures.get(nid, 0) + 1
                 self.failures[nid] = fails
@@ -365,6 +363,14 @@ class Collector:
                     n.status = 'offline'
                     self.next_at[nid] = now + min(BACKOFF_MAX_S, INTERVAL_S * 2 ** (fails - 1))
                 n.last_error = (r['message'] or '')[:250]
+
+    def _roll_up(self):
+        """Hourly rollups for the long-term history (a few seconds an hour)."""
+        if time.time() - self._last_rollup < 300:
+            return
+        self._last_rollup = time.time()
+        from app.services import history
+        history.roll_up(max_hours=24)          # a first backfill spreads over a few passes
 
     def _purge_history(self):
         from flask import current_app

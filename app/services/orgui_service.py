@@ -15,7 +15,7 @@ enabled, which made every reachable Pi look like it had OpenRemoteGUI. And
 `pgrep -f` also matches the checking shell's own command line.
 
 Install runs the documented one-liner:
-  git clone <repo> && cd OpenRemoteGUI && sudo ./install.sh
+  git clone <repo> && cd OpenRemoteGUI && sudo bash install.sh
 """
 from datetime import datetime
 from flask import current_app
@@ -59,7 +59,7 @@ def install(node):
     cmd = (
         "set -e; cd \"$HOME\"; "
         "if [ ! -d OpenRemoteGUI ]; then git clone {repo}; fi; "
-        "cd OpenRemoteGUI && sudo ./install.sh"
+        "cd OpenRemoteGUI && sudo bash install.sh"
     ).format(repo=repo)
     r = execute_command(node, cmd, timeout=600)
     ok = r.get('success', False)
@@ -144,7 +144,7 @@ def preflight(target, sudo_password, run):
 
 def install_task(task, node_ids, stop_on_failure=True):
     """Guided install for one or more nodes, one at a time:
-    preflight -> git clone (or update) -> cd + sudo ./install.sh -> verify."""
+    preflight -> git clone (or update) -> cd + sudo bash install.sh -> verify."""
     import urllib.request
     from app.models.node import Node
     from app.services import collector
@@ -198,12 +198,12 @@ def install_task(task, node_ids, stop_on_failure=True):
             halted = stop_on_failure
             continue
 
-        task.item(n.id, step='Installing (sudo ./install.sh)')
-        say('cd OpenRemoteGUI && sudo ./install.sh')
-        r = run(t, 'cd "$HOME/OpenRemoteGUI" && sudo ./install.sh', timeout=1500, sudo_password=pw,
+        task.item(n.id, step='Installing (sudo bash install.sh)')
+        say('cd OpenRemoteGUI && sudo bash install.sh')
+        r = run(t, 'cd "$HOME/OpenRemoteGUI" && sudo bash install.sh', timeout=1500, sudo_password=pw,
                 on_output=say)
         if not r['success']:
-            task.item(n.id, state='failed', step='Installing (sudo ./install.sh)',
+            task.item(n.id, state='failed', step='Installing (sudo bash install.sh)',
                       message=r['error'] or f"install.sh exited with {r['exit_code']}")
             task.finish_item(False)
             log_activity('OpenRemoteGUI install', node=n.name, status='failure',

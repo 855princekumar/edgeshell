@@ -3,16 +3,19 @@
 
 {% block content %}
 <!-- Header -->
-<div class="d-flex align-items-center justify-content-between mb-4">
+<div class="d-flex align-items-center justify-content-between mb-4 flex-wrap gap-2">
   <div>
     <h4 class="fw-bold mb-0">Fleet Health Dashboard</h4>
     <small class="text-muted" id="last-hb">Fetching heartbeat…</small>
   </div>
-  <div class="d-flex gap-2 align-items-center">
+  <div class="d-flex gap-2 align-items-center flex-wrap">
     <span class="badge bg-success bg-opacity-10 text-success border border-success border-opacity-25 px-3 py-2">
       <span class="me-1" style="display:inline-block;width:7px;height:7px;border-radius:50%;background:#059669;animation:pulse 2s infinite"></span>
       Live
     </span>
+    <button class="btn btn-sm btn-outline-primary" id="exportBtn" onclick="openExport()" title="Download uptime and resource history as CSV">
+      <i class="bi bi-download me-1"></i>Export stats
+    </button>
     <button class="btn btn-sm btn-primary" onclick="fetchAll()">
       <i class="bi bi-arrow-clockwise me-1"></i>Refresh
     </button>
@@ -215,7 +218,7 @@
 .metric-label { font-size:.72rem; color:#6b7280; width:36px; flex-shrink:0; }
 .metric-bar { flex:1; height:5px; border-radius:3px; background:#e5e7eb; }
 .metric-fill { height:100%; border-radius:3px; transition:width .4s; }
-.metric-val { font-size:.72rem; font-weight:600; width:36px; text-align:right; flex-shrink:0; }
+.metric-val { font-size:.72rem; font-weight:600; min-width:42px; text-align:right; flex-shrink:0; white-space:nowrap; }
 .arch-badge { font-size:.65rem; padding:1px 6px; border-radius:10px; font-weight:600; }
 </style>
 {% endblock %}
@@ -555,7 +558,7 @@ function renderNodeGrid() {
             <div class="metric-val">${disk}%</div></div>
           <div class="d-flex justify-content-between mt-2 small text-muted">
             <span><i class="bi bi-thermometer-half me-1"></i>${temp}</span>
-            <span class="font-monospace" title="Load 1m/5m/15m">${load}</span>
+            <span class="font-monospace text-nowrap" title="Load 1m/5m/15m">${load}</span>
             <span><i class="bi bi-clock me-1"></i>${seen}</span>
           </div>` : n.status === 'auth_failed' ? `
           <div class="text-center py-2">
@@ -738,5 +741,81 @@ document.addEventListener('DOMContentLoaded', () => {
   fetchAll();
   setInterval(fetchAll, 15000);
 });
+
+// ── Stats export: choose a period, build the CSV in the background, download ──
+const EXPORT_PERIODS = [['day', 'Last 24 hours'], ['week', 'Last 7 days'], ['month', 'Last 30 days'],
+  ['quarter', 'Last quarter (90 days)'], ['semester', 'Last semester (182 days)'], ['year', 'Last year (365 days)']];
+const EXPORT_GRAINS = [['daily', 'Daily: one row per node per day'], ['hourly', 'Hourly: one row per node per hour'],
+  ['summary', 'Summary: one row per node for the period']];
+function openExport() {
+  fetch('/monitoring/categories', {credentials: 'same-origin'}).then(r => r.json()).catch(() => ({})).then(info => {
+    const old = document.getElementById('exportDlg'); if (old) old.remove();
+    const cats = (info.categories || []).map(c => c.name).concat(['Other']);
+    const opt = (v, t, sel) => '<option value="' + escHtml(v) + '"' + (sel ? ' selected' : '') + '>' + escHtml(t) + '</option>';
+    const o = document.createElement('div');
+    o.id = 'exportDlg';
+    o.style.cssText = 'position:fixed;inset:0;z-index:99996;background:rgba(15,23,42,.55);display:flex;align-items:center;justify-content:center;padding:16px';
+    o.innerHTML = '<div class="es-dlg" style="background:#fff;border-radius:14px;width:100%;max-width:520px;max-height:calc(100vh - 32px);overflow:auto;box-shadow:0 10px 40px rgba(0,0,0,.25)">'
+      + '<div style="padding:18px 20px;border-bottom:1px solid #e5e7eb"><div style="font-size:17px;font-weight:700">Export stats</div>'
+      + '<div class="small text-muted">Uptime, CPU, memory, disk, temperature, load, reboots and network traffic per node, tagged with its category. '
+      + 'Built in the background, then downloaded as CSV.</div></div>'
+      + '<div style="padding:16px 20px;display:grid;gap:12px">'
+      + '<label class="small fw-semibold">Period<select class="form-select form-select-sm mt-1" id="expPeriod">'
+      + EXPORT_PERIODS.map(p => opt(p[0], p[1], p[0] === 'week')).join('') + '</select></label>'
+      + '<label class="small fw-semibold">Category<select class="form-select form-select-sm mt-1" id="expCat">'
+      + opt('', 'All categories', activeCat === 'all') + cats.map(c => opt(c, c, activeCat === c)).join('') + '</select></label>'
+      + '<label class="small fw-semibold">Detail<select class="form-select form-select-sm mt-1" id="expGrain">'
+      + EXPORT_GRAINS.map(g => opt(g[0], g[1], g[0] === 'daily')).join('') + '</select></label>'
+      + '<div id="expProg" style="display:none"><div class="progress" style="height:10px" role="progressbar" aria-label="Export progress">'
+      + '<div class="progress-bar progress-bar-striped progress-bar-animated" id="expBar" style="width:0%"></div></div>'
+      + '<div class="small text-muted mt-1" id="expMsg" style="overflow-wrap:anywhere"></div></div>'
+      + '<div class="small text-muted">History starts when this version is installed: uptime counts every minute of every node, online or not. '
+      + 'Times are UTC.</div></div>'
+      + '<div style="padding:14px 20px;border-top:1px solid #e5e7eb;display:flex;gap:10px;justify-content:flex-end;flex-wrap:wrap">'
+      + '<button type="button" class="btn btn-sm btn-outline-secondary" id="expClose">Close</button>'
+      + '<button type="button" class="btn btn-sm btn-primary" id="expStart"><i class="bi bi-download me-1"></i>Build and download</button></div></div>';
+    document.body.appendChild(o);
+    let timer = null;
+    const close = () => { clearTimeout(timer); o.remove(); };
+    document.getElementById('expClose').addEventListener('click', close);
+    o.addEventListener('click', e => { if (e.target === o) close(); });
+    document.getElementById('expStart').addEventListener('click', () => {
+      const btn = document.getElementById('expStart'), bar = document.getElementById('expBar'), msg = document.getElementById('expMsg');
+      btn.disabled = true;
+      document.getElementById('expProg').style.display = '';
+      bar.classList.add('progress-bar-animated'); bar.classList.remove('bg-danger', 'bg-success');
+      msg.textContent = 'Starting...';
+      fetch('/dashboard/export', {method: 'POST', credentials: 'same-origin', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({period: document.getElementById('expPeriod').value, grain: document.getElementById('expGrain').value,
+                              category: document.getElementById('expCat').value})})
+        .then(r => r.json().then(d => ({ok: r.ok, d: d})))
+        .then(({ok, d}) => {
+          if (!ok || !d.job_id) throw new Error(d.error || 'Could not start the export.');
+          const poll = () => fetch('/nodes/jobs/' + d.job_id, {credentials: 'same-origin'}).then(r => r.json()).then(j => {
+            const pct = j.total ? Math.round(j.done / j.total * 100) : 0;
+            bar.style.width = pct + '%';
+            bar.setAttribute('aria-valuenow', pct);
+            msg.textContent = (j.message || 'Working...') + ' (' + pct + '%)';
+            if (j.state === 'running') { timer = setTimeout(poll, 700); return; }
+            bar.classList.remove('progress-bar-animated');
+            btn.disabled = false;
+            if (j.state !== 'done' || !j.result) {
+              bar.classList.add('bg-danger');
+              msg.textContent = 'Export failed: ' + (j.message || 'unknown error');
+              return;
+            }
+            bar.classList.add('bg-success');
+            const url = '/dashboard/export/' + j.id + '/download';
+            msg.innerHTML = escHtml(j.result.rows + ' row(s) for ' + j.result.nodes + ' node(s). ')
+              + '<a href="' + url + '" id="expLink">Download ' + escHtml(j.result.filename) + '</a>';
+            const a = document.createElement('a'); a.href = url; a.download = j.result.filename;
+            document.body.appendChild(a); a.click(); a.remove();
+          }).catch(() => { timer = setTimeout(poll, 2000); });
+          poll();
+        })
+        .catch(e => { btn.disabled = false; bar.classList.add('bg-danger'); msg.textContent = e.message; });
+    });
+  });
+}
 </script>
 {% endblock %}

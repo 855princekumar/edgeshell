@@ -228,6 +228,9 @@ def _ensure_schema():
         'activity_logs': {
             'device': 'VARCHAR(160)',
         },
+        'system_metrics': {
+            'status': 'VARCHAR(16)',
+        },
     }
     for table, cols in wanted.items():
         if table not in inspector.get_table_names():

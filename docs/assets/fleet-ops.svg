@@ -27,5 +27,5 @@
   <line x1="600" y1="95" x2="650" y2="95" stroke="#334155" stroke-width="2" marker-end="url(#b)"/>
   <text x="30" y="175" font-size="12" fill="#64748b">Unreachable nodes are handled by Ansible and reported per host, never silently dropped.</text>
   <rect x="30" y="190" width="770" height="40" rx="8" fill="#fff" stroke="#e2e8f0"/>
-  <text x="44" y="215" font-size="12" fill="#0f172a" font-family="monospace">git clone https://github.com/855princekumar/OpenRemoteGUI.git &amp;&amp; cd OpenRemoteGUI &amp;&amp; sudo ./install.sh</text>
+  <text x="44" y="215" font-size="12" fill="#0f172a" font-family="monospace">git clone https://github.com/855princekumar/OpenRemoteGUI.git &amp;&amp; cd OpenRemoteGUI &amp;&amp; sudo bash install.sh</text>
 </svg>

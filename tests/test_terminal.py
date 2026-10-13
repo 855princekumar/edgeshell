@@ -170,7 +170,7 @@ def test_guided_install_runs_each_step_in_order(app, client, monkeypatch):
     assert j['state'] == 'done' and j['ok'] == 1, j
     order = [c for c in fake.commands if 'git clone' in c or 'install.sh' in c]
     assert 'git clone --depth 1 https://github.com/855princekumar/OpenRemoteGUI.git' in order[0]
-    assert order[1] == 'cd "$HOME/OpenRemoteGUI" && sudo ./install.sh'
+    assert order[1] == 'cd "$HOME/OpenRemoteGUI" && sudo bash install.sh'
     assert any('installing noVNC' in line for line in j['log'])      # live output reaches the log
     with app.app_context():
         assert db.session.get(Node, nid).orgui_installed is True

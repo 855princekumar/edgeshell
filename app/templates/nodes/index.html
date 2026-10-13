@@ -161,7 +161,7 @@
         {% endif %}
 
         {% if current_user.can_execute() %}
-        <div class="flex gap-2 mt-4" style="border-top:1px solid var(--gray-100);padding-top:12px">
+        <div class="flex gap-2 mt-4 node-actions" style="border-top:1px solid var(--gray-100);padding-top:12px;flex-wrap:wrap;row-gap:6px;align-items:center">
             <button class="btn btn-outline btn-xs" onclick="testNode({{ node.id }})">
                 <span class="spinner" id="spinner-{{ node.id }}" style="display:none;width:12px;height:12px"></span>
                 <i class="bi bi-wifi" id="wifiicon-{{ node.id }}"></i> Test
@@ -395,7 +395,7 @@ function openRemoteGui(id) {
                 if (confirm(`OpenRemoteGUI ${why} on ${ip}.\n\nInstall it now? EdgeShell will:\n`
                     + `  1. check the OS, disk space, network, desktop session and sudo (and stop if anything is unsafe)\n`
                     + `  2. git clone https://github.com/855princekumar/OpenRemoteGUI.git\n`
-                    + `  3. cd OpenRemoteGUI and run sudo ./install.sh\n`
+                    + `  3. cd OpenRemoteGUI and run sudo bash install.sh\n`
                     + `  4. check that its page answers on port ${btn.dataset.port}\n\n`
                     + `Note: the installer turns off Raspberry Pi Connect's own VNC on that node, as OpenRemoteGUI replaces it.\n`
                     + `You can follow every step live.`)) {

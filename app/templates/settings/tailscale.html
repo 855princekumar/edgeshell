@@ -37,9 +37,30 @@
 </div>
 
 <div class="card border-0 shadow-sm">
-  <div class="card-header bg-white border-bottom py-3 d-flex justify-content-between align-items-center">
-    <span class="fw-semibold"><i class="bi bi-diagram-3 me-2 text-info"></i>Tailnet peers</span>
-    <input type="search" class="form-control form-control-sm w-auto" placeholder="Filter..." id="peer-filter" oninput="vpnRender()">
+  <div class="card-header bg-white border-bottom py-3">
+    <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-2">
+      <span class="fw-semibold"><i class="bi bi-diagram-3 me-2 text-info"></i>Tailnet peers</span>
+      <span class="text-muted small" id="peer-shown"></span>
+    </div>
+    <div class="d-flex flex-wrap gap-2 align-items-center" id="peer-filters">
+      <input type="search" class="form-control form-control-sm" style="flex:1 1 180px;max-width:260px" placeholder="Search name, IP, OS..." id="peer-filter" oninput="vpnRender()">
+      <select class="form-select form-select-sm" style="flex:0 1 140px" id="peer-status" onchange="vpnRender()" title="Status">
+        <option value="">Any status</option><option value="online">Online</option><option value="offline">Offline</option>
+      </select>
+      <select class="form-select form-select-sm" style="flex:0 1 140px" id="peer-os" onchange="vpnRender()" title="Operating system">
+        <option value="">Any OS</option>
+      </select>
+      <select class="form-select form-select-sm" style="flex:0 1 150px" id="peer-link" onchange="vpnRender()" title="Link">
+        <option value="">Any link</option><option value="direct">Direct</option><option value="relay">Relayed (DERP)</option>
+        <option value="idle">Idle</option><option value="none">No link (offline)</option>
+      </select>
+      <select class="form-select form-select-sm" style="flex:0 1 180px" id="peer-seen" onchange="vpnRender()" title="Last seen">
+        <option value="">Last seen: any time</option><option value="1h">Seen in the last hour</option>
+        <option value="24h">Seen in the last 24 h</option><option value="7d">Seen in the last 7 days</option>
+        <option value="old">Not seen for 7+ days</option>
+      </select>
+      <button type="button" class="btn btn-sm btn-outline-secondary" id="peer-clear" onclick="vpnClearFilters()"><i class="bi bi-x-lg me-1"></i>Clear</button>
+    </div>
   </div>
   <div class="card-body p-0" id="peers-body">
     <div class="text-center py-4 text-muted"><div class="spinner-border spinner-border-sm me-2"></div>Loading...</div>
@@ -56,6 +77,53 @@
 {% block scripts %}
 <script>
 let vpnData = null;
+const VPN_PREFS = 'edgeshell.vpnPeers';
+const VPN_FILTERS = ['peer-filter', 'peer-status', 'peer-os', 'peer-link', 'peer-seen'];
+let vpnSort = {key: 'status', dir: 1};
+let vpnSavedOs = '';
+
+function linkKind(n) {
+  if (!n.online) return 'none';
+  if (n.connection === 'direct') return 'direct';
+  if ((n.connection || '').startsWith('relay')) return 'relay';
+  return 'idle';
+}
+function seenAge(n) {                       // seconds since last seen; online counts as now
+  if (n.online) return 0;
+  return n.last_seen ? Math.max(0, (Date.now() - Date.parse(n.last_seen)) / 1000) : Infinity;
+}
+const VPN_SORTS = {
+  name: n => (n.name || '').toLowerCase(),
+  ip: n => (n.ip || '').split('.').map(x => x.padStart(3, '0')).join('.'),
+  os: n => (n.os || '').toLowerCase(),
+  status: n => (n.online ? '0 ' : '1 ') + (n.name || '').toLowerCase(),
+  link: n => ({direct: 0, relay: 1, idle: 2, none: 3})[linkKind(n)],
+  seen: n => seenAge(n),
+  traffic: n => -((n.rx_bytes || 0) + (n.tx_bytes || 0)),
+};
+function vpnSortBy(key) {
+  vpnSort = {key: key, dir: vpnSort.key === key ? -vpnSort.dir : 1};
+  vpnRender();
+}
+function vpnClearFilters() {
+  VPN_FILTERS.forEach(id => { document.getElementById(id).value = ''; });
+  vpnRender();
+}
+function vpnSave() {
+  try {
+    const f = {sort: vpnSort};
+    VPN_FILTERS.forEach(id => { f[id] = document.getElementById(id).value; });
+    localStorage.setItem(VPN_PREFS, JSON.stringify(f));
+  } catch (e) {}
+}
+function vpnLoad() {
+  try {
+    const f = JSON.parse(localStorage.getItem(VPN_PREFS) || '{}');
+    if (f.sort && VPN_SORTS[f.sort.key]) vpnSort = {key: f.sort.key, dir: f.sort.dir < 0 ? -1 : 1};
+    VPN_FILTERS.forEach(id => { if (f[id] && id !== 'peer-os') document.getElementById(id).value = f[id]; });
+    vpnSavedOs = f['peer-os'] || '';
+  } catch (e) {}
+}
 
 function esc(s) {
   return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]));
@@ -98,18 +166,40 @@ function vpnRender() {
   if (d.exit_node) notes.push('<div class="alert alert-secondary py-2 small mb-0">Using exit node: ' + esc(d.exit_node) + '</div>');
   document.getElementById('vpn-health').innerHTML = notes.join('');
 
+  const osSel = document.getElementById('peer-os');
+  const oses = [...new Set(nodes.map(n => n.os || 'unknown'))].sort();
+  const wantOs = osSel.value || vpnSavedOs;
+  osSel.innerHTML = '<option value="">Any OS</option>' + oses.map(o => '<option value="' + esc(o) + '">' + esc(o) + '</option>').join('');
+  osSel.value = oses.includes(wantOs) ? wantOs : '';
+  if (osSel.value) vpnSavedOs = '';
+
   const q = (document.getElementById('peer-filter').value || '').toLowerCase();
-  const shown = nodes.filter(n => !q || [n.name, n.dns_name, n.ip, n.os].join(' ').toLowerCase().includes(q));
+  const fStatus = document.getElementById('peer-status').value, fOs = osSel.value,
+        fLink = document.getElementById('peer-link').value, fSeen = document.getElementById('peer-seen').value;
+  const SEEN = {'1h': 3600, '24h': 86400, '7d': 604800};
+  const shown = nodes.filter(n => (!q || [n.name, n.dns_name, n.ip, n.os].join(' ').toLowerCase().includes(q))
+    && (!fStatus || (fStatus === 'online') === !!n.online)
+    && (!fOs || (n.os || 'unknown') === fOs)
+    && (!fLink || linkKind(n) === fLink)
+    && (!fSeen || (fSeen === 'old' ? seenAge(n) > SEEN['7d'] : seenAge(n) <= SEEN[fSeen])));
+  const key = VPN_SORTS[vpnSort.key] || VPN_SORTS.status;
+  shown.sort((a, b) => { const x = key(a), y = key(b); return (x < y ? -1 : x > y ? 1 : 0) * vpnSort.dir; });
+  vpnSave();
+  document.getElementById('peer-shown').textContent = shown.length === nodes.length
+    ? nodes.length + ' device(s)' : 'Showing ' + shown.length + ' of ' + nodes.length;
   const body = document.getElementById('peers-body');
   if (!shown.length) {
-    body.innerHTML = '<p class="text-muted text-center py-4 small mb-0">' + (nodes.length ? 'No peers match the filter.' : 'No other devices in this tailnet yet.') + '</p>';
+    body.innerHTML = '<p class="text-muted text-center py-4 small mb-0">' + (nodes.length ? 'No peers match the filters.' : 'No other devices in this tailnet yet.') + '</p>';
     return;
   }
+  const th = (k, label, cls) => '<th class="' + (cls || '') + '" data-sort="' + k + '" style="cursor:pointer;white-space:nowrap;user-select:none" title="Sort by ' + label.toLowerCase() + '">'
+    + label + (vpnSort.key === k ? ' <i class="bi bi-caret-' + (vpnSort.dir > 0 ? 'up' : 'down') + '-fill"></i>' : ' <i class="bi bi-chevron-expand text-muted opacity-50"></i>') + '</th>';
   body.innerHTML = '<div class="table-responsive"><table class="table table-hover align-middle mb-0 small">'
-    + '<thead class="table-light"><tr><th class="ps-3">Device</th><th>Tailscale IP</th><th>OS</th><th>Status</th><th>Link</th><th>Last seen</th><th class="pe-3 text-end">Traffic (rx / tx)</th></tr></thead><tbody>'
+    + '<thead class="table-light"><tr>' + th('name', 'Device', 'ps-3') + th('ip', 'Tailscale IP') + th('os', 'OS') + th('status', 'Status')
+    + th('link', 'Link') + th('seen', 'Last seen') + th('traffic', 'Traffic (rx / tx)', 'pe-3 text-end') + '</tr></thead><tbody>'
     + shown.map(n => '<tr>'
       + '<td class="ps-3"><div class="fw-semibold">' + esc(n.name) + (n.exit_node ? ' <span class="badge bg-secondary">exit node</span>' : '') + '</div>'
-      + '<div class="text-muted" style="font-size:11px">' + esc(n.dns_name) + '</div></td>'
+      + '<div class="text-muted text-nowrap" style="font-size:11px">' + esc(n.dns_name) + '</div></td>'
       + '<td class="font-monospace">' + esc(n.ip || '-') + '</td>'
       + '<td class="text-muted">' + esc(n.os || '-') + '</td>'
       + '<td><span class="status-badge ' + (n.online ? 'status-online' : 'status-offline') + '">' + (n.online ? 'Online' : 'Offline') + '</span></td>'
@@ -133,6 +223,10 @@ function vpnRefresh() {
     });
 }
 
-document.addEventListener('DOMContentLoaded', () => { vpnRefresh(); setInterval(vpnRefresh, 10000); });
+document.getElementById('peers-body').addEventListener('click', e => {
+  const h = e.target.closest('th[data-sort]');
+  if (h) vpnSortBy(h.dataset.sort);
+});
+document.addEventListener('DOMContentLoaded', () => { vpnLoad(); vpnRefresh(); setInterval(vpnRefresh, 10000); });
 </script>
 {% endblock %}

@@ -24,6 +24,7 @@ LOG_KEEP = 400
 def _public(job, full=False):
     out = {k: job[k] for k in ('id', 'kind', 'title', 'total', 'done', 'ok', 'failed',
                                'state', 'message', 'started', 'finished')}
+    out['result'] = job.get('result')
     out['items'] = [dict(i) for i in job.get('items', [])]
     log = job.get('log', [])
     out['log'] = list(log if full else log[-12:])
@@ -56,6 +57,20 @@ class Task:
                     it.update(fields)
                     return
             self.job['items'].append(dict(key=key, **fields))
+
+    def progress(self, done, total=None, message=None):
+        """Set progress directly, for work that is not a list of nodes."""
+        with _LOCK:
+            self.job['done'] = done
+            if total is not None:
+                self.job['total'] = total
+            if message is not None:
+                self.job['message'] = message
+
+    def result(self, **fields):
+        """Attach a result to the finished job (for example a download link)."""
+        with _LOCK:
+            self.job['result'] = dict(fields)
 
     def finish_item(self, ok):
         with _LOCK:
