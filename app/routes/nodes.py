@@ -265,11 +265,65 @@ def orgui_install_all():
                     'results': results})
 
 
-# ── Bulk import (CSV / TXT) ──────────────────────────────────────────────────
-import io as _io
+# ── Bulk import (CSV / TXT / JSON) ───────────────────────────────────────────
+# The parsed rows wait on the server between upload and commit (only a short
+# token sits in the session cookie: whole files in the cookie overflowed the
+# proxy's header limit and browsers' 4 KB cookie limit). After the commit the
+# new nodes are checked over SSH in a background job with live progress.
+import os as _os
+import secrets as _secrets
+import time as _time
 from flask import session as _session
 from app.services import import_service as _imp
+from app.services import jobs as _jobs
 from app.services.ssh_service import test_connection as _testconn
+
+_STAGING_TTL_S = 24 * 3600
+
+
+def _staging_dir():
+    d = _os.path.join(current_app.instance_path, 'imports')
+    _os.makedirs(d, exist_ok=True)
+    return d
+
+
+def _stage(rows, headers):
+    d = _staging_dir()
+    now = _time.time()
+    for name in _os.listdir(d):                      # drop abandoned uploads
+        path = _os.path.join(d, name)
+        if now - _os.path.getmtime(path) > _STAGING_TTL_S:
+            try:
+                _os.remove(path)
+            except OSError:
+                pass
+    token = _secrets.token_hex(16)
+    with open(_os.path.join(d, token + '.json'), 'w', encoding='utf-8') as f:
+        json.dump({'owner': current_user.id, 'rows': rows, 'headers': headers}, f)
+    old = _session.get('import_token')
+    _session['import_token'] = token
+    if old:
+        _unstage(old)
+
+
+def _staged():
+    token = _session.get('import_token') or ''
+    if not token.isalnum():
+        return None
+    try:
+        with open(_os.path.join(_staging_dir(), token + '.json'), encoding='utf-8') as f:
+            data = json.load(f)
+    except (OSError, ValueError):
+        return None
+    return data if data.get('owner') == current_user.id else None
+
+
+def _unstage(token):
+    if token and token.isalnum():
+        try:
+            _os.remove(_os.path.join(_staging_dir(), token + '.json'))
+        except OSError:
+            pass
 
 
 @nodes_bp.route('/import', methods=['GET', 'POST'])
@@ -286,8 +340,7 @@ def bulk_import():
         if not rows:
             flash('Could not parse any rows from the file.', 'danger')
             return render_template('nodes/import.html')
-        _session['import_rows'] = rows
-        _session['import_headers'] = headers
+        _stage(rows, headers)
         return render_template('nodes/import_verify.html', mapping=mapping,
                                rows=rows[:200], headers=headers,
                                fields=list(_imp.FIELD_ALIASES.keys()),
@@ -295,12 +348,27 @@ def bulk_import():
     return render_template('nodes/import.html')
 
 
+def _check_imported_node(node_id):
+    node = db.session.get(Node, node_id)
+    if not node:
+        return False
+    ok, _ = _testconn(node)
+    node.status = 'online' if ok else 'offline'
+    if ok:
+        orgui_service.persist_check(node)
+    db.session.commit()
+    return ok
+
+
 @nodes_bp.route('/import/commit', methods=['POST'])
 @login_required
 @operator_required
 def bulk_import_commit():
-    rows = _session.get('import_rows', [])
-    headers = _session.get('import_headers', [])
+    staged = _staged()
+    if not staged:
+        flash('That import expired or was already used. Upload the file again.', 'warning')
+        return redirect(url_for('nodes.bulk_import'))
+    rows, headers = staged['rows'], staged['headers']
     mapping = {h: (request.form.get(f'map__{h}') or None) for h in headers}
     for k, v in list(mapping.items()):
         if v in ('', 'None'):
@@ -310,40 +378,44 @@ def bulk_import_commit():
         default_password=request.form.get('default_password', ''),
         host_override=request.form.get('host_override', '').strip())
 
-    created, skipped = 0, 0
+    existing = {name for (name,) in db.session.query(Node.name)}
+    created, skipped, new_nodes = 0, 0, []
     for rec in nodes_data:
-        if Node.query.filter_by(name=rec['name']).first():
+        if rec['name'] in existing:
             skipped += 1
             continue
+        existing.add(rec['name'])
         pw = rec.pop('password', '')
         node = Node(status='unknown', **{k: v for k, v in rec.items()
                     if k in Node.__table__.columns.keys()})
         if pw:
             node.password = pw
         db.session.add(node)
+        new_nodes.append(node)
         created += 1
     db.session.commit()
-    _session.pop('import_rows', None)
-    _session.pop('import_headers', None)
+    _unstage(_session.pop('import_token', None))
     log_activity('Bulk import', response=f'{created} created, {skipped} skipped',
                  status='success')
 
-    # Immediate reachability + ORGUI pass over the freshly created fleet.
-    fresh = Node.query.filter_by(is_active=True).all()
-    reachable = 0
-    for n in fresh:
-        ok, _ = _testconn(n)
-        n.status = 'online' if ok else 'offline'
-        if ok:
-            reachable += 1
-            orgui_service.persist_check(n)
-    db.session.commit()
-    orgui_count = sum(1 for n in fresh if n.orgui_installed is True)
-
-    flash(f'Imported {created} node(s), skipped {skipped}. '
-          f'{reachable}/{len(fresh)} reachable, {orgui_count} have OpenRemoteGUI.',
-          'success')
+    msg = f'Imported {created} node(s), skipped {skipped} already present.'
+    if new_nodes:
+        # MariaDB takes parallel writers; SQLite (native or dev installs) one.
+        workers = 8 if db.engine.dialect.name != 'sqlite' else 1
+        _jobs.run_each(
+            'import-check', f'Checking {created} imported node(s)', current_user.id,
+            [n.id for n in new_nodes], _check_imported_node, workers=workers,
+            summary=lambda j: f"{j['ok']} of {j['total']} imported node(s) reachable over SSH")
+        msg += ' Their SSH connection is being checked in the background; progress shows at the bottom of the page.'
+    flash(msg, 'success')
     return redirect(url_for('nodes.index'))
+
+
+@nodes_bp.route('/jobs')
+@login_required
+def jobs_status():
+    """Background jobs of the signed-in user (polled by every page)."""
+    return jsonify({'jobs': _jobs.for_user(current_user.id)})
 
 
 # ── Fleet capabilities (Docker / Node-RED / OpenRemoteGUI) ───────────────────

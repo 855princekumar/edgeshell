@@ -419,3 +419,73 @@ def test_log_pages_render(app, client):
         assert r.status_code in (200, 302, 404), (path, r.status_code)
     assert client.get('/logs/').status_code == 200
     assert client.get('/logs/activity').status_code == 200
+
+
+def test_page_scripts_parse(app, client):
+    """Every inline script on the main pages must be valid JavaScript. A
+    stray quote once broke the shared script on every page (CSRF header,
+    session watcher, Select all) while every server-side test passed."""
+    import re
+    import shutil
+    import subprocess
+    import tempfile
+    from pathlib import Path
+    node = shutil.which('node')
+    if not node:
+        pytest.skip('Node.js not installed')
+    _login(app, client)
+    with app.app_context():
+        from app.models.node import Node
+        db.session.add(Node(name="quote's-test-node", ip_address='10.0.0.1', username='pi'))
+        db.session.commit()
+    pages = ['/', '/nodes/', '/monitoring/', '/terminal/', '/files/', '/logs/', '/logs/activity',
+             '/users/', '/users/add', '/account/', '/tailscale/', '/settings/', '/issues/',
+             '/nodes/add', '/nodes/import']
+    with tempfile.TemporaryDirectory() as tmp:
+        for page in pages:
+            r = client.get(page)
+            assert r.status_code == 200, (page, r.status_code)
+            for i, js in enumerate(re.findall(r'<script>(.*?)</script>', r.get_data(as_text=True), re.S)):
+                f = Path(tmp) / f'{page.strip("/").replace("/", "_") or "root"}_{i}.js'
+                f.write_text(js, encoding='utf-8')
+                res = subprocess.run([node, '--check', str(f)], capture_output=True, text=True)
+                assert res.returncode == 0, f'{page} script {i}: {res.stderr.strip()[:400]}'
+
+
+def test_large_import_stays_out_of_the_cookie_and_checks_in_background(app, client, monkeypatch):
+    """Rows used to live in the session cookie: a few hundred nodes overflowed
+    the proxy header limit (502). They now wait on the server, and the SSH
+    check runs as a background job with progress."""
+    import io
+    import time
+    import app.routes.nodes as nodes_routes
+    monkeypatch.setattr(nodes_routes, '_testconn', lambda n: (n.name.endswith('0'), 'stub'))
+    monkeypatch.setattr(nodes_routes.orgui_service, 'persist_check', lambda n: None)
+    _login(app, client)
+    csv = 'name,ip,username,password\n' + '\n'.join(
+        f'bulk-node-{i:04d},10.9.{i // 250}.{i % 250 + 1},pi,raspberry' for i in range(400))
+    r = client.post('/nodes/import', data={'file': (io.BytesIO(csv.encode()), 'fleet.csv')},
+                    content_type='multipart/form-data')
+    assert r.status_code == 200 and b'400' in r.data
+    cookie = r.headers.get('Set-Cookie', '')
+    assert len(cookie) < 1500, f'session cookie is {len(cookie)} bytes'
+    t0 = time.time()
+    r = client.post('/nodes/import/commit', data={
+        'map__name': 'name', 'map__ip': 'ip_address', 'map__username': 'username',
+        'map__password': 'password'})
+    assert r.status_code == 302 and time.time() - t0 < 20
+    with app.app_context():
+        from app.models.node import Node
+        assert Node.query.filter(Node.name.like('bulk-node-%')).count() == 400
+    for _ in range(300):
+        jobs = client.get('/nodes/jobs').get_json()['jobs']
+        if jobs and jobs[0]['state'] != 'running':
+            break
+        time.sleep(0.2)
+    job = jobs[0]
+    assert job['state'] == 'done' and job['total'] == 400 and job['ok'] == 40, job
+    with app.app_context():
+        from app.models.node import Node
+        assert Node.query.filter_by(status='online').count() == 40
+    r = client.post('/nodes/import/commit', data={})          # token is single use
+    assert r.status_code == 302 and '/nodes/import' in r.headers['Location']

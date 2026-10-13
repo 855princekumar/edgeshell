@@ -253,6 +253,19 @@ def main():
     check('import committed', status == 302, status)
     admin.get('/nodes/')
 
+    # The SSH check of imported nodes runs as a background job with progress.
+    job = None
+    deadline = time.time() + 300
+    while time.time() < deadline:
+        status, _, body = admin.request('GET', '/nodes/jobs', headers={'Accept': 'application/json'})
+        jobs = json.loads(body).get('jobs', []) if status == 200 else []
+        job = jobs[0] if jobs else None
+        if job and job['state'] != 'running':
+            break
+        time.sleep(2)
+    check('background SSH check of the imported nodes finished',
+          bool(job) and job['state'] == 'done' and job['total'] == EXPECTED_NODES, job)
+
     status, _, body = admin.request('GET', '/api/v1/nodes')
     nodes = json.loads(body) if status == 200 else []
     check(f'{EXPECTED_NODES} nodes registered', len(nodes) == EXPECTED_NODES, len(nodes))
