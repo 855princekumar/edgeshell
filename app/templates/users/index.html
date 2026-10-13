@@ -5,48 +5,123 @@
 <div class="d-flex align-items-center justify-content-between mb-4">
   <div>
     <h4 class="fw-bold mb-0">User Management</h4>
-    <small class="text-muted">Manage platform access and roles</small>
+    <small class="text-muted">Accounts, roles, sign-up approvals and password resets</small>
   </div>
   <a href="{{ url_for('users.add') }}" class="btn btn-primary btn-sm">
     <i class="bi bi-person-plus me-1"></i>Add User
   </a>
 </div>
 
-{% with messages = get_flashed_messages(with_categories=true) %}
-{% for cat, msg in messages %}
-<div class="alert alert-{{ 'danger' if cat == 'error' else cat }} alert-dismissible fade show" role="alert">
-  {{ msg }}<button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+{% if current_user.is_owner and admin_count < max_admins %}
+<div class="alert alert-info small">
+  <i class="bi bi-lightbulb me-1"></i>Recommended: add up to {{ max_admins - admin_count }} more administrator(s) so the
+  platform is never locked out if one person loses access. As the owner, you are the only one who can grant the
+  administrator role (at most {{ max_admins }}).
 </div>
-{% endfor %}
-{% endwith %}
+{% endif %}
 
 <!-- Stats -->
 <div class="row g-3 mb-4">
   <div class="col-6 col-md-3">
     <div class="stat-card">
       <div class="stat-value text-primary">{{ users | length }}</div>
-      <div class="stat-label">Total Users</div>
+      <div class="stat-label">Users</div>
     </div>
   </div>
   <div class="col-6 col-md-3">
     <div class="stat-card">
-      <div class="stat-value text-success">{{ users | selectattr('is_active') | list | length }}</div>
-      <div class="stat-label">Active</div>
+      <div class="stat-value text-info">{{ admin_count }} / {{ max_admins }}</div>
+      <div class="stat-label">Administrators</div>
     </div>
   </div>
   <div class="col-6 col-md-3">
     <div class="stat-card">
-      <div class="stat-value text-warning">{{ users | rejectattr('is_active') | list | length }}</div>
-      <div class="stat-label">Disabled</div>
+      <div class="stat-value text-warning">{{ pending | length }}</div>
+      <div class="stat-label">Awaiting approval</div>
     </div>
   </div>
   <div class="col-6 col-md-3">
     <div class="stat-card">
-      <div class="stat-value text-info">{{ users | selectattr('role', 'equalto', 'administrator') | list | length }}</div>
-      <div class="stat-label">Admins</div>
+      <div class="stat-value text-danger">{{ requests | length }}</div>
+      <div class="stat-label">Reset requests</div>
     </div>
   </div>
 </div>
+
+{% if pending %}
+<div class="card border-0 shadow-sm mb-4">
+  <div class="card-header bg-white border-bottom py-3 fw-semibold"><span><i class="bi bi-person-check me-1"></i>Sign-up requests</span></div>
+  <div class="card-body p-0">
+    <table class="table align-middle mb-0">
+      <thead class="table-light"><tr><th class="ps-3">User</th><th>Email</th><th>Requested</th><th>Approve as</th><th class="text-end pe-3"></th></tr></thead>
+      <tbody>
+      {% for u in pending %}
+        <tr>
+          <td class="ps-3 fw-semibold">{{ u.username }}</td>
+          <td class="small text-muted">{{ u.email }}</td>
+          <td class="small text-muted">{{ u.created_at|localtime('%d %b %Y %H:%M') }}</td>
+          <td>
+            <form method="POST" action="{{ url_for('users.approve', user_id=u.id) }}" class="d-flex gap-1 align-items-center">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <select name="role" class="form-select form-select-sm w-auto">
+                <option value="monitor">Monitor</option>
+                <option value="operator">Operator</option>
+                {% if 'administrator' in grantable %}<option value="administrator">Administrator</option>{% endif %}
+              </select>
+              <select name="max_sessions" class="form-select form-select-sm w-auto" title="Devices allowed at once">
+                {% for n in session_range %}<option value="{{ n }}">{{ n }} device{{ 's' if n > 1 }}</option>{% endfor %}
+              </select>
+              <button class="btn btn-success btn-sm"><i class="bi bi-check-lg"></i> Approve</button>
+            </form>
+          </td>
+          <td class="text-end pe-3">
+            <form method="POST" action="{{ url_for('users.reject', user_id=u.id) }}" class="d-inline"
+                  onsubmit="return confirm('Reject and remove the sign-up from {{ u.username|e }}?')">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <button class="btn btn-outline-danger btn-sm">Reject</button>
+            </form>
+          </td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+
+{% if requests %}
+<div class="card border-0 shadow-sm mb-4">
+  <div class="card-header bg-white border-bottom py-3 fw-semibold"><span><i class="bi bi-key me-1"></i>Password reset requests</span></div>
+  <div class="card-body p-0">
+    <table class="table align-middle mb-0">
+      <thead class="table-light"><tr><th class="ps-3">User</th><th>Role</th><th>Requested</th><th>From IP</th><th class="text-end pe-3"></th></tr></thead>
+      <tbody>
+      {% for r in requests %}
+        <tr>
+          <td class="ps-3 fw-semibold">{{ r.user.username }}</td>
+          <td class="small" style="text-transform:capitalize">{{ r.user.role }}</td>
+          <td class="small text-muted">{{ r.requested_at|localtime('%d %b %Y %H:%M') }}</td>
+          <td class="small text-muted">{{ r.ip or 'n/a' }}</td>
+          <td class="text-end pe-3">
+            {% if can_manage(r.user) %}
+            <form method="POST" action="{{ url_for('users.reset_password', user_id=r.user.id) }}" class="d-inline es-reset" data-user="{{ r.user.username }}">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <input type="hidden" name="new_password">
+              <button class="btn btn-primary btn-sm">Reset password and 2FA</button>
+            </form>
+            {% endif %}
+            <form method="POST" action="{{ url_for('users.dismiss_request', request_id=r.id) }}" class="d-inline">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <button class="btn btn-outline-secondary btn-sm">Dismiss</button>
+            </form>
+          </td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
 
 <!-- Users Table -->
 <div class="card border-0 shadow-sm">
@@ -63,14 +138,16 @@
             <th>Email</th>
             <th>Role</th>
             <th>Status</th>
+            <th>2FA</th>
             <th title="Live sessions / allowed devices">Sessions</th>
             <th>Last Login</th>
-            <th>Created</th>
             <th class="text-end pe-3">Actions</th>
           </tr>
         </thead>
         <tbody>
           {% for user in users %}
+          {% set managed = can_manage(user) %}
+          {% set is_me = user.id == current_user.id %}
           <tr class="user-row">
             <td class="ps-3">
               <div class="d-flex align-items-center gap-2">
@@ -78,27 +155,29 @@
                   {{ user.username[0].upper() }}
                 </div>
                 <div>
-                  <div class="fw-semibold">{{ user.username }}</div>
-                  {% if user.id == current_user.id %}
-                  <small class="text-muted">(you)</small>
-                  {% endif %}
-                  {% if user.must_change_password %}
-                  <small class="badge bg-warning text-dark">Must change pwd</small>
-                  {% endif %}
+                  <div class="fw-semibold">{{ user.username }}
+                    {% if user.is_owner %}<span class="badge bg-primary ms-1" title="First administrator; the only one who can grant the administrator role">owner</span>{% endif %}
+                  </div>
+                  {% if is_me %}<small class="text-muted">(you)</small>{% endif %}
+                  {% if user.must_change_password %}<small class="badge bg-warning text-dark">Must change pwd</small>{% endif %}
                 </div>
               </div>
             </td>
             <td class="text-muted small">{{ user.email or 'n/a' }}</td>
             <td>
+              {% if managed %}
               <form method="POST" action="{{ url_for('users.set_role', user_id=user.id) }}" class="d-inline">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                <select name="role" class="form-select form-select-sm d-inline w-auto"
-                        onchange="this.form.submit()" {% if user.id == current_user.id %}disabled title="You cannot change your own role"{% endif %}>
-                  <option value="administrator" {% if user.role == 'administrator' %}selected{% endif %}>Administrator</option>
+                <select name="role" class="form-select form-select-sm d-inline w-auto" onchange="this.form.submit()">
+                  {% if 'administrator' in grantable %}<option value="administrator">Administrator</option>{% endif %}
                   <option value="operator" {% if user.role == 'operator' %}selected{% endif %}>Operator</option>
                   <option value="monitor" {% if user.role == 'monitor' %}selected{% endif %}>Monitor</option>
                 </select>
               </form>
+              {% else %}
+              <span class="small fw-semibold" style="text-transform:capitalize">{{ user.role }}</span>
+              {% if user.is_admin() and not is_me %}<i class="bi bi-lock-fill text-muted ms-1" title="Administrators manage their own accounts"></i>{% endif %}
+              {% endif %}
             </td>
             <td>
               {% if user.is_active %}
@@ -107,10 +186,15 @@
               <span class="status-badge status-offline">Disabled</span>
               {% endif %}
             </td>
+            <td>
+              {% if user.id in enrolled %}<span class="status-badge status-online">On</span>
+              {% else %}<span class="status-badge status-warning" title="Set up at next sign-in">Pending</span>{% endif %}
+            </td>
             <td class="text-nowrap">
+              {% if managed or is_me %}
               <form method="POST" action="{{ url_for('users.set_sessions', user_id=user.id) }}" class="d-inline-flex align-items-center gap-1">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                <span class="small text-muted" title="Signed in now">{{ live_counts.get(user.id, 0) }} /</span>
+                <a class="small" href="{{ url_for('users.devices', user_id=user.id) }}" title="Signed-in devices">{{ live_counts.get(user.id, 0) }} /</a>
                 <select name="max_sessions" class="form-select form-select-sm w-auto"
                         onchange="this.form.submit()" title="Devices allowed at once">
                   {% for n in session_range %}
@@ -118,49 +202,48 @@
                   {% endfor %}
                 </select>
               </form>
+              {% else %}
+              <span class="small text-muted">{{ live_counts.get(user.id, 0) }} / {{ user.max_sessions }}</span>
+              {% endif %}
             </td>
             <td class="text-muted small">{{ user.last_login|localtime('%d %b %Y %H:%M') if user.last_login else 'n/a' }}</td>
-            <td class="text-muted small">{{ user.created_at|localtime('%d %b %Y') if user.created_at else 'n/a' }}</td>
             <td class="text-end pe-3">
               <div class="btn-group btn-group-sm">
-                <!-- Toggle Active -->
-                {% if user.id != current_user.id %}
+                {% if managed %}
+                <a class="btn btn-outline-secondary" href="{{ url_for('users.devices', user_id=user.id) }}" title="Signed-in devices"><i class="bi bi-laptop"></i></a>
                 <form method="POST" action="{{ url_for('users.toggle', user_id=user.id) }}" class="d-inline">
-        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                   <button type="submit" class="btn btn-outline-{{ 'warning' if user.is_active else 'success' }}"
                     title="{{ 'Disable' if user.is_active else 'Enable' }} user"
-                    onclick="return confirm('{{ 'Disable' if user.is_active else 'Enable' }} user {{ user.username }}?')">
+                    onclick="return confirm('{{ 'Disable' if user.is_active else 'Enable' }} user {{ user.username|e }}?')">
                     <i class="bi bi-{{ 'slash-circle' if user.is_active else 'check-circle' }}"></i>
                   </button>
                 </form>
-                <!-- Sign out everywhere -->
                 <form method="POST" action="{{ url_for('users.sign_out_all', user_id=user.id) }}" class="d-inline">
-        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                   <button type="submit" class="btn btn-outline-secondary" title="Sign out all sessions"
-                    onclick="return confirm('Sign {{ user.username }} out of every device?')">
+                    onclick="return confirm('Sign {{ user.username|e }} out of every device?')">
                     <i class="bi bi-box-arrow-right"></i>
                   </button>
                 </form>
-                <!-- Reset Password -->
-                <form method="POST" action="{{ url_for('users.reset_password', user_id=user.id) }}" class="d-inline">
-        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                  <button type="submit" class="btn btn-outline-secondary" title="Reset password"
-                    onclick="return confirm('Reset password for {{ user.username }}? They will be prompted to set a new password.')">
-                    <i class="bi bi-key"></i>
-                  </button>
+                <form method="POST" action="{{ url_for('users.reset_password', user_id=user.id) }}" class="d-inline es-reset" data-user="{{ user.username }}">
+                  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                  <input type="hidden" name="new_password">
+                  <button type="submit" class="btn btn-outline-secondary" title="Reset password and 2FA"><i class="bi bi-key"></i></button>
                 </form>
-                <!-- Delete -->
                 <form method="POST" action="{{ url_for('users.delete', user_id=user.id) }}" class="d-inline">
-        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                   <button type="submit" class="btn btn-outline-danger" title="Delete user"
-                    onclick="return confirm('Permanently delete user {{ user.username }}? This cannot be undone.')">
+                    onclick="return confirm('Permanently delete user {{ user.username|e }}? This cannot be undone.')">
                     <i class="bi bi-trash"></i>
                   </button>
                 </form>
-                {% else %}
-                <a href="{{ url_for('auth.change_password') }}" class="btn btn-outline-primary" title="Change your password">
-                  <i class="bi bi-shield-lock"></i>
+                {% elif is_me %}
+                <a href="{{ url_for('account.index') }}" class="btn btn-outline-primary" title="My account: password, 2FA, devices">
+                  <i class="bi bi-person-gear"></i>
                 </a>
+                {% else %}
+                <span class="small text-muted" title="No administrator can change another administrator">protected</span>
                 {% endif %}
               </div>
             </td>
@@ -193,5 +276,20 @@ function filterUsers() {
     row.style.display = row.textContent.toLowerCase().includes(q) ? '' : 'none';
   });
 }
+function esTempPassword() {
+  const abc = 'ABCDEFGHJKMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789';
+  const buf = new Uint32Array(14);
+  crypto.getRandomValues(buf);
+  return Array.from(buf, n => abc[n % abc.length]).join('');
+}
+document.querySelectorAll('form.es-reset').forEach(f => {
+  f.addEventListener('submit', e => {
+    const pw = prompt('Temporary password for ' + f.dataset.user + ' (at least 10 characters).\n\n'
+      + 'Their two-factor authentication is reset too and every session is signed out. '
+      + 'Copy this password and give it to them privately:', esTempPassword());
+    if (!pw || pw.length < 10) { e.preventDefault(); if (pw) alert('At least 10 characters.'); return; }
+    f.querySelector('input[name=new_password]').value = pw;
+  });
+});
 </script>
 {% endblock %}

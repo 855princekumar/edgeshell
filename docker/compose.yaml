@@ -1,17 +1,19 @@
-# EdgeShell production stack: EdgeShell + MariaDB + Caddy (automatic HTTPS).
-# Every byte of state lives in ./data next to this file, so a backup is one folder.
+# EdgeShell production stack: EdgeShell + MariaDB + privacyIDEA (2FA) + Caddy
+# (automatic HTTPS). Every byte of state lives in ./data next to this file, so
+# a backup is one folder (plus .env).
 #
 #   mkdir edgeshell && cd edgeshell
 #   base=https://raw.githubusercontent.com/855princekumar/edgeshell/main/docker
 #   curl -fsSLO $base/compose.yaml
 #   curl -fsSLO $base/Caddyfile
 #   curl -fsSLo .env $base/.env.example && chmod 600 .env
-#   for k in SECRET_KEY CREDENTIAL_KEY DB_PASSWORD DB_ROOT_PASSWORD; do
+#   for k in SECRET_KEY CREDENTIAL_KEY DB_PASSWORD DB_ROOT_PASSWORD MFA_ADMIN_PASSWORD MFA_PEPPER MFA_DB_PASSWORD; do
 #     sed -i "s|^$k=.*|$k=$(openssl rand -hex 32)|" .env; done
 #   nano .env                     # set EDGESHELL_DOMAIN and ACME_EMAIL
 #   docker compose up -d
 #
-# Open https://<EDGESHELL_DOMAIN> and sign in as admin / admin123 (forced change).
+# Open https://<EDGESHELL_DOMAIN> and sign in as admin / admin123. First sign-in
+# sets up two-factor authentication, a new password and your personal email.
 # The DNS A record must point at this host, with ports 80 and 443 open.
 #
 # No domain yet? Set EDGESHELL_DOMAIN=:80 and SESSION_COOKIE_SECURE=false to
@@ -22,9 +24,9 @@ name: edgeshell
 services:
   # One-shot: the app runs as uid 10001, so give it the host data folders.
   init-data:
-    image: devprincekumar/edgeshell:${EDGESHELL_TAG:-1.2.0}
+    image: devprincekumar/edgeshell:${EDGESHELL_TAG:-1.3.0}
     user: "0:0"
-    entrypoint: ["sh", "-c", "mkdir -p /data/instance /data/uploads && chown -R 10001:10001 /data/instance /data/uploads"]
+    entrypoint: ["sh", "-c", "mkdir -p /data/instance /data/uploads /data/privacyidea && chown -R 10001:10001 /data/instance /data/uploads && chown -R 65532:65532 /data/privacyidea && chmod 700 /data/privacyidea"]
     volumes:
       - ./data:/data
     restart: "no"
@@ -50,13 +52,75 @@ services:
     networks:
       - backend
 
+  # One-shot, idempotent: privacyIDEA's own database and user in the same
+  # MariaDB (runs on every start, so existing installs gain it on upgrade).
+  mfa-db-init:
+    image: mariadb:11.4
+    depends_on:
+      mariadb:
+        condition: service_healthy
+    environment:
+      MARIADB_ROOT_PASSWORD: ${DB_ROOT_PASSWORD:?set DB_ROOT_PASSWORD in .env}
+      MFA_DB_PASSWORD: ${MFA_DB_PASSWORD:?set MFA_DB_PASSWORD in .env}
+    entrypoint:
+      - sh
+      - -c
+      - >-
+        mariadb -h mariadb -u root -p"$$MARIADB_ROOT_PASSWORD" -e "
+        CREATE DATABASE IF NOT EXISTS privacyidea CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+        CREATE USER IF NOT EXISTS 'privacyidea'@'%' IDENTIFIED BY '$$MFA_DB_PASSWORD';
+        ALTER USER 'privacyidea'@'%' IDENTIFIED BY '$$MFA_DB_PASSWORD';
+        GRANT ALL PRIVILEGES ON privacyidea.* TO 'privacyidea'@'%';"
+    restart: "no"
+    networks:
+      - backend
+
+  # privacyIDEA (https://privacyidea.org) checks every 2FA code. Internal
+  # network only: no published port and no route to the internet. Its
+  # encryption key for token secrets lives in ./data/privacyidea.
+  privacyidea:
+    image: gpappsoft/privacyidea-docker:${PRIVACYIDEA_TAG:-3.13.3}
+    restart: unless-stopped
+    user: "65532:65532"
+    depends_on:
+      init-data:
+        condition: service_completed_successfully
+      mfa-db-init:
+        condition: service_completed_successfully
+    environment:
+      PI_ADDRESS: 0.0.0.0
+      PI_PORT: "8080"
+      PI_ADMIN: edgeshell
+      PI_ADMIN_PASS: ${MFA_ADMIN_PASSWORD:?set MFA_ADMIN_PASSWORD in .env}
+      PI_PEPPER: ${MFA_PEPPER:?set MFA_PEPPER in .env}
+      PI_LOGLEVEL: WARNING
+      DB_API: mysql+pymysql
+      DB_HOST: mariadb
+      DB_PORT: "3306"
+      DB_NAME: privacyidea
+      DB_USER: privacyidea
+      DB_PASSWORD: ${MFA_DB_PASSWORD}
+      DB_EXTRA_PARAMS: "?charset=utf8mb4"
+    volumes:
+      - ./data/privacyidea:/privacyidea/etc/persistent
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request as u; u.urlopen('http://127.0.0.1:8080/healthz/', timeout=4)"]
+      interval: 15s
+      timeout: 6s
+      retries: 10
+      start_period: 40s
+    networks:
+      - backend
+
   edgeshell:
-    image: devprincekumar/edgeshell:${EDGESHELL_TAG:-1.2.0}
+    image: devprincekumar/edgeshell:${EDGESHELL_TAG:-1.3.0}
     restart: unless-stopped
     depends_on:
       init-data:
         condition: service_completed_successfully
       mariadb:
+        condition: service_healthy
+      privacyidea:
         condition: service_healthy
     environment:
       FLASK_ENV: production
@@ -72,6 +136,22 @@ services:
       LOCKOUT_MINUTES: ${LOCKOUT_MINUTES:-15}
       VPN_BACKEND: ${VPN_BACKEND:-tailscale}
       METRICS_RETENTION_DAYS: ${METRICS_RETENTION_DAYS:-14}
+      # Two-factor authentication (mandatory), checked by privacyIDEA.
+      MFA_PROVIDER: privacyidea
+      PRIVACYIDEA_URL: http://privacyidea:8080
+      PRIVACYIDEA_ADMIN: edgeshell
+      PRIVACYIDEA_PASSWORD: ${MFA_ADMIN_PASSWORD}
+      IDLE_MINUTES: ${IDLE_MINUTES:-10}
+      IDLE_WARNING_MINUTES: ${IDLE_WARNING_MINUTES:-5}
+      SIGNUP_ENABLED: ${SIGNUP_ENABLED:-true}
+      # Reset links for administrators: the public address plus any SMTP server.
+      PUBLIC_URL: ${PUBLIC_URL:-}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      SMTP_FROM: ${SMTP_FROM:-}
+      SMTP_SECURITY: ${SMTP_SECURITY:-starttls}
     volumes:
       - ./data/instance:/app/instance
       - ./data/uploads:/app/uploads

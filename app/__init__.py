@@ -68,10 +68,11 @@ def create_app(config_name='default'):
     from app.routes.vpn import vpn_bp
     from app.routes.health import health_bp
     from app.routes.issues import issues_bp
+    from app.routes.account import account_bp
 
     for bp in (auth_bp, dashboard_bp, nodes_bp, terminal_bp, files_bp, logs_bp,
                settings_bp, users_bp, api_bp, tailscale_bp, monitoring_bp,
-               vpn_bp, health_bp, issues_bp):
+               vpn_bp, health_bp, issues_bp, account_bp):
         app.register_blueprint(bp)
 
     # JSON API and health checks are token/session protected but not CSRF-form
@@ -85,6 +86,7 @@ def create_app(config_name='default'):
             'ORGUI_DEFAULT_PORT': app.config['ORGUI_DEFAULT_PORT'],
             'NODERED_DEFAULT_PORT': app.config['NODERED_DEFAULT_PORT'],
             'VPN_BACKEND': app.config['VPN_BACKEND'],
+            'SIGNUP_ENABLED': app.config.get('SIGNUP_ENABLED', True),
         }
 
     from app.services.session_service import register_single_session
@@ -99,6 +101,8 @@ def create_app(config_name='default'):
         _ensure_views(app)
         _seed_defaults()
         _normalize_roles()
+        from app.services.account_service import ensure_owner
+        ensure_owner()
 
     return app
 
@@ -147,7 +151,8 @@ def _ensure_views(app):
             f"CONVERT_TZ(s.started_at,'+00:00','{tz}') AS session_started, "
             f"CONVERT_TZ(s.seen_at,'+00:00','{tz}') AS session_last_seen, "
             f"CONVERT_TZ(s.revoked_at,'+00:00','{tz}') AS revoked_at, "
-            "s.revoked_reason "
+            "s.revoked_reason, s.device_type, "
+            f"CONVERT_TZ(s.active_at,'+00:00','{tz}') AS last_interaction "
             "FROM user_sessions s JOIN users u ON u.id = s.user_id"),
     }
     try:
@@ -204,6 +209,16 @@ def _ensure_schema():
             # Sessions moved to the user_sessions table (created by
             # create_all). Old session_* columns on existing DBs are unused.
             'max_sessions': 'INTEGER NOT NULL DEFAULT 1',
+            'approval_status': "VARCHAR(16) NOT NULL DEFAULT 'approved'",
+            'is_owner': 'BOOLEAN NOT NULL DEFAULT 0',
+            'admin_since': 'DATETIME',
+        },
+        'user_sessions': {
+            'device_type': 'VARCHAR(16)',
+            'active_at': 'DATETIME',
+        },
+        'activity_logs': {
+            'device': 'VARCHAR(160)',
         },
     }
     for table, cols in wanted.items():
@@ -228,10 +243,14 @@ def _seed_defaults():
     from app.models.user import User
     from app.models.settings import Settings
 
-    if not User.query.filter_by(username='admin').first():
+    # Only into an empty database: never re-create a default admin/admin123
+    # because the original admin was renamed or removed.
+    if User.query.first() is None:
+        from datetime import datetime
         admin = User(username='admin', email='admin@edgeshell.local',
                      role='administrator', must_change_password=True,
-                     is_active=True, max_sessions=1)
+                     is_active=True, max_sessions=1, is_owner=True,
+                     admin_since=datetime.utcnow())
         admin.set_password('admin123')
         db.session.add(admin)
 

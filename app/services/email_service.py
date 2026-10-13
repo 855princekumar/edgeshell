@@ -96,3 +96,60 @@ def send_email(to, subject, html, text=None):
 def _strip_html(html):
     import re
     return re.sub(r'<[^>]+>', '', html or '')
+
+
+# ---------------------------------------------------------------- SMTP
+# Account mail (administrator reset links) goes through SMTP_* from the
+# environment, or useSend when only that is configured. Never raises.
+
+def smtp_configured():
+    cfg = current_app.config
+    return bool(cfg.get('SMTP_HOST') and cfg.get('SMTP_FROM'))
+
+
+def account_mail_available():
+    return smtp_configured() or is_enabled()
+
+
+def send_account_email(to, subject, text):
+    """Return (ok, detail)."""
+    if smtp_configured():
+        return _send_smtp(to, subject, text)
+    if is_enabled():
+        return send_email(to, subject, '<pre style="font-family:inherit">'
+                          + _escape(text) + '</pre>', text)
+    return False, 'no mail transport configured'
+
+
+def _send_smtp(to, subject, text):
+    import smtplib
+    import ssl
+    from email.message import EmailMessage
+    cfg = current_app.config
+    msg = EmailMessage()
+    msg['From'] = cfg['SMTP_FROM']
+    msg['To'] = to
+    msg['Subject'] = subject
+    msg.set_content(text)
+    security = cfg.get('SMTP_SECURITY', 'starttls')
+    port = int(cfg.get('SMTP_PORT') or (465 if security == 'ssl' else 587))
+    try:
+        ctx = ssl.create_default_context()
+        if security == 'ssl':
+            server = smtplib.SMTP_SSL(cfg['SMTP_HOST'], port, timeout=15, context=ctx)
+        else:
+            server = smtplib.SMTP(cfg['SMTP_HOST'], port, timeout=15)
+        with server:
+            if security == 'starttls':
+                server.starttls(context=ctx)
+            if cfg.get('SMTP_USER'):
+                server.login(cfg['SMTP_USER'], cfg.get('SMTP_PASSWORD', ''))
+            server.send_message(msg)
+        return True, 'sent'
+    except Exception as e:
+        return False, f'{e.__class__.__name__}: {str(e)[:200]}'
+
+
+def _escape(s):
+    import html
+    return html.escape(s or '')

@@ -1,0 +1,126 @@
+{% extends "base.html" %}
+{% block title %}My account{% endblock %}
+{% block content %}
+<div class="page-header">
+    <div>
+        <div class="page-title">My account</div>
+        <div class="page-subtitle">{{ current_user.username }} &middot; <span style="text-transform:capitalize">{{ current_user.role }}</span>{% if current_user.is_owner %} &middot; owner{% endif %} &middot; {{ current_user.email }}</div>
+    </div>
+    <div class="d-flex gap-2">
+        <a href="{{ url_for('auth.change_password') }}" class="btn btn-outline btn-sm"><i class="bi bi-key"></i> Change password</a>
+        <a href="{{ url_for('account.email') }}" class="btn btn-outline btn-sm"><i class="bi bi-envelope"></i> Email</a>
+    </div>
+</div>
+
+<div class="row g-3">
+  <div class="col-lg-6">
+    <div class="card h-100">
+      <div class="card-body">
+        <h6 class="fw-bold mb-2"><i class="bi bi-shield-lock me-1"></i>Two-factor authentication</h6>
+        {% if enrolled %}
+          <p class="mb-1"><span class="status-badge status-online">On</span>
+             <span class="text-muted small ms-1">authenticator app, checked by {{ 'privacyIDEA' if provider == 'privacyidea' else 'EdgeShell' }}</span></p>
+          <p class="small mb-3">Backup codes left:
+            <strong>{{ backup_left if backup_left is not none else 'unknown (service not responding)' }}</strong>
+            {% if backup_left is not none and backup_left <= 3 %}<span class="text-danger"> &middot; create new ones</span>{% endif %}</p>
+          <form method="POST" action="{{ url_for('account.backup_codes') }}" class="mb-3">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <div class="small fw-semibold mb-1">New backup codes (the old ones stop working)</div>
+            <div class="d-flex gap-2 flex-wrap">
+              <input type="password" name="password" class="form-control form-control-sm" style="max-width:170px" placeholder="Password" required autocomplete="current-password">
+              <input type="text" name="code" class="form-control form-control-sm" style="max-width:130px" placeholder="2FA code" required autocomplete="one-time-code">
+              <button class="btn btn-primary btn-sm">Generate</button>
+            </div>
+          </form>
+          <form method="POST" action="{{ url_for('account.reset_2fa') }}" onsubmit="return confirm('Remove your authenticator? You will be signed out everywhere and set up 2FA again at the next sign-in.')">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <div class="small fw-semibold mb-1">New phone? Remove the authenticator and set it up again</div>
+            <div class="d-flex gap-2 flex-wrap">
+              <input type="password" name="password" class="form-control form-control-sm" style="max-width:170px" placeholder="Password" required autocomplete="current-password">
+              <input type="text" name="code" class="form-control form-control-sm" style="max-width:180px" placeholder="2FA or backup code" required autocomplete="one-time-code">
+              <button class="btn btn-danger btn-sm">Reset 2FA</button>
+            </div>
+          </form>
+        {% elif mfa_on %}
+          <p class="mb-0"><span class="status-badge status-warning">Not set up</span>
+             <span class="small text-muted ms-1">You will be asked to set it up at your next sign-in.</span></p>
+        {% else %}
+          <p class="mb-0 small text-muted">Two-factor authentication is turned off on this server (MFA_REQUIRED=false).</p>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  <div class="col-lg-6">
+    <div class="card h-100">
+      <div class="card-body">
+        <h6 class="fw-bold mb-2"><i class="bi bi-people me-1"></i>Administrators ({{ admins|length }} of {{ max_admins }})</h6>
+        <ul class="small mb-2 ps-3">
+          {% for a in admins %}
+          <li>{{ a.username }}{% if a.is_owner %} <span class="badge bg-primary">owner</span>{% endif %}{% if a.id == current_user.id %} (you){% endif %}
+              <span class="text-muted">since {{ a.admin_since|localtime('%d %b %Y') if a.admin_since else 'n/a' }}</span></li>
+          {% endfor %}
+        </ul>
+        {% if current_user.is_owner and admins|length < max_admins %}
+        <div class="alert alert-info small py-2 mb-2">Recommended: add up to {{ max_admins - admins|length }} more administrator(s),
+          so the platform is never locked out if one person loses access. Only you, the owner, can grant the administrator role.</div>
+        {% endif %}
+        {% if current_user.is_admin() %}
+        <form method="POST" action="{{ url_for('account.step_down') }}" onsubmit="return confirm('Leave the administrator role? This cannot be undone by you.')">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <div class="small fw-semibold mb-1">Step down from administrator</div>
+          <div class="small text-muted mb-2">No administrator can change another administrator, so only you can do this.
+            {% if current_user.is_owner %}Ownership passes to the longest-serving remaining administrator.{% endif %}
+            The last administrator cannot step down.</div>
+          <div class="d-flex gap-2 flex-wrap">
+            <select name="new_role" class="form-select form-select-sm" style="max-width:130px">
+              <option value="operator">Operator</option>
+              <option value="monitor">Monitor</option>
+            </select>
+            <input type="password" name="password" class="form-control form-control-sm" style="max-width:150px" placeholder="Password" required autocomplete="current-password">
+            <input type="text" name="code" class="form-control form-control-sm" style="max-width:110px" placeholder="2FA code" required autocomplete="one-time-code">
+            <input type="text" name="confirm" class="form-control form-control-sm" style="max-width:120px" placeholder="STEP DOWN" required>
+            <button class="btn btn-danger btn-sm">Step down</button>
+          </div>
+        </form>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  <div class="col-12">
+    <div class="card">
+      <div class="card-body">
+        <h6 class="fw-bold mb-1"><i class="bi bi-laptop me-1"></i>Signed-in devices ({{ devices|length }} of {{ current_user.max_sessions }} allowed)</h6>
+        <p class="small text-muted mb-2">"Last interaction" is the last click, key press or page load. A device left idle is asked
+          "still there?" and signed out if nobody answers.</p>
+        <div class="table-responsive">
+          <table class="table table-sm align-middle mb-0">
+            <thead class="table-light"><tr><th>Device</th><th>IP address</th><th>Signed in</th><th>Last interaction</th><th></th></tr></thead>
+            <tbody>
+            {% for s in devices %}
+              <tr>
+                <td><i class="bi bi-{{ 'phone' if s.device_type == 'Mobile' else 'tablet' if s.device_type == 'Tablet' else 'pc-display' }} me-1"></i>
+                    <strong>{{ s.device_type or 'Device' }} #{{ s.id }}</strong> <span class="text-muted small">{{ s.agent }}</span>
+                    {% if s.token == current_sid %}<span class="badge bg-success ms-1">this device</span>{% endif %}</td>
+                <td class="small">{{ s.ip or 'n/a' }}</td>
+                <td class="small">{{ s.started_at|localtime('%d %b %H:%M') }}</td>
+                <td class="small">{{ (s.active_at or s.started_at)|localtime('%d %b %H:%M') }}
+                    {% set idle_min = ((now - (s.active_at or s.started_at)).total_seconds() // 60)|int %}
+                    <span class="text-muted">({{ 'active now' if idle_min < 1 else idle_min ~ ' min ago' }})</span></td>
+                <td class="text-end">
+                  <form method="POST" action="{{ url_for('account.close', session_id=s.id) }}" class="d-inline">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <button class="btn btn-outline-secondary btn-sm">{{ 'Sign out here' if s.token == current_sid else 'Sign out' }}</button>
+                  </form>
+                </td>
+              </tr>
+            {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

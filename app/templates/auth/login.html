@@ -1,114 +1,24 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Login - EdgeShell</title>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <style>
-        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-        body {
-            font-family: 'Inter', system-ui, sans-serif;
-            background: #f1f5f9; min-height: 100vh;
-            display: flex; align-items: center; justify-content: center;
-        }
-        .card {
-            background: #fff; border-radius: 16px;
-            box-shadow: 0 4px 32px rgba(0,0,0,0.10);
-            width: 100%; max-width: 420px; padding: 48px 40px;
-        }
-        .logo {
-            display: flex; align-items: center; gap: 10px; margin-bottom: 32px;
-        }
-        .logo-icon {
-            width: 38px; height: 38px; border-radius: 9px;
-            background: #1a56db; display: flex; align-items: center; justify-content: center;
-        }
-        .logo-icon svg { width: 20px; height: 20px; stroke: #fff; fill: none; stroke-width: 2; }
-        .logo-text { font-size: 20px; font-weight: 700; color: #111827; }
-        .logo-sub  { font-size: 12px; color: #9ca3af; }
-
-        h2 { font-size: 22px; font-weight: 700; color: #111827; margin-bottom: 4px; }
-        .subtitle { font-size: 13px; color: #9ca3af; margin-bottom: 28px; }
-
-        .field { margin-bottom: 16px; }
-        label  { display: block; font-size: 13px; font-weight: 500; color: #374151; margin-bottom: 5px; }
-        input[type=text], input[type=password] {
-            width: 100%; padding: 10px 13px; border-radius: 8px;
-            border: 1.5px solid #d1d5db; font-size: 14px; font-family: inherit;
-            color: #111827; background: #f9fafb; transition: border .15s, box-shadow .15s;
-        }
-        input:focus {
-            outline: none; border-color: #1a56db;
-            box-shadow: 0 0 0 3px rgba(26,86,219,.12); background: #fff;
-        }
-        .btn {
-            width: 100%; padding: 11px; margin-top: 8px; border: none; border-radius: 8px;
-            background: #1a56db; color: #fff; font-size: 15px; font-weight: 600;
-            font-family: inherit; cursor: pointer; transition: background .15s;
-        }
-        .btn:hover   { background: #1044b0; }
-        .btn:active  { background: #0c3087; }
-        .btn:disabled { opacity: .65; cursor: not-allowed; }
-
-        .alert {
-            border-radius: 8px; padding: 10px 13px; font-size: 13px;
-            margin-bottom: 18px; border: 1px solid transparent;
-        }
-        .alert-danger  { background: #fef2f2; color: #dc2626; border-color: #fca5a5; }
-        .alert-warning { background: #fffbeb; color: #d97706; border-color: #fde68a; }
-        .alert-success { background: #ecfdf5; color: #059669; border-color: #6ee7b7; }
-        .alert-info    { background: #e0f2fe; color: #0284c7; border-color: #7dd3fc; }
-
-        .takeover { border: 1.5px solid #fde68a; background: #fffbeb; border-radius: 10px; padding: 16px; margin-bottom: 18px; }
-        .takeover h3 { font-size: 15px; color: #92400e; margin-bottom: 8px; }
-        .takeover table { width: 100%; font-size: 13px; color: #374151; border-collapse: collapse; margin: 8px 0 4px; }
-        .takeover td { padding: 4px 0; vertical-align: top; }
-        .takeover td:first-child { color: #9ca3af; width: 92px; }
-        .takeover p { font-size: 12.5px; color: #92400e; }
-        .btn-row { display: flex; gap: 10px; }
-        .btn-ghost { background: #fff; color: #374151; border: 1.5px solid #d1d5db; text-align: center; text-decoration: none; display: block; }
-        .btn-ghost:hover { background: #f3f4f6; }
-        .footer { text-align: center; margin-top: 24px; font-size: 11.5px; color: #d1d5db; }
-    </style>
-</head>
-<body>
-<div class="card">
-    <div class="logo">
-        <div class="logo-icon">
-            <svg viewBox="0 0 24 24" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M12 2L2 7l10 5 10-5-10-5M2 17l10 5 10-5M2 12l10 5 10-5"/>
-            </svg>
-        </div>
-        <div>
-            <div class="logo-text">EdgeShell</div>
-            <div class="logo-sub">Edge Fleet Manager</div>
-        </div>
-    </div>
-
+{% extends "auth/_layout.html" %}
+{% block title %}Sign in{% endblock %}
+{% block heading %}
     <h2>Sign in</h2>
     <p class="subtitle">Use your EdgeShell credentials to continue</p>
-
-    {% with messages = get_flashed_messages(with_categories=true) %}
-        {% for category, message in messages %}
-        <div class="alert alert-{{ category }}">{{ message }}</div>
-        {% endfor %}
-    {% endwith %}
-
+{% endblock %}
+{% block body %}
     {% if takeover %}
     <div class="takeover">
         <h3>&#9888; {{ takeover_user }} is already signed in</h3>
         {% for t in takeover %}
         <table>
-            <tr><td>Device</td><td>{{ t.agent or 'Unknown' }}</td></tr>
+            <tr><td>Device</td><td>{{ t.device_type or 'Device' }}: {{ t.agent or 'Unknown' }}</td></tr>
             <tr><td>IP address</td><td>{{ t.ip or 'Unknown' }}</td></tr>
             <tr><td>Signed in</td><td>{{ t.started_at|localtime('%d %b %Y %H:%M') }} {{ TZ_LABEL }}</td></tr>
-            <tr><td>Last active</td><td>{{ t.seen_at|localtime('%d %b %Y %H:%M') }} {{ TZ_LABEL }}</td></tr>
+            <tr><td>Last active</td><td>{{ t.active_at|localtime('%d %b %Y %H:%M') }} {{ TZ_LABEL }}</td></tr>
         </table>
         {% endfor %}
         <p>This account allows {{ session_limit }} active session{{ 's' if session_limit != 1 }}.
            Continuing will sign out the {{ 'device' if takeover|length == 1 else 'devices' }} above immediately.
-           If this was not you, cancel and ask an administrator to reset your password.</p>
+           If this was not you, cancel and change your password, or ask an administrator to reset it.</p>
     </div>
     <form method="POST" action="{{ url_for('auth.login_confirm') }}">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
@@ -118,7 +28,7 @@
         </div>
     </form>
     {% else %}
-    <form method="POST" action="{{ url_for('auth.login') }}" id="loginForm">
+    <form method="POST" action="{{ url_for('auth.login', next=request.args.get('next')) }}" id="loginForm" data-busy="Signing in...">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <div class="field">
             <label for="username">Username</label>
@@ -132,17 +42,9 @@
         </div>
         <button type="submit" class="btn" id="submitBtn">Sign in</button>
     </form>
+    <div class="links">
+        <a href="{{ url_for('auth.forgot') }}">Forgot password?</a>
+        {% if SIGNUP_ENABLED %}<a href="{{ url_for('auth.signup') }}">Request an account</a>{% endif %}
+    </div>
     {% endif %}
-
-    <div class="footer">EdgeShell v1.0 &mdash; Enterprise Edge Fleet Management</div>
-</div>
-<script>
-    var lf = document.getElementById('loginForm');
-    if (lf) lf.addEventListener('submit', function() {
-        var btn = document.getElementById('submitBtn');
-        btn.disabled = true;
-        btn.textContent = 'Signing in…';
-    });
-</script>
-</body>
-</html>
+{% endblock %}

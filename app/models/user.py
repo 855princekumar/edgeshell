@@ -7,6 +7,11 @@ from app import db, bcrypt, login_manager
 MIN_SESSIONS = 1
 MAX_SESSIONS = 4
 
+# At most this many administrators. The owner (the first administrator) is the
+# only one who may promote another account to administrator.
+MAX_ADMINS = 3
+ROLES = ('administrator', 'operator', 'monitor')
+
 
 def clamp_sessions(value, default=MIN_SESSIONS):
     try:
@@ -32,6 +37,13 @@ class User(UserMixin, db.Model):
     failed_logins = db.Column(db.Integer, default=0)
     locked_until = db.Column(db.DateTime)
 
+    # Self sign-up: 'pending' until an administrator approves it with a role.
+    approval_status = db.Column(db.String(16), nullable=False, default='approved')
+    # The first administrator. Only the owner promotes users to administrator;
+    # ownership passes to the longest-serving admin when the owner steps down.
+    is_owner = db.Column(db.Boolean, nullable=False, default=False)
+    admin_since = db.Column(db.DateTime)
+
     # Live sessions this account may hold at once (1-4, set by an admin).
     max_sessions = db.Column(db.Integer, nullable=False, default=MIN_SESSIONS)
     sessions = db.relationship('UserSession', backref='user',
@@ -48,6 +60,15 @@ class User(UserMixin, db.Model):
 
     def is_admin(self):
         return self._role() == 'administrator'
+
+    def is_pending(self):
+        return self.approval_status == 'pending'
+
+    def needs_recovery_email(self):
+        """Administrators must keep a personal email for reset links."""
+        email = (self.email or '').lower()
+        return self.is_admin() and (not email or email.endswith('.local')
+                                    or email.endswith('@example.com'))
 
     def is_operator(self):
         return self._role() in ('administrator', 'operator')
@@ -79,6 +100,49 @@ class UserSession(db.Model):
     revoked_at = db.Column(db.DateTime)
     revoked_reason = db.Column(db.String(32))   # replaced, logout, password_changed, ...
     revoked_detail = db.Column(db.String(256))  # e.g. the device that replaced it
+    device_type = db.Column(db.String(16))      # Desktop, Mobile, Tablet
+    # Last real interaction (page load, click, key press). seen_at also moves
+    # on background polls; active_at only when a person is using the page.
+    active_at = db.Column(db.DateTime)
+
+
+class UserMFA(db.Model):
+    """A user's second factor. Only references live here when privacyIDEA
+    checks the codes (token serials); with the built-in verifier the TOTP
+    secret is encrypted with CREDENTIAL_KEY and backup codes are hashed."""
+    __tablename__ = 'user_mfa'
+
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id', ondelete='CASCADE'),
+                        primary_key=True)
+    provider = db.Column(db.String(16), nullable=False)   # privacyidea | local
+    totp_ref = db.Column(db.Text, nullable=False)
+    backup_ref = db.Column(db.Text)
+    backup_total = db.Column(db.Integer, default=0)
+    confirmed_at = db.Column(db.DateTime)                  # null until first code
+    last_step = db.Column(db.BigInteger, default=0)        # replay guard (local)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    user = db.relationship('User', backref=db.backref('mfa', uselist=False,
+                                                      cascade='all, delete-orphan',
+                                                      passive_deletes=True))
+
+
+class PasswordResetRequest(db.Model):
+    """'Forgot password' from a non-admin account, waiting for an admin."""
+    __tablename__ = 'password_reset_requests'
+
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id', ondelete='CASCADE'),
+                        nullable=False, index=True)
+    requested_at = db.Column(db.DateTime, default=datetime.utcnow)
+    ip = db.Column(db.String(45))
+    status = db.Column(db.String(16), nullable=False, default='open')  # open, done, dismissed
+    handled_by = db.Column(db.String(64))
+    handled_at = db.Column(db.DateTime)
+
+    user = db.relationship('User', backref=db.backref('reset_requests',
+                                                      cascade='all, delete-orphan',
+                                                      passive_deletes=True))
 
 
 @login_manager.user_loader

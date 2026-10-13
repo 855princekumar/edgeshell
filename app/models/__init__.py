@@ -20,12 +20,14 @@ class ActivityLog(db.Model):
     status = db.Column(db.String(16))  # success, failure, warning
     duration = db.Column(db.Float)  # seconds
     ip_address = db.Column(db.String(45))
+    device = db.Column(db.String(160))  # 'Mobile #12 (Safari on iPhone)'
 
     def to_dict(self):
         return {
             'id': self.id,
             'timestamp': iso_utc(self.timestamp),
             'user': self.user,
+            'device': self.device,
             'node': self.node,
             'action': self.action,
             'command': self.command,

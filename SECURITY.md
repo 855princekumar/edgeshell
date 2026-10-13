@@ -32,11 +32,21 @@ You will be credited in the release notes unless you ask not to be.
 - Node SSH passwords and API keys are encrypted at rest with Fernet, keyed by
   `CREDENTIAL_KEY`. Rotate with `python manage.py reencrypt --old <KEY>`.
 - CSRF protection on every state-changing request, with a strict referrer check over HTTPS.
-- Login lockout after repeated failures, per-IP rate limiting, and identical
-  errors for unknown users, wrong passwords and locked accounts.
+- Mandatory two-factor authentication for every account (authenticator app
+  plus one-time backup codes). In the Docker stack, codes are checked by
+  privacyIDEA in an isolated container with no published port.
+- Login lockout after repeated failures (passwords and 2FA codes), per-IP rate
+  limiting, and identical errors for unknown users, wrong passwords and
+  locked accounts.
+- At most 3 administrators; only the owner grants the role; no administrator
+  can change another; stepping down requires password and 2FA.
+- Password reset links are single-use, expire in 30 minutes and are built from
+  `PUBLIC_URL`, never from the request's Host header. An admin reset of a
+  user's password also resets that user's 2FA.
 - Sessions are tracked server-side: one device per user by default (up to 4,
-  set by an administrator); logout, password change, admin password reset and
-  disabling a user revoke sessions immediately.
+  set by an administrator); logout, password change, password or 2FA reset and
+  disabling a user revoke sessions immediately. Idle sessions are asked "still
+  there?" and signed out.
 - Cookies are HttpOnly, SameSite=Lax, and Secure behind HTTPS.
 - The container image runs as a non-root user with read-only application code
   and no secrets baked in; releases carry an SBOM and build provenance.
@@ -54,4 +64,7 @@ You will be credited in the release notes unless you ask not to be.
 - [ ] Keep the security group to 80 and 443 public, SSH from your IP only.
 - [ ] Give each person their own account with the lowest role that works.
 - [ ] Prefer SSH keys on nodes where possible; treat stored passwords as sensitive.
-- [ ] Two-factor authentication is coming in a separate build; until then use long, unique passwords.
+- [ ] Store your backup codes privately, and back up `.env` and `data/` (including `data/privacyidea`).
+- [ ] Add a second administrator (up to 3) so the platform is never locked out.
+- [ ] Set `PUBLIC_URL` and `SMTP_*` so administrators can receive reset links.
+- [ ] Set `SIGNUP_ENABLED=false` if accounts should only be created by administrators.

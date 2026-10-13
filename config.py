@@ -90,6 +90,40 @@ class Config:
     # are still tracked server-side and revoked on logout or password reset.
     SINGLE_SESSION = _env_bool('SINGLE_SESSION', True)
 
+    # Inactivity: after IDLE_MINUTES without a click, key press or page load a
+    # session shows a 'still there?' prompt and is signed out unless answered
+    # within IDLE_WARNING_MINUTES. IDLE_MINUTES=0 turns this off.
+    IDLE_MINUTES = int(os.environ.get('IDLE_MINUTES', '10'))
+    IDLE_WARNING_MINUTES = int(os.environ.get('IDLE_WARNING_MINUTES', '5'))
+
+    # Two-factor authentication, mandatory for every account. Codes are checked
+    # by privacyIDEA (its own container in the Docker stack) when
+    # PRIVACYIDEA_URL is set, else by the built-in verifier (MFA_PROVIDER=local).
+    MFA_REQUIRED = _env_bool('MFA_REQUIRED', True)
+    MFA_PROVIDER = os.environ.get('MFA_PROVIDER', '')
+    MFA_ISSUER = os.environ.get('MFA_ISSUER', 'EdgeShell')
+    PRIVACYIDEA_URL = os.environ.get('PRIVACYIDEA_URL', '')
+    PRIVACYIDEA_ADMIN = os.environ.get('PRIVACYIDEA_ADMIN', 'edgeshell')
+    PRIVACYIDEA_PASSWORD = os.environ.get('PRIVACYIDEA_PASSWORD', '')
+    PRIVACYIDEA_TIMEOUT = float(os.environ.get('PRIVACYIDEA_TIMEOUT', '8'))
+    PRIVACYIDEA_VERIFY_TLS = _env_bool('PRIVACYIDEA_VERIFY_TLS', True)
+
+    # Accounts. Self sign-up creates a pending account an administrator
+    # approves with a role. Reset links for administrators are emailed and
+    # point at PUBLIC_URL (never built from the request's Host header).
+    SIGNUP_ENABLED = _env_bool('SIGNUP_ENABLED', True)
+    PUBLIC_URL = os.environ.get('PUBLIC_URL', '').rstrip('/')
+    RESET_LINK_MINUTES = int(os.environ.get('RESET_LINK_MINUTES', '30'))
+
+    # Outgoing mail for reset links (any SMTP server: Gmail app password, SES,
+    # Brevo, ...). Without it administrators recover with a backup code.
+    SMTP_HOST = os.environ.get('SMTP_HOST', '')
+    SMTP_PORT = int(os.environ.get('SMTP_PORT', '587'))
+    SMTP_USER = os.environ.get('SMTP_USER', '')
+    SMTP_PASSWORD = os.environ.get('SMTP_PASSWORD', '')
+    SMTP_FROM = os.environ.get('SMTP_FROM', '')
+    SMTP_SECURITY = os.environ.get('SMTP_SECURITY', 'starttls').lower()  # starttls|ssl|none
+
     # CSRF (Flask-WTF)
     WTF_CSRF_ENABLED = True
     WTF_CSRF_TIME_LIMIT = None  # tie token life to the session, not a fixed clock
@@ -189,6 +223,12 @@ class TestingConfig(Config):
     SQLALCHEMY_DATABASE_URI = os.environ.get('TEST_DATABASE_URL', 'sqlite:///:memory:')
     SECRET_KEY = 'testing'
     CREDENTIAL_KEY = 'testing-credential-key'
+    # Tests that exercise 2FA turn it on; the rest sign in with a password.
+    MFA_REQUIRED = False
+    MFA_PROVIDER = 'local'
+    PRIVACYIDEA_URL = ''
+    IDLE_MINUTES = 10
+    SMTP_HOST = ''
 
 
 config = {

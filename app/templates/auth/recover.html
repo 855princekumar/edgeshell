@@ -1,0 +1,31 @@
+{% extends "auth/_layout.html" %}
+{% block title %}Recover with a backup code{% endblock %}
+{% block heading %}
+    <h2>Recover with a backup code</h2>
+    <p class="subtitle">For administrators who forgot their password</p>
+{% endblock %}
+{% block body %}
+    <form method="POST" action="{{ url_for('auth.recover') }}" data-busy="Checking...">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <div class="field">
+            <label for="username">Username</label>
+            <input type="text" id="username" name="username" required autofocus autocomplete="username">
+        </div>
+        <div class="field">
+            <label for="code">Backup code</label>
+            <input type="text" id="code" name="code" class="code-input" required maxlength="16" placeholder="xxxxx-xxxxx" autocomplete="off">
+        </div>
+        <div class="field">
+            <label for="new_password">New password</label>
+            <input type="password" id="new_password" name="new_password" required minlength="10" autocomplete="new-password">
+        </div>
+        <div class="field">
+            <label for="confirm_password">Confirm new password</label>
+            <input type="password" id="confirm_password" name="confirm_password" required autocomplete="new-password">
+        </div>
+        <button type="submit" class="btn">Reset password</button>
+    </form>
+    <p class="hint" style="margin-top:12px">The backup code is used up. You still need a code from your
+       authenticator app, or another backup code, to sign in.</p>
+    <div class="links"><a href="{{ url_for('auth.login') }}">Back to sign in</a></div>
+{% endblock %}

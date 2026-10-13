@@ -1,0 +1,29 @@
+<div class="alert alert-warning" style="margin-top:4px">
+    Save these backup codes somewhere safe and private (a password manager, or printed and stored securely).
+    They are shown <strong>only once</strong>. Each code works once, in place of the authenticator code
+    {%- if is_admin %}, and an administrator can also use one to reset a forgotten password.{% else %} if you lose your phone.{% endif %}
+</div>
+<div class="codes" id="backupCodes">
+    {% for c in codes %}<span>{{ c }}</span>{% endfor %}
+</div>
+<div class="btn-row noprint" style="margin-bottom:10px">
+    <button type="button" class="btn btn-light" onclick="esCopyCodes(this)">Copy</button>
+    <button type="button" class="btn btn-light" onclick="esDownloadCodes()">Download</button>
+    <button type="button" class="btn btn-light" onclick="window.print()">Print</button>
+</div>
+<script>
+    function esCodesText() {
+        return 'EdgeShell backup codes for ' + {{ username|tojson }} + '\nGenerated ' + {{ generated|tojson }} + '\n\n'
+            + Array.from(document.querySelectorAll('#backupCodes span')).map(function (s) { return s.textContent; }).join('\n')
+            + '\n\nEach code works once.\n';
+    }
+    function esCopyCodes(btn) {
+        if (navigator.clipboard) navigator.clipboard.writeText(esCodesText()).then(function () { btn.textContent = 'Copied'; });
+    }
+    function esDownloadCodes() {
+        var a = document.createElement('a');
+        a.href = URL.createObjectURL(new Blob([esCodesText()], {type: 'text/plain'}));
+        a.download = 'edgeshell-backup-codes-' + {{ username|tojson }}.replace(/[^A-Za-z0-9._-]/g, '_') + '.txt';
+        a.click();
+    }
+</script>

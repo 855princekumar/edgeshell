@@ -1,0 +1,23 @@
+{% extends "auth/_layout.html" %}
+{% block title %}Set up two-factor authentication{% endblock %}
+{% block heading %}
+    <h2>Set up two-factor authentication</h2>
+    <p class="subtitle">Required for every EdgeShell account ({{ username }})</p>
+{% endblock %}
+{% block body %}
+    <p class="muted">1. Open an authenticator app (Google Authenticator, Microsoft Authenticator,
+       Authy, 1Password, Bitwarden, ...) and scan this code.</p>
+    <div class="qr">{{ qr|safe }}</div>
+    <p class="muted" style="margin-bottom:6px">Can't scan? Enter this key manually (time-based, 6 digits):</p>
+    <div class="secret" id="secret">{{ secret }}</div>
+    <p class="muted" style="margin-top:14px">2. Enter the 6-digit code the app shows.</p>
+    <form method="POST" action="{{ url_for('auth.mfa_setup') }}" data-busy="Checking...">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <div class="field">
+            <input type="text" name="code" class="code-input" required autofocus
+                   autocomplete="one-time-code" inputmode="numeric" maxlength="7" placeholder="123456">
+        </div>
+        <button type="submit" class="btn">Turn on two-factor authentication</button>
+    </form>
+    <div class="links"><a href="{{ url_for('auth.login_cancel') }}">Cancel</a></div>
+{% endblock %}

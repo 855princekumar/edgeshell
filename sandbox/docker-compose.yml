@@ -20,10 +20,53 @@ services:
       SECRET_KEY: ${SANDBOX_SECRET_KEY:?run sandbox/run.sh, which generates throwaway keys}
       CREDENTIAL_KEY: ${SANDBOX_CREDENTIAL_KEY:?run sandbox/run.sh, which generates throwaway keys}
       SESSION_COOKIE_SECURE: "false"
+      MFA_PROVIDER: privacyidea
+      PRIVACYIDEA_URL: http://privacyidea:8080
+      PRIVACYIDEA_PASSWORD: ${SANDBOX_MFA_PASSWORD:?run sandbox/run.sh}
+      # The suite drives fleet jobs through the API for minutes at a time; the
+      # inactivity sign-out is covered by the unit tests instead.
+      IDLE_MINUTES: "60"
     ports:
       - "127.0.0.1:5050:5000"
     volumes:
       - edgeshell_data:/app/instance
+    depends_on:
+      privacyidea:
+        condition: service_healthy
+    networks:
+      - sandbox
+
+  # 2FA verifier, as in docker/compose.yaml (SQLite here; MariaDB in production).
+  privacyidea-init:
+    image: gpappsoft/privacyidea-docker:${PRIVACYIDEA_TAG:-3.13.3}
+    user: "0:0"
+    entrypoint: ["sh", "-c", "chown -R 65532:65532 /privacyidea/etc/persistent"]
+    volumes:
+      - pi_data:/privacyidea/etc/persistent
+    restart: "no"
+
+  privacyidea:
+    image: gpappsoft/privacyidea-docker:${PRIVACYIDEA_TAG:-3.13.3}
+    container_name: edgeshell-sandbox-privacyidea
+    user: "65532:65532"
+    depends_on:
+      privacyidea-init:
+        condition: service_completed_successfully
+    environment:
+      PI_ADDRESS: 0.0.0.0
+      PI_PORT: "8080"
+      PI_ADMIN: edgeshell
+      PI_ADMIN_PASS: ${SANDBOX_MFA_PASSWORD:?run sandbox/run.sh}
+      PI_PEPPER: ${SANDBOX_MFA_PEPPER:?run sandbox/run.sh}
+      PI_LOGLEVEL: WARNING
+    volumes:
+      - pi_data:/privacyidea/etc/persistent
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request as u; u.urlopen('http://127.0.0.1:8080/healthz/', timeout=4)"]
+      interval: 10s
+      timeout: 6s
+      retries: 12
+      start_period: 30s
     networks:
       - sandbox
 
@@ -49,3 +92,4 @@ networks:
 volumes:
   edgeshell_data:
   pfe_data:
+  pi_data:

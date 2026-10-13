@@ -1,0 +1,22 @@
+{% extends "auth/_layout.html" %}
+{% block title %}Two-factor authentication{% endblock %}
+{% block heading %}
+    <h2>Two-factor authentication</h2>
+    <p class="subtitle">Signing in as <strong>{{ username }}</strong></p>
+{% endblock %}
+{% block body %}
+    <form method="POST" action="{{ url_for('auth.mfa_verify') }}" data-busy="Verifying...">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <div class="field">
+            <label for="code">Code from your authenticator app</label>
+            <input type="text" id="code" name="code" class="code-input" required autofocus
+                   autocomplete="one-time-code" maxlength="16" placeholder="123456">
+            <div class="hint">Lost your phone? Enter one of your backup codes instead (xxxxx-xxxxx). Each backup code works once.</div>
+        </div>
+        <button type="submit" class="btn">Verify</button>
+    </form>
+    <div class="links">
+        <a href="{{ url_for('auth.login_cancel') }}">Cancel</a>
+        <a href="{{ url_for('auth.forgot') }}">No codes left?</a>
+    </div>
+{% endblock %}

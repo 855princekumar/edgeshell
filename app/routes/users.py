@@ -1,14 +1,29 @@
-from flask import Blueprint, render_template, request, redirect, url_for, flash, jsonify
-from flask_login import login_required, current_user
-from sqlalchemy.exc import IntegrityError
-from app import db
-from app.models.user import User, clamp_sessions, MIN_SESSIONS, MAX_SESSIONS
-from app.services.activity_service import log_activity
-from app.services.session_service import (enforce_limit, live_session_counts,
-                                          revoke_sessions)
+"""User management for administrators.
+
+Rules live in app/services/account_service.py: at most 3 administrators,
+only the owner grants the administrator role, and no administrator can
+change another administrator's account.
+"""
 from functools import wraps
 
+from flask import (Blueprint, flash, jsonify, redirect, render_template,
+                   request, url_for)
+from flask_login import current_user, login_required
+from sqlalchemy.exc import IntegrityError
+
+from app import db
+from app.models.user import (MAX_SESSIONS, MIN_SESSIONS, PasswordResetRequest,
+                             User, UserMFA, UserSession, clamp_sessions)
+from app.services import account_service as accounts
+from app.services.activity_service import log_activity
+from app.services.session_service import (close_session, device_label,
+                                          enforce_limit, live_session_counts,
+                                          live_sessions, revoke_sessions)
+
 users_bp = Blueprint('users', __name__, url_prefix='/users')
+
+PROTECTED = ('Administrators manage their own accounts. No administrator can change '
+             'another administrator.')
 
 
 def admin_required(f):
@@ -21,14 +36,41 @@ def admin_required(f):
     return decorated
 
 
+def _target(user_id, allow_self=False):
+    """The user an admin action applies to, or (None, response) when the
+    rules forbid it."""
+    user = User.query.get_or_404(user_id)
+    if allow_self and user.id == current_user.id:
+        return user, None
+    if user.id == current_user.id:
+        flash('Use My account to change your own account.', 'warning')
+        return None, redirect(url_for('users.index'))
+    if not accounts.can_manage(current_user, user):
+        flash(PROTECTED, 'danger')
+        return None, redirect(url_for('users.index'))
+    return user, None
+
+
+def _wants_json():
+    return request.accept_mimetypes.best == 'application/json' or request.is_json
+
+
 @users_bp.route('/')
 @login_required
 @admin_required
 def index():
-    users = User.query.all()
-    return render_template('users/index.html', users=users,
+    users = User.query.filter(User.approval_status != 'pending').order_by(User.id).all()
+    pending = (User.query.filter_by(approval_status='pending')
+               .order_by(User.created_at.asc()).all())
+    enrolled = {r.user_id for r in UserMFA.query.filter(UserMFA.confirmed_at.isnot(None))}
+    return render_template('users/index.html', users=users, pending=pending,
+                           requests=accounts.open_requests(), enrolled=enrolled,
                            live_counts=live_session_counts(),
-                           session_range=range(MIN_SESSIONS, MAX_SESSIONS + 1))
+                           session_range=range(MIN_SESSIONS, MAX_SESSIONS + 1),
+                           grantable=accounts.grantable_roles(current_user),
+                           admin_count=accounts.admin_count(),
+                           max_admins=accounts.MAX_ADMINS,
+                           can_manage=lambda u: accounts.can_manage(current_user, u))
 
 
 @users_bp.route('/add', methods=['GET', 'POST'])
@@ -39,32 +81,36 @@ def add():
         username = request.form.get('username', '').strip()
         email = request.form.get('email', '').strip()
         role = request.form.get('role', 'monitor').strip().lower()
-        if role not in ('administrator', 'operator', 'monitor'):
-            role = 'monitor'
         password = request.form.get('password', '')
         max_sessions = clamp_sessions(request.form.get('max_sessions'))
+        problem = accounts.check_role_grant(current_user, role)
 
-        if not username:
-            flash('Username is required.', 'danger')
+        from app.routes.auth import USERNAME_RE
+        if not USERNAME_RE.match(username):
+            flash('Usernames are 3 to 64 letters, digits, dots, dashes or underscores.', 'danger')
         elif not email:
             flash('Email is required.', 'danger')
+        elif problem:
+            flash(problem, 'danger')
         elif User.query.filter(db.func.lower(User.username) == username.lower()).first():
             flash(f'Username "{username}" is already taken.', 'danger')
         elif User.query.filter(db.func.lower(User.email) == email.lower()).first():
             flash(f'Email "{email}" is already registered.', 'danger')
-        elif len(password) < 8:
-            flash('Password must be at least 8 characters.', 'danger')
+        elif len(password) < 10:
+            flash('Temporary passwords must be at least 10 characters.', 'danger')
         else:
-            user = User(username=username, email=email.lower(), role=role,
+            user = User(username=username, email=email.lower(), role='monitor',
                         is_active=True, must_change_password=True,
                         max_sessions=max_sessions)
+            accounts.apply_role(user, role)
             user.set_password(password)
             db.session.add(user)
             try:
                 db.session.commit()
-                log_activity(f'Add User: {username} (max sessions {max_sessions})',
+                log_activity(f'Add User: {username} as {role} (max sessions {max_sessions})',
                              status='success')
-                flash(f'User "{username}" created.', 'success')
+                flash(f'User "{username}" created. They set a new password and two-factor '
+                      'authentication at first sign-in.', 'success')
                 return redirect(url_for('users.index'))
             except IntegrityError:
                 db.session.rollback()
@@ -72,7 +118,8 @@ def add():
                       'danger')
 
     return render_template('users/add.html',
-                           session_range=range(MIN_SESSIONS, MAX_SESSIONS + 1))
+                           session_range=range(MIN_SESSIONS, MAX_SESSIONS + 1),
+                           grantable=accounts.grantable_roles(current_user))
 
 
 @users_bp.route('/check')
@@ -94,15 +141,63 @@ def check_availability():
     return jsonify(resp)
 
 
+# ---------------------------------------------------------------- sign-ups
+
+@users_bp.route('/<int:user_id>/approve', methods=['POST'])
+@login_required
+@admin_required
+def approve(user_id):
+    user = User.query.get_or_404(user_id)
+    if not user.is_pending():
+        flash(f'"{user.username}" is not waiting for approval.', 'info')
+        return redirect(url_for('users.index'))
+    role = request.form.get('role', 'monitor').strip().lower()
+    problem = accounts.check_role_grant(current_user, role)
+    if problem:
+        flash(problem, 'danger')
+        return redirect(url_for('users.index'))
+    user.approval_status = 'approved'
+    user.is_active = True
+    user.max_sessions = clamp_sessions(request.form.get('max_sessions'))
+    accounts.apply_role(user, role)
+    db.session.commit()
+    log_activity(f'Approve sign-up: {user.username} as {role}', status='success')
+    flash(f'"{user.username}" approved as {role}. They set up two-factor authentication '
+          'at first sign-in.', 'success')
+    return redirect(url_for('users.index'))
+
+
+@users_bp.route('/<int:user_id>/reject', methods=['POST'])
+@login_required
+@admin_required
+def reject(user_id):
+    user = User.query.get_or_404(user_id)
+    if not user.is_pending():
+        flash(f'"{user.username}" is not waiting for approval.', 'info')
+        return redirect(url_for('users.index'))
+    name = user.username
+    db.session.delete(user)
+    db.session.commit()
+    log_activity(f'Reject sign-up: {name}', status='warning')
+    flash(f'Sign-up request from "{name}" rejected and removed.', 'success')
+    return redirect(url_for('users.index'))
+
+
+# ---------------------------------------------------------------- account actions
+
 @users_bp.route('/<int:user_id>/delete', methods=['POST'])
 @login_required
 @admin_required
 def delete(user_id):
-    user = User.query.get_or_404(user_id)
-    if user.id == current_user.id:
-        flash('You cannot delete your own account.', 'danger')
-        return redirect(url_for('users.index'))
+    user, deny = _target(user_id)
+    if deny:
+        return deny
     name = user.username
+    from app.services.mfa_service import MFAUnavailable, remove
+    try:
+        remove(user)
+    except MFAUnavailable:
+        pass
     db.session.delete(user)
     db.session.commit()
     log_activity(f'Delete User: {name}', status='success')
@@ -114,16 +209,16 @@ def delete(user_id):
 @login_required
 @admin_required
 def toggle(user_id):
-    user = User.query.get_or_404(user_id)
-    if user.id == current_user.id:
-        return jsonify({'error': 'Cannot toggle own account'}), 400
+    user, deny = _target(user_id)
+    if deny:
+        return (jsonify({'error': PROTECTED}), 403) if _wants_json() else deny
     user.is_active = not user.is_active
     if not user.is_active:
         revoke_sessions(user, 'deactivated')   # signed out now, not at cookie expiry
     db.session.commit()
     log_activity(f"{'Enable' if user.is_active else 'Disable'} User: {user.username}",
                  status='success')
-    if request.accept_mimetypes.best == 'application/json' or request.is_json:
+    if _wants_json():
         return jsonify({'success': True, 'active': user.is_active})
     flash(f"User \"{user.username}\" {'enabled' if user.is_active else 'disabled and signed out'}.",
           'success')
@@ -134,18 +229,34 @@ def toggle(user_id):
 @login_required
 @admin_required
 def reset_password(user_id):
-    user = User.query.get_or_404(user_id)
+    """Temporary password + 2FA removed + every session ended."""
+    user, deny = _target(user_id)
+    if deny:
+        return deny
     new_password = request.form.get('new_password', '')
-    if len(new_password) < 8:
-        flash('Password must be at least 8 characters.', 'danger')
+    if len(new_password) < 10:
+        flash('Temporary passwords must be at least 10 characters.', 'danger')
         return redirect(url_for('users.index'))
-    user.set_password(new_password)
-    user.must_change_password = True
-    # A reset usually means the account may be compromised: end every session.
-    revoke_sessions(user, 'password_reset', keep_current=(user.id == current_user.id))
+    accounts.admin_reset(user, new_password, current_user)
     db.session.commit()
-    log_activity(f'Reset Password: {user.username}', status='success')
-    flash(f'Password reset for "{user.username}". Their sessions were signed out.', 'success')
+    log_activity(f'Reset password and 2FA: {user.username}', status='warning')
+    flash(f'Password and two-factor authentication reset for "{user.username}". Give them the '
+          'temporary password; they choose a new one and set up 2FA at next sign-in.',
+          'success')
+    return redirect(url_for('users.index'))
+
+
+@users_bp.route('/requests/<int:request_id>/dismiss', methods=['POST'])
+@login_required
+@admin_required
+def dismiss_request(request_id):
+    req = PasswordResetRequest.query.get_or_404(request_id)
+    req.status = 'dismissed'
+    from datetime import datetime
+    req.handled_by, req.handled_at = current_user.username, datetime.utcnow()
+    db.session.commit()
+    log_activity(f'Dismiss reset request: {req.user.username}', status='info')
+    flash(f'Reset request from "{req.user.username}" dismissed.', 'info')
     return redirect(url_for('users.index'))
 
 
@@ -154,7 +265,9 @@ def reset_password(user_id):
 @admin_required
 def set_sessions(user_id):
     """Set how many devices may be signed in at once (1-4)."""
-    user = User.query.get_or_404(user_id)
+    user, deny = _target(user_id, allow_self=True)
+    if deny:
+        return deny
     user.max_sessions = clamp_sessions(request.form.get('max_sessions'), user.max_sessions)
     dropped = enforce_limit(user)
     db.session.commit()
@@ -165,13 +278,48 @@ def set_sessions(user_id):
     return redirect(url_for('users.index'))
 
 
+@users_bp.route('/<int:user_id>/devices')
+@login_required
+@admin_required
+def devices(user_id):
+    user, deny = _target(user_id, allow_self=True)
+    if deny:
+        return deny
+    from datetime import datetime
+    rows = live_sessions(user)
+    rows.sort(key=lambda s: s.active_at or s.started_at, reverse=True)
+    recent = (UserSession.query.filter(UserSession.user_id == user.id,
+                                       UserSession.revoked_at.isnot(None))
+              .order_by(UserSession.revoked_at.desc()).limit(10).all())
+    return render_template('users/devices.html', user=user, rows=rows, recent=recent,
+                           device_label=device_label, now=datetime.utcnow())
+
+
+@users_bp.route('/<int:user_id>/devices/<int:session_id>/close', methods=['POST'])
+@login_required
+@admin_required
+def close_device(user_id, session_id):
+    user, deny = _target(user_id)
+    if deny:
+        return deny
+    row = close_session(user, session_id, reason='admin_revoked')
+    if row:
+        db.session.commit()
+        log_activity(f'Close session: {user.username}', response=device_label(row),
+                     status='warning')
+        flash(f'Signed {user.username} out of {device_label(row)}.', 'success')
+    return redirect(url_for('users.devices', user_id=user.id))
+
+
 @users_bp.route('/<int:user_id>/signout', methods=['POST'])
 @login_required
 @admin_required
 def sign_out_all(user_id):
     """Sign a user out everywhere, e.g. after a suspected session hijack."""
-    user = User.query.get_or_404(user_id)
-    n = revoke_sessions(user, 'admin_revoked', keep_current=(user.id == current_user.id))
+    user, deny = _target(user_id)
+    if deny:
+        return deny
+    n = revoke_sessions(user, 'admin_revoked')
     db.session.commit()
     log_activity(f'Sign out sessions: {user.username} ({n})', status='warning')
     flash(f'Signed out {n} session(s) for "{user.username}".', 'success')
@@ -182,15 +330,15 @@ def sign_out_all(user_id):
 @login_required
 @admin_required
 def set_role(user_id):
-    user = User.query.get_or_404(user_id)
+    user, deny = _target(user_id)
+    if deny:
+        return deny
     role = request.form.get('role', '').strip().lower()
-    if role not in ('administrator', 'operator', 'monitor'):
-        flash('Invalid role.', 'danger')
+    problem = accounts.check_role_grant(current_user, role)
+    if problem:
+        flash(problem, 'danger')
         return redirect(url_for('users.index'))
-    if user.id == current_user.id and role != 'administrator':
-        flash('You cannot remove your own administrator role.', 'warning')
-        return redirect(url_for('users.index'))
-    user.role = role
+    accounts.apply_role(user, role)
     db.session.commit()
     log_activity(f'Set role: {user.username} -> {role}', status='success')
     flash(f'Role for "{user.username}" set to {role}.', 'success')

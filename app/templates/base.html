@@ -477,7 +477,7 @@
             </div>
 
             <div class="dropdown" style="position:relative">
-                <a class="topbar-user" href="{{ url_for('auth.change_password') }}">
+                <a class="topbar-user" href="{{ url_for('account.index') }}" title="My account: password, 2FA, devices">
                     <div class="user-avatar">{{ current_user.username[0].upper() }}</div>
                     <span>{{ current_user.username }}</span>
                     <span class="text-xs text-muted" style="text-transform:capitalize">{{ current_user.role }}</span>
@@ -609,16 +609,77 @@
             document.getElementById('esSessionMsg').textContent = msg || 'Your session has ended.';
         }
         {% if current_user.is_authenticated %}
+        // Session watcher. Polls do not count as activity; clicks, key presses
+        // and touches do (sent at most every 30 s). After the idle limit the
+        // server-side idle time (shared by every tab of this session) triggers
+        // a 'still there?' prompt with a countdown; no answer signs out.
         (function(){
-            const url = "{{ url_for('auth.session_status') }}";
+            const statusUrl = "{{ url_for('auth.session_status') }}";
+            const activityUrl = "{{ url_for('auth.session_activity') }}";
+            const expireUrl = "{{ url_for('auth.session_expire') }}";
+            let lastLocal = Date.now(), lastSent = 0, countdown = null;
+
+            function ping(force){
+                if (!force && Date.now() - lastSent < 30000) return;
+                lastSent = Date.now();
+                fetch(activityUrl, {method: 'POST', credentials: 'same-origin'}).catch(function(){});
+            }
+            ['click', 'keydown', 'touchstart', 'scroll', 'mousedown'].forEach(function(ev){
+                document.addEventListener(ev, function(){
+                    if (countdown) return;          // the prompt needs its button
+                    lastLocal = Date.now();
+                    ping(false);
+                }, {passive: true, capture: true});
+            });
+
+            function showPrompt(secondsLeft){
+                if (countdown) return;
+                const o = document.createElement('div');
+                o.id = 'esIdleOverlay';
+                o.style.cssText = 'position:fixed;inset:0;z-index:99998;background:rgba(15,23,42,.55);display:flex;align-items:center;justify-content:center';
+                o.innerHTML = '<div style="background:#fff;border-radius:14px;max-width:400px;width:calc(100% - 32px);padding:26px;box-shadow:0 10px 40px rgba(0,0,0,.25)">'
+                  + '<div style="font-size:17px;font-weight:700;color:#111827;margin-bottom:6px">Are you still there?</div>'
+                  + '<div style="font-size:14px;color:#4b5563;margin-bottom:16px">For security, this session signs out in '
+                  + '<strong id="esIdleLeft"></strong> unless you confirm you are still using it.</div>'
+                  + '<button id="esIdleStay" style="width:100%;background:#1a56db;color:#fff;border:0;padding:10px;border-radius:8px;font-weight:600;cursor:pointer">I'm still here</button></div>';
+                document.body.appendChild(o);
+                let left = Math.max(1, Math.floor(secondsLeft));
+                const label = document.getElementById('esIdleLeft');
+                function draw(){ label.textContent = Math.floor(left / 60) + ':' + String(left % 60).padStart(2, '0'); }
+                draw();
+                countdown = setInterval(function(){
+                    left -= 1; draw();
+                    if (left <= 0) {
+                        clearInterval(countdown);
+                        fetch(expireUrl, {method: 'POST', credentials: 'same-origin'}).finally(function(){
+                            o.remove();
+                            esSessionEnded('You were signed out after a period of inactivity.');
+                        });
+                    }
+                }, 1000);
+                document.getElementById('esIdleStay').addEventListener('click', function(){
+                    clearInterval(countdown); countdown = null; o.remove();
+                    lastLocal = Date.now(); ping(true);
+                });
+            }
+            function hidePrompt(){
+                if (!countdown) return;
+                clearInterval(countdown); countdown = null;
+                const o = document.getElementById('esIdleOverlay'); if (o) o.remove();
+            }
+
             function check(){
-                fetch(url, {credentials: 'same-origin'}).then(function(r){
-                    if (r.status === 200) return r.json().then(function(j){
-                        if (!j.authenticated) esSessionEnded('Your session has ended. Please sign in again.');
+                fetch(statusUrl, {credentials: 'same-origin'}).then(function(r){
+                    if (r.status !== 200) return;
+                    return r.json().then(function(j){
+                        if (!j.authenticated) { esSessionEnded('Your session has ended. Please sign in again.'); return; }
+                        if (!j.idle_after_s) return;
+                        if (j.idle_s >= j.idle_after_s) showPrompt(j.idle_after_s + j.warn_s - j.idle_s);
+                        else hidePrompt();          // answered in another tab
                     });
                 }).catch(function(){});
             }
-            setInterval(check, 20000);
+            setInterval(check, 15000);
             document.addEventListener('visibilitychange', function(){ if (!document.hidden) check(); });
         })();
         {% endif %}

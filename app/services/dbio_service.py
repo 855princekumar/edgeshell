@@ -12,15 +12,18 @@ import json
 from datetime import datetime, date
 
 from app import db
-from app.models.user import User, UserSession
+from app.models.user import PasswordResetRequest, User, UserMFA, UserSession
 from app.models.node import Node
 from app.models import (ActivityLog, NodeLog, Deployment, SystemMetrics,
                         VpnStatus, Settings, ServiceEvent)
 from app.models.issue import Issue, IssueMessage
 
 # FK-safe order: users/nodes first, then dependent tables.
-EXPORT_ORDER = [User, Node, Settings, Issue, IssueMessage, ActivityLog,
-                NodeLog, Deployment, SystemMetrics, VpnStatus, ServiceEvent]
+# 2FA rows move with the users (privacyIDEA serials, or secrets encrypted with
+# the same CREDENTIAL_KEY), so nobody has to enroll again after a migration.
+EXPORT_ORDER = [User, UserMFA, PasswordResetRequest, Node, Settings, Issue,
+                IssueMessage, ActivityLog, NodeLog, Deployment, SystemMetrics,
+                VpnStatus, ServiceEvent]
 # Live sessions are not exported (everyone signs in again after a migration),
 # but they reference users, so they are cleared before users are wiped.
 WIPE_FIRST = [UserSession]
