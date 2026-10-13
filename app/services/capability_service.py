@@ -13,23 +13,17 @@ from app.services import orgui_service
 def _check_cmd(orgui_port):
     """Build the per-node capability probe.
 
-    OpenRemoteGUI detection is deliberately broad because real installs set up
-    noVNC + wayvnc and may not keep an OpenRemoteGUI folder in home. A node
-    counts as having it if ANY of these hold: the ORGUI port is listening, a
-    systemd unit is active, an OpenRemoteGUI or noVNC directory exists, or a
-    websockify/wayvnc/novnc process is running. Also reports arch.
+    OpenRemoteGUI counts only when installed and its gateway port listens
+    (see orgui_service): Raspberry Pi OS's own wayvnc is not OpenRemoteGUI.
+    Also reports arch.
     """
     return (
         'echo "ARCH:$(uname -m)"; '
         'echo "DOCKER:$(command -v docker >/dev/null 2>&1 && echo 1 || echo 0)"; '
         'echo "NODERED:$((command -v node-red >/dev/null 2>&1 || '
         "systemctl list-unit-files 2>/dev/null | grep -qE 'nodered|node-red') && echo 1 || echo 0)\"; "
-        'echo "ORGUI:$(( '
-        '( (ss -ltn 2>/dev/null || netstat -ltn 2>/dev/null) | grep -qE "[:.]%d([^0-9]|$)" ) || '
-        'systemctl is-active openremotegui >/dev/null 2>&1 || '
-        '[ -d "$HOME/OpenRemoteGUI" ] || [ -d "$HOME/noVNC" ] || '
-        'pgrep -f "websockify|wayvnc|novnc" >/dev/null 2>&1 '
-        ') && echo 1 || echo 0)"' % int(orgui_port)
+        'echo "ORGUI:$(' + orgui_service._CHECK.format(port=int(orgui_port))
+        + ' | grep -q RUNNING && echo 1 || echo 0)"'
     )
 
 

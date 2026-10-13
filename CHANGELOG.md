@@ -2,6 +2,13 @@
 
 All notable changes are documented here. Format loosely follows Keep a Changelog.
 
+## [1.5.1] - 2026-10-13
+
+### Fixed
+- **OpenRemoteGUI was reported as installed on every reachable Raspberry Pi.** The check counted any `wayvnc` or `websockify` process, but Raspberry Pi OS runs its own `wayvnc` (and Raspberry Pi Connect's `rpi-connectd`) whenever VNC is enabled, and `pgrep -f` also matched the checking shell's own command line. OpenRemoteGUI now counts only when its install (`/opt/openremotegui`, `/etc/openremotegui` or a `~/OpenRemoteGUI` checkout) is present and its web gateway port (6080 by default) is listening; "installed but not running" is reported separately. On the live 73 online nodes this changed the result from 73 installed to the 2 nodes that really serve the OpenRemoteGUI page.
+- The metrics collector now refreshes every node's OpenRemoteGUI state on each pass, so the Remote button is accurate without a manual scan. Earlier wrong results are cleared once on upgrade.
+- Node-RED "running" now matches the process name (`pgrep -x node-red`) or the `nodered` service instead of a command-line search that could match the checking shell.
+
 ## [1.5.0] - 2026-10-13
 
 ### Added

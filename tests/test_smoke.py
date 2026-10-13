@@ -539,6 +539,7 @@ docker_installed
 docker_running
 nodered_installed
 nodered_running
+orgui_installed
 @@
 """
 
@@ -704,3 +705,48 @@ def test_node_fleet_category_filter_and_tags(app, client):
     assert 'data-category="Bio Health Trackers"' in html
     assert '>ts-online</span>' in html and '>tailscale</span>' in html  # ; separated tags split
     assert 'value="auth_failed">login failed' in html
+
+
+
+def test_orgui_detection_ignores_raspberry_pi_vnc():
+    """Raspberry Pi OS runs wayvnc / rpi-connectd on every node with VNC on;
+    that is not OpenRemoteGUI. Only the install plus a listening gateway counts,
+    and no check may use a pgrep pattern that matches its own command line."""
+    from app.services import orgui_service, capability_service, collector
+    for cmd in (orgui_service._CHECK, capability_service._check_cmd(6080), collector.METRICS_CMD):
+        assert 'wayvnc' not in cmd and 'websockify' not in cmd
+        assert 'pgrep -f' not in cmd, 'pgrep -f can match the checking shell itself'
+    assert '/opt/openremotegui' in orgui_service._CHECK
+    m = collector.parse_metrics(SAMPLE_PROC)
+    assert m['orgui_installed'] is True and m['orgui_running'] is False   # installed, gateway down
+
+
+def test_capability_probe_parses_orgui_line(app, monkeypatch):
+    from app.services import capability_service
+    from app.models.node import Node
+    outputs = iter(['\n'.join(['ARCH:aarch64', 'DOCKER:0', 'NODERED:1', 'ORGUI:0']),
+                    '\n'.join(['ARCH:aarch64', 'DOCKER:1', 'NODERED:1', 'ORGUI:1'])])
+    monkeypatch.setattr(capability_service, 'execute_command',
+                        lambda node, cmd, timeout=20: {'success': True, 'stdout': next(outputs)})
+    with app.app_context():
+        n = Node(name='cap', ip_address='10.0.0.3', username='pi')
+        assert capability_service.check_node(n)['orgui'] is False
+        assert capability_service.check_node(n)['orgui'] is True
+
+
+
+def test_stale_orgui_flags_are_reset_once(app):
+    from app import _one_time_fixes
+    from app.models.node import Node
+    from app.models import Settings
+    with app.app_context():
+        Settings.query.filter_by(key='fix_orgui_detection_v2').delete()
+        db.session.add(Node(name='stale', ip_address='10.0.0.4', username='pi', orgui_installed=True))
+        db.session.commit()
+        _one_time_fixes()
+        assert db.session.query(Node.orgui_installed).filter_by(name='stale').scalar() is None
+        n = Node.query.filter_by(name='stale').first()
+        n.orgui_installed = True                       # detected again later: kept
+        db.session.commit()
+        _one_time_fixes()
+        assert db.session.query(Node.orgui_installed).filter_by(name='stale').scalar() is True
