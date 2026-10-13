@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+{% block title %}Logs: {{ node.name }}{% endblock %}
+{% block content %}
+<div class="page-header">
+    <div>
+        <div class="page-title">{{ node.name }}</div>
+        <div class="page-subtitle">Collected log history</div>
+    </div>
+    <a href="{{ url_for('logs.index') }}" class="btn btn-outline"><i class="bi bi-arrow-left"></i> Back</a>
+</div>
+
+<div class="card">
+    <div class="table-wrap">
+        <table>
+            <thead>
+                <tr>
+                    <th>Collected</th>
+                    <th>File</th>
+                    <th>Path</th>
+                    <th>Severity</th>
+                    <th>Lines</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for log in logs %}
+                <tr>
+                    <td class="mono text-xs">{{ log.collection_time|localtime('%Y-%m-%d %H:%M') }}</td>
+                    <td class="fw-600">{{ log.log_source }}</td>
+                    <td class="mono text-xs">{{ log.log_path }}</td>
+                    <td>
+                        <span class="status-badge status-{% if log.severity in ('critical','error') %}failed{% elif log.severity == 'warning' %}warning{% else %}online{% endif %}">
+                            {{ log.severity }}
+                        </span>
+                    </td>
+                    <td class="text-sm">{{ log.raw_log.splitlines()|length if log.raw_log else 0 }}</td>
+                    <td>
+                        <button class="btn btn-outline btn-xs" onclick="showLog({{ log.id }})">
+                            <i class="bi bi-eye"></i> View
+                        </button>
+                    </td>
+                </tr>
+                {% else %}
+                <tr><td colspan="6" style="text-align:center; padding:30px; color:var(--gray-400)">No logs collected yet</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}

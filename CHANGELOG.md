@@ -2,6 +2,11 @@
 
 All notable changes are documented here. Format loosely follows Keep a Changelog.
 
+## [1.3.3] - 2026-10-13
+
+### Fixed
+- **Log Viewer, Activity Log and node log pages returned 500 (Internal Server Error) in the published image.** A `.gitignore` rule meant for runtime `logs/` folders also matched `app/templates/logs/`, so those three templates were never committed; local builds had them, the CI-built image did not. The rule now applies only to `/logs/` at the project root, the templates are in the repository, and a test fails CI if any template the code renders is missing from git.
+
 ## [1.3.2] - 2026-10-13
 
 ### Fixed
