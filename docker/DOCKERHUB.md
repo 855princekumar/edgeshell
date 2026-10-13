@@ -43,6 +43,11 @@ docker compose up -d
 Open `https://fleet.yourdomain.com` and sign in as **`admin` / `admin123`**.
 You must set a new password before anything else.
 
+**No domain yet?** Set `EDGESHELL_DOMAIN=:80` and `SESSION_COOKIE_SECURE=false`
+in `.env` to run over plain HTTP on the server's IP. When the domain is ready,
+set it (and `SESSION_COOKIE_SECURE=true`) and run `docker compose up -d`
+again: Caddy gets the certificate and all data in `./data` is kept.
+
 ### What you get
 
 | Service | Role | Exposed |

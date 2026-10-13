@@ -13,6 +13,10 @@
 #
 # Open https://<EDGESHELL_DOMAIN> and sign in as admin / admin123 (forced change).
 # The DNS A record must point at this host, with ports 80 and 443 open.
+#
+# No domain yet? Set EDGESHELL_DOMAIN=:80 and SESSION_COOKIE_SECURE=false to
+# serve plain HTTP on the server's IP; switch to the domain later and run
+# `docker compose up -d` again. Data in ./data is kept.
 name: edgeshell
 
 services:
@@ -60,7 +64,7 @@ services:
       CREDENTIAL_KEY: ${CREDENTIAL_KEY:?set CREDENTIAL_KEY in .env}
       DATABASE_URL: mysql+mysqlconnector://edgeshell:${DB_PASSWORD}@mariadb:3306/edgeshell?charset=utf8mb4&collation=utf8mb4_unicode_ci
       BEHIND_PROXY: "true"
-      SESSION_COOKIE_SECURE: "true"
+      SESSION_COOKIE_SECURE: ${SESSION_COOKIE_SECURE:-true}
       DISPLAY_TZ: ${DISPLAY_TZ:-UTC}
       SESSION_HOURS: ${SESSION_HOURS:-8}
       SINGLE_SESSION: ${SINGLE_SESSION:-true}
