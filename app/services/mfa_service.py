@@ -75,8 +75,11 @@ def otpauth_uri(secret_b32, account):
 def qr_svg(data):
     """Inline SVG QR code for the enrollment page (segno, pure Python)."""
     import segno
-    return segno.make(data, error='m').svg_inline(scale=5, border=2,
-                                                 dark='#111827', light='#ffffff')
+    # omitsize: emit a viewBox and no fixed size, so CSS scales the whole code
+    # instead of cropping it (a cropped code loses its corner markers and no
+    # authenticator can read it). Border 4 is the quiet zone the spec asks for.
+    return segno.make(data, error='m').svg_inline(scale=1, border=4, omitsize=True,
+                                                 dark='#000000', light='#ffffff')
 
 
 def new_backup_codes(n=BACKUP_CODES):
