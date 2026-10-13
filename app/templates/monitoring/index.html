@@ -73,21 +73,21 @@
   <div class="col-12 col-xl-6" id="card-wrap-{{ node.id }}">
     <div class="card border-0 shadow-sm h-100">
       <div class="card-header bg-white border-bottom d-flex align-items-center justify-content-between py-2">
-        <div class="d-flex align-items-center gap-2">
-          <span class="status-badge status-{{ node.status }}" id="status-{{ node.id }}">{{ node.status }}</span>
-          <span class="fw-semibold">{{ node.name }}</span>
-          <small class="text-muted">{{ node.ip_address }}</small>
+        <div class="d-flex align-items-center gap-2 min-w-0">
+          <span class="status-badge status-{{ node.status }} flex-shrink-0" id="status-{{ node.id }}">{{ node.status }}</span>
+          <span class="fw-semibold text-truncate" title="{{ node.name }}">{{ node.name }}</span>
+          <small class="text-muted text-nowrap">{{ node.ip_address }}</small>
         </div>
-        <div class="d-flex gap-1">
+        <div class="d-flex gap-1 flex-shrink-0">
           <button class="btn btn-xs btn-outline-secondary" onclick="pollNode({{ node.id }})" title="Refresh">
             <i class="bi bi-arrow-clockwise"></i>
           </button>
-          {% if current_user.role in ['Administrator','Operator'] %}
-          <button class="btn btn-xs btn-outline-warning" onclick="restartNode({{ node.id }}, '{{ node.name }}')" title="Restart Node">
+          {% if current_user.can_execute() %}
+          <button class="btn btn-xs btn-outline-warning" onclick="restartNode({{ node.id }}, {{ node.name|tojson|forceescape }})" title="Restart Node">
             <i class="bi bi-power"></i>
           </button>
           {% endif %}
-          <button class="btn btn-xs btn-outline-primary" data-bs-toggle="modal" data-bs-target="#historyModal" onclick="loadHistory({{ node.id }}, '{{ node.name }}')" title="History">
+          <button class="btn btn-xs btn-outline-primary" data-bs-toggle="modal" data-bs-target="#historyModal" onclick="loadHistory({{ node.id }}, {{ node.name|tojson|forceescape }})" title="History">
             <i class="bi bi-graph-up"></i>
           </button>
         </div>

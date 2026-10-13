@@ -12,6 +12,7 @@ All notable changes are documented here. Format loosely follows Keep a Changelog
 - A menu button on phones and narrow windows: the sidebar was unreachable below 768 px.
 
 ### Fixed
+- Monitoring: the Restart button was hidden from everyone (a role check compared against capitalised role names); node names in its buttons are now escaped for JavaScript, and long names truncate.
 - OpenRemoteGUI install runs `sudo bash install.sh` (`./install.sh` fails when the clone has no execute bit).
 - Node Fleet card actions wrap inside the card (Delete no longer sticks out).
 - Phone and zoomed layouts: the top bar, the Node Fleet and Monitoring header buttons, the fleet terminal (its output pane was squeezed to 36 px on phones), Monitoring and Users stat cards (numbers and words broke mid-word), table columns (emails and IPs broke letter by letter; wide tables now scroll inside their card), dashboard metric values and the import sample.
