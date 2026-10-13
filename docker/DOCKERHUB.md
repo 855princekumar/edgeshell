@@ -67,6 +67,25 @@ and run `docker compose up -d`. certbot gets the certificate within a minute
 and nginx switches to HTTPS by itself (HTTP and the bare IP then redirect to
 the domain). Renewal is automatic and all data in `./data` is kept.
 
+**HTTPS without a domain:** use the server's public IPv4 address as
+`EDGESHELL_DOMAIN` (with `SESSION_COOKIE_SECURE=true` and
+`PUBLIC_URL=https://<ip>`). Let's Encrypt issues free short-lived certificates
+for IP addresses (about 6 days); certbot renews them automatically. Use a
+static address (an Elastic IP on AWS), since the certificate names the IP.
+
+**Harden the host** (fail2ban for SSH and the web, key-only SSH, log rotation,
+automatic security updates):
+
+```bash
+curl -fsSLO $base/host-hardening.sh
+sudo bash host-hardening.sh --admin-ip <your public IP>   # never ban yourself
+```
+
+Keep your SSH session open and test a new login before closing it.
+
+**Live VPN status:** with Tailscale on the host, the admin panel's VPN page
+shows the tailnet live through the host's `tailscaled` socket (read-only).
+
 ### What you get
 
 | Service | Role | Exposed |
@@ -114,7 +133,7 @@ edgeshell/
 | `PUBLIC_URL` + `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`, `SMTP_FROM`, `SMTP_SECURITY` | no | | Emailed reset links for administrators. `PUBLIC_URL` is the address users open, e.g. `https://fleet.yourdomain.com` |
 | `IDLE_MINUTES` / `IDLE_WARNING_MINUTES` | no | `10` / `5` | "Still there?" prompt after this much inactivity, then sign-out (`0` turns it off) |
 | `SIGNUP_ENABLED` | no | `true` | Let people request an account (an admin approves it with a role) |
-| `EDGESHELL_TAG` | no | `1.3.0` | Image version |
+| `EDGESHELL_TAG` | no | `1.3.1` | Image version |
 | `DISPLAY_TZ` | no | `UTC` | Time zone shown in the UI (the database stores UTC) |
 | `SESSION_HOURS` | no | `8` | Idle session lifetime |
 | `SINGLE_SESSION` | no | `true` | Enforce each user's device limit (1 by default, up to 4 per user) |
@@ -206,4 +225,4 @@ Report vulnerabilities privately: see
 | Tag | Meaning |
 |---|---|
 | `latest` | Newest release |
-| `1.3.0`, `1.3`, `1` | Specific versions; pin one in production |
+| `1.3.1`, `1.3`, `1` | Specific versions; pin one in production |

@@ -2,120 +2,137 @@
 {% block title %}VPN Status - EdgeShell{% endblock %}
 
 {% block content %}
-<div class="mb-4">
-  <h4 class="fw-bold mb-0">VPN Status</h4>
-  <small class="text-muted">Read-only view - VPN is managed on the host system</small>
+<div class="d-flex align-items-center justify-content-between mb-4">
+  <div>
+    <h4 class="fw-bold mb-0">VPN Status</h4>
+    <small class="text-muted">Live Tailscale status of this server (read-only; the VPN is managed on the host)</small>
+  </div>
+  <div class="d-flex align-items-center gap-2">
+    <span class="small text-muted" id="vpn-updated">Checking...</span>
+    <button class="btn btn-outline-secondary btn-sm" onclick="vpnRefresh()"><i class="bi bi-arrow-clockwise me-1"></i>Refresh</button>
+  </div>
 </div>
 
-<div class="row g-4">
-  <!-- Status card -->
-  <div class="col-12 col-md-4">
-    <div class="card border-0 shadow-sm mb-4">
+<div class="row g-3 mb-4">
+  <div class="col-12 col-lg-4">
+    <div class="card border-0 shadow-sm h-100">
       <div class="card-body p-4 text-center">
-        <div id="vpn-icon" class="mb-3">
-          <div class="spinner-border text-primary"></div>
-        </div>
-        <div class="fw-bold fs-5 mb-1" id="vpn-state">Checking…</div>
-        <div class="text-muted small mb-1" id="vpn-ip"> n/a </div>
-        <div class="text-muted small" id="vpn-hostname"> n/a </div>
-        <hr>
-        <button class="btn btn-outline-secondary btn-sm w-100" onclick="refresh()">
-          <i class="bi bi-arrow-clockwise me-1"></i>Refresh Status
-        </button>
-      </div>
-    </div>
-
-    <div class="card border-0 shadow-sm">
-      <div class="card-body p-3">
-        <div class="row g-2 text-center">
-          <div class="col-6 border-end">
-            <div class="fw-bold fs-4 text-primary" id="peer-count"> n/a </div>
-            <div class="small text-muted">Peers</div>
-          </div>
-          <div class="col-6">
-            <div class="fw-bold fs-4 text-success" id="peer-online"> n/a </div>
-            <div class="small text-muted">Online</div>
-          </div>
-        </div>
+        <div id="vpn-icon" class="mb-2"><div class="spinner-border text-primary"></div></div>
+        <div class="fw-bold fs-5 mb-1" id="vpn-state">Checking...</div>
+        <div class="small text-muted" id="vpn-self"></div>
+        <div class="small font-monospace mt-1" id="vpn-ip"></div>
+        <div class="small text-muted mt-1" id="vpn-tailnet"></div>
       </div>
     </div>
   </div>
-
-  <!-- Peers table -->
-  <div class="col-12 col-md-8">
-    <div class="card border-0 shadow-sm">
-      <div class="card-header bg-white border-bottom py-3 d-flex justify-content-between">
-        <span class="fw-semibold"><i class="bi bi-diagram-3 me-2 text-info"></i>Connected Peers</span>
-        <span class="small text-muted">Auto-configured by the host - view only</span>
-      </div>
-      <div class="card-body p-0" id="peers-body">
-        <div class="text-center py-4 text-muted">
-          <div class="spinner-border spinner-border-sm me-2"></div>Loading…
-        </div>
-      </div>
-    </div>
-
-    <div class="alert alert-info border-0 mt-3 small">
-      <i class="bi bi-info-circle me-2"></i>
-      VPN configuration (auth keys, routes, exit nodes) is managed on the <strong>host machine</strong>
-      where EdgeShell is deployed - not through this interface. This page shows the live status only.
+  <div class="col-12 col-lg-8">
+    <div class="row g-3 h-100">
+      <div class="col-6 col-md-3"><div class="stat-card h-100"><div class="stat-value text-primary" id="peer-count">-</div><div class="stat-label">Peers</div></div></div>
+      <div class="col-6 col-md-3"><div class="stat-card h-100"><div class="stat-value text-success" id="peer-online">-</div><div class="stat-label">Online</div></div></div>
+      <div class="col-6 col-md-3"><div class="stat-card h-100"><div class="stat-value text-info" id="peer-direct">-</div><div class="stat-label">Direct links</div></div></div>
+      <div class="col-6 col-md-3"><div class="stat-card h-100"><div class="stat-value text-secondary fs-6" id="vpn-version">-</div><div class="stat-label">Tailscale version</div></div></div>
+      <div class="col-12" id="vpn-health"></div>
     </div>
   </div>
+</div>
+
+<div class="card border-0 shadow-sm">
+  <div class="card-header bg-white border-bottom py-3 d-flex justify-content-between align-items-center">
+    <span class="fw-semibold"><i class="bi bi-diagram-3 me-2 text-info"></i>Tailnet peers</span>
+    <input type="search" class="form-control form-control-sm w-auto" placeholder="Filter..." id="peer-filter" oninput="vpnRender()">
+  </div>
+  <div class="card-body p-0" id="peers-body">
+    <div class="text-center py-4 text-muted"><div class="spinner-border spinner-border-sm me-2"></div>Loading...</div>
+  </div>
+</div>
+
+<div class="alert alert-info border-0 mt-3 small">
+  <i class="bi bi-info-circle me-2"></i>
+  Auth keys, routes and exit nodes are managed on the host (<code>sudo tailscale up</code>, <code>tailscale status</code>).
+  This page refreshes every 10 seconds and cannot change the VPN.
 </div>
 {% endblock %}
 
 {% block scripts %}
 <script>
-function refresh() {
-  document.getElementById('vpn-icon').innerHTML = '<div class="spinner-border text-primary"></div>';
-  document.getElementById('vpn-state').textContent = 'Checking…';
+let vpnData = null;
 
-  fetch('/tailscale/status')
+function esc(s) {
+  return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]));
+}
+function ago(iso) {
+  if (!iso) return 'never';
+  const s = Math.max(0, (Date.now() - Date.parse(iso)) / 1000);
+  if (s < 90) return 'just now';
+  if (s < 3600) return Math.round(s / 60) + ' min ago';
+  if (s < 86400) return Math.round(s / 3600) + ' h ago';
+  return Math.round(s / 86400) + ' d ago';
+}
+function bytes(n) {
+  if (!n) return '0 B';
+  const u = ['B', 'KB', 'MB', 'GB', 'TB']; let i = 0;
+  while (n >= 1024 && i < u.length - 1) { n /= 1024; i++; }
+  return n.toFixed(i ? 1 : 0) + ' ' + u[i];
+}
+
+function vpnRender() {
+  const d = vpnData; if (!d) return;
+  const ok = d.connected;
+  document.getElementById('vpn-icon').innerHTML = ok
+    ? '<i class="bi bi-shield-fill-check text-success" style="font-size:3rem"></i>'
+    : '<i class="bi bi-shield-x text-danger" style="font-size:3rem"></i>';
+  const st = document.getElementById('vpn-state');
+  st.textContent = ok ? 'Connected' : (d.backend_state === 'unavailable' ? 'Status unavailable' : 'Not connected (' + d.backend_state + ')');
+  st.className = 'fw-bold fs-5 mb-1 text-' + (ok ? 'success' : 'danger');
+  document.getElementById('vpn-self').textContent = d.self_dns_name || d.self_name || '';
+  document.getElementById('vpn-ip').textContent = (d.self_ips || []).join('  ');
+  document.getElementById('vpn-tailnet').textContent = d.tailnet ? 'Tailnet: ' + d.tailnet : '';
+  const nodes = d.nodes || [];
+  document.getElementById('peer-count').textContent = nodes.length;
+  document.getElementById('peer-online').textContent = d.online_count != null ? d.online_count : nodes.filter(n => n.online).length;
+  document.getElementById('peer-direct').textContent = nodes.filter(n => n.connection === 'direct').length;
+  document.getElementById('vpn-version').textContent = d.version || '-';
+
+  const notes = (d.health || []).map(h => '<div class="alert alert-warning py-2 small mb-2"><i class="bi bi-exclamation-triangle me-1"></i>' + esc(h) + '</div>');
+  if (d.error) notes.push('<div class="alert alert-danger py-2 small mb-0"><i class="bi bi-x-octagon me-1"></i>' + esc(d.error) + '</div>');
+  if (d.exit_node) notes.push('<div class="alert alert-secondary py-2 small mb-0">Using exit node: ' + esc(d.exit_node) + '</div>');
+  document.getElementById('vpn-health').innerHTML = notes.join('');
+
+  const q = (document.getElementById('peer-filter').value || '').toLowerCase();
+  const shown = nodes.filter(n => !q || [n.name, n.dns_name, n.ip, n.os].join(' ').toLowerCase().includes(q));
+  const body = document.getElementById('peers-body');
+  if (!shown.length) {
+    body.innerHTML = '<p class="text-muted text-center py-4 small mb-0">' + (nodes.length ? 'No peers match the filter.' : 'No other devices in this tailnet yet.') + '</p>';
+    return;
+  }
+  body.innerHTML = '<div class="table-responsive"><table class="table table-hover align-middle mb-0 small">'
+    + '<thead class="table-light"><tr><th class="ps-3">Device</th><th>Tailscale IP</th><th>OS</th><th>Status</th><th>Link</th><th>Last seen</th><th class="pe-3 text-end">Traffic (rx / tx)</th></tr></thead><tbody>'
+    + shown.map(n => '<tr>'
+      + '<td class="ps-3"><div class="fw-semibold">' + esc(n.name) + (n.exit_node ? ' <span class="badge bg-secondary">exit node</span>' : '') + '</div>'
+      + '<div class="text-muted" style="font-size:11px">' + esc(n.dns_name) + '</div></td>'
+      + '<td class="font-monospace">' + esc(n.ip || '-') + '</td>'
+      + '<td class="text-muted">' + esc(n.os || '-') + '</td>'
+      + '<td><span class="status-badge ' + (n.online ? 'status-online' : 'status-offline') + '">' + (n.online ? 'Online' : 'Offline') + '</span></td>'
+      + '<td class="text-muted">' + esc(n.connection || (n.online ? 'idle' : '-')) + '</td>'
+      + '<td class="text-muted">' + (n.online ? 'now' : esc(ago(n.last_seen))) + '</td>'
+      + '<td class="pe-3 text-end text-muted">' + bytes(n.rx_bytes) + ' / ' + bytes(n.tx_bytes) + '</td>'
+      + '</tr>').join('')
+    + '</tbody></table></div>';
+}
+
+function vpnRefresh() {
+  fetch("{{ url_for('tailscale.status') }}", {credentials: 'same-origin'})
     .then(r => r.json())
-    .then(data => {
-      const connected = data.connected;
-      document.getElementById('vpn-icon').innerHTML = connected
-        ? '<i class="bi bi-shield-fill-check text-success" style="font-size:3rem"></i>'
-        : '<i class="bi bi-shield-x text-danger" style="font-size:3rem"></i>';
-      const state = document.getElementById('vpn-state');
-      state.textContent  = connected ? 'Connected' : 'Disconnected';
-      state.className    = 'fw-bold fs-5 mb-1 text-' + (connected ? 'success' : 'danger');
-      document.getElementById('vpn-ip').textContent       = data.ip       ? 'IP: ' + data.ip       : 'n/a';
-      document.getElementById('vpn-hostname').textContent = data.hostname ? data.hostname            : '';
-
-      const peers  = data.peers || [];
-      const online = peers.filter(p => p.online).length;
-      document.getElementById('peer-count').textContent  = peers.length;
-      document.getElementById('peer-online').textContent = online;
-
-      const body = document.getElementById('peers-body');
-      if (!peers.length) {
-        body.innerHTML = '<p class="text-muted text-center py-4 small">No VPN peers detected. Tailscale may not be running on this host.</p>';
-        return;
-      }
-      body.innerHTML = `
-        <table class="table table-hover align-middle mb-0 small">
-          <thead class="table-light">
-            <tr><th class="ps-3">Hostname</th><th>VPN IP</th><th>OS</th><th>Status</th><th class="pe-3">Last Seen</th></tr>
-          </thead>
-          <tbody>
-            ${peers.map(p => `<tr>
-              <td class="ps-3 fw-medium">${p.hostname || 'n/a'}</td>
-              <td class="font-monospace">${p.ip || 'n/a'}</td>
-              <td class="text-muted">${p.os || 'n/a'}</td>
-              <td><span class="badge ${p.online ? 'bg-success' : 'bg-secondary'} bg-opacity-10 ${p.online ? 'text-success' : 'text-secondary'}">${p.online ? 'Online' : 'Offline'}</span></td>
-              <td class="pe-3 text-muted">${p.last_seen || 'n/a'}</td>
-            </tr>`).join('')}
-          </tbody>
-        </table>`;
+    .then(d => {
+      vpnData = d;
+      vpnRender();
+      document.getElementById('vpn-updated').textContent = 'Updated ' + new Date().toLocaleTimeString();
     })
     .catch(() => {
-      document.getElementById('vpn-state').textContent = 'Unavailable';
-      document.getElementById('vpn-icon').innerHTML = '<i class="bi bi-shield-x text-secondary" style="font-size:3rem"></i>';
-      document.getElementById('peers-body').innerHTML = '<p class="text-muted text-center py-4 small">Could not reach Tailscale service on this host.</p>';
+      document.getElementById('vpn-updated').textContent = 'Update failed ' + new Date().toLocaleTimeString();
     });
 }
 
-document.addEventListener('DOMContentLoaded', refresh);
+document.addEventListener('DOMContentLoaded', () => { vpnRefresh(); setInterval(vpnRefresh, 10000); });
 </script>
 {% endblock %}

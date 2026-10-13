@@ -2,6 +2,19 @@
 
 All notable changes are documented here. Format loosely follows Keep a Changelog.
 
+## [1.3.1] - 2026-10-13
+
+### Fixed
+- **2FA setup QR code could not be scanned.** The page sized the code with CSS but the SVG had no `viewBox`, so browsers cropped it instead of scaling it, cutting off two of its three corner markers. It now scales, with the standard quiet zone; verified by decoding a browser screenshot of the page. The manual setup key was always correct.
+- The VPN Status page never showed data: it read field names the service did not return, and in Docker there is no `tailscale` CLI. It now reads tailscaled's LocalAPI through the host's socket (mounted read-only; tailscaled grants non-root users status only), falls back to the CLI on native installs, and escapes peer names.
+
+### Added
+- VPN Status refreshes every 10 seconds: connection state, this server's Tailscale IPs and DNS name, tailnet, version, health warnings, exit node, and every peer with online state, direct or relayed link, last seen and traffic, with a filter.
+- `docker/host-hardening.sh`: fail2ban (SSH, repeat offenders, nginx rate-limit trips and vulnerability scanners, with web bans in Docker's `DOCKER-USER` chain), a key-only SSH policy, log rotation and automatic security updates.
+- HTTPS without a domain: set `EDGESHELL_DOMAIN` to the server's public IPv4 address and certbot gets a free Let's Encrypt certificate for the IP (short-lived profile, renewed automatically when a third of its life is left).
+- nginx TLS follows Mozilla's intermediate profile (TLS 1.2 and 1.3, forward-secret AEAD ciphers, ECDSA keys), with HSTS and `Cross-Origin-Opener-Policy`. Access and error logs are also written to `data/nginx-logs` for fail2ban.
+- CI fails if an em dash appears anywhere in code, docs or the UI.
+
 ## [1.3.0] - 2026-10-13
 
 Accounts release: mandatory two-factor authentication, account recovery,

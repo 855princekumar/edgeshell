@@ -54,7 +54,7 @@ RUN mkdir -p /var/run/sshd \
     && sed -i 's/UsePAM yes/UsePAM no/' /etc/ssh/sshd_config \
     && echo "AllowUsers ${NODE_USER}" >> /etc/ssh/sshd_config
 
-# Supervisor config — manages sshd + node-red + fake-docker-stats
+# Supervisor config: manages sshd, node-red and fake-docker-stats
 COPY supervisord.conf /etc/supervisor/conf.d/supervisord.conf
 
 # Boot scripts

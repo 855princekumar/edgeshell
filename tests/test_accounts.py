@@ -85,6 +85,15 @@ def test_first_login_requires_2fa_setup_then_code(app):
     assert r.status_code == 302 and c.get('/').status_code == 200
 
 
+def test_enrollment_qr_scales_instead_of_cropping():
+    """The page sets the QR's size with CSS. Without a viewBox the browser
+    crops the code (losing its corner markers) instead of scaling it, and no
+    authenticator app can read it."""
+    svg = mfa.qr_svg('otpauth://totp/EdgeShell:admin?secret=JBSWY3DPEHPK3PXP')
+    head = svg[:svg.index('>')]
+    assert 'viewBox' in head and 'width=' not in head and 'height=' not in head
+
+
 def test_totp_replay_and_wrong_code_rejected(app):
     c = app.test_client()
     secret, _ = _enroll(c, 'admin', 'admin123')

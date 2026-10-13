@@ -28,7 +28,14 @@ jobs:
           pip install ruff==0.6.9
           ruff check --select E9,F63,F7,F82 --output-format=github .
       - name: Shell scripts parse
-        run: for f in deploy/*.sh sandbox/*.sh docker/nginx/*.sh; do bash -n "$f"; done
+        run: for f in deploy/*.sh sandbox/*.sh docker/*.sh docker/nginx/*.sh; do bash -n "$f"; done
+      - name: No em dashes in code, docs or UI
+        run: |
+          em="$(printf '\342\200\224')"
+          if git grep -nI -e "$em" -e '&mdash;' -e '&#8212;' -- . ':!venv' ':!.github/workflows/ci.yml'; then
+            echo "::error::Em dash found. Project style: use a colon, comma or parentheses instead."
+            exit 1
+          fi
       - name: Compose files are valid
         run: |
           cp .env.example .env
