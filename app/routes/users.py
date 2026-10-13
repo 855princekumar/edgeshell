@@ -1,8 +1,8 @@
 """User management for administrators.
 
-Rules live in app/services/account_service.py: at most 3 administrators,
-only the owner grants the administrator role, and no administrator can
-change another administrator's account.
+Rules live in app/services/account_service.py: at most 3 administrators;
+the owner (primary administrator) manages every other account, admins
+included; other administrators manage monitors and operators only.
 """
 from functools import wraps
 
@@ -22,8 +22,8 @@ from app.services.session_service import (close_session, device_label,
 
 users_bp = Blueprint('users', __name__, url_prefix='/users')
 
-PROTECTED = ('Administrators manage their own accounts. No administrator can change '
-             'another administrator.')
+PROTECTED = ('Only the owner (primary administrator) can change another administrator, '
+             'and nobody can change the owner.')
 
 
 def admin_required(f):

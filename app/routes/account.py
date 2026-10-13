@@ -141,6 +141,8 @@ def email():
             log_activity('Account email changed', status='success')
             flash('Email saved.' + (' Password reset links will be sent there.'
                                      if current_user.is_admin() else ''), 'success')
+            if current_user.must_change_password:
+                return redirect(url_for('auth.change_password'))
             return redirect(url_for('account.index') if not required
                             else url_for('dashboard.index'))
     from app.services.email_service import account_mail_available

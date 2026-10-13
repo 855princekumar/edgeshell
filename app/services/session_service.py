@@ -311,12 +311,12 @@ def register_single_session(app):
 
         # Required steps before the rest of the app opens.
         if request.endpoint not in GATE_OPEN_ENDPOINTS:
-            if current_user.must_change_password:
-                return _gate('auth.change_password',
-                             'Please set a new password before continuing.')
             if current_user.needs_recovery_email():
                 return _gate('account.email', 'Administrators must add a personal '
                              'email address for password reset links.')
+            if current_user.must_change_password:
+                return _gate('auth.change_password',
+                             'Please set a new password before continuing.')
         return None
 
 

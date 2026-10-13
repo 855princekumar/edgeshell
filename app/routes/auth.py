@@ -5,8 +5,8 @@ Sign-in order
   2. second factor: set up an authenticator on first sign-in (then save the
      backup codes), otherwise a code from the app or a backup code
   3. session limit: confirm before another device is signed out
-  4. required steps: new password if one was issued, an administrator's
-     personal email for reset links
+  4. required steps: an administrator's personal email for reset links,
+     then a new password if one was issued
 Steps 1 and 2 count toward the same lockout. Nothing is signed in until
 step 2 has passed.
 """
@@ -259,11 +259,11 @@ def _finish_login(user, next_page=None, via=None):
     else:
         log_activity(f'Login{how}', status='success')
 
+    if user.needs_recovery_email():
+        return redirect(url_for('account.email'))
     if user.must_change_password:
         flash('Please set a new password before continuing.', 'warning')
         return redirect(url_for('auth.change_password'))
-    if user.needs_recovery_email():
-        return redirect(url_for('account.email'))
     return redirect(_safe_next(next_page) or url_for('dashboard.index'))
 
 
@@ -369,8 +369,6 @@ def change_password():
             flash('Password changed successfully.'
                   + (f' {others} other session(s) were signed out.' if others else ''),
                   'success')
-            if current_user.needs_recovery_email():
-                return redirect(url_for('account.email'))
             return redirect(url_for('dashboard.index'))
 
     return render_template('auth/change_password.html', min_password=MIN_PASSWORD)

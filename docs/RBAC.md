@@ -69,21 +69,23 @@ and API callers get a JSON 403; browser navigation gets a flash and redirect.
 | Who | How |
 |---|---|
 | Monitor or operator | "Forgot password?" sends a request to the administrators. An admin sets a temporary password; this also removes the user's 2FA, so it is set up again at the next sign-in, and ends every session. |
-| Administrator | A reset link to the personal email on the account (needs `SMTP_*` and `PUBLIC_URL`), single use, valid 30 minutes. Or "use a backup code": username + one backup code + new password. 2FA stays on either way. |
+| Administrator | A reset link to the personal email on the account (needs `SMTP_*` and `PUBLIC_URL`), single use, valid 30 minutes. Or "use a backup code": username + one backup code + new password. 2FA stays on either way. The owner can also reset another administrator. |
+| Owner | Emailed link or a backup code. Nobody else can reset the owner. |
 
-Administrators must add a personal email before using the platform. Nobody,
-including other administrators, can reset an administrator's password.
+Administrators must add a personal email before using the platform: the
+first sign-in goes 2FA, then the email, then a new password.
 
 ## Administrators
 
 - At most **3** administrators.
-- The first administrator is the **owner**: the only account that can grant
-  the administrator role (when adding a user, approving a sign-up or changing
-  a role). The owner is prompted to add up to 2 more so the platform is never
+- The first administrator is the **owner** (primary administrator), with
+  full control: the only account that can grant or remove the administrator
+  role, and it can change, reset (password and 2FA), sign out, disable or
+  delete **any** other account, administrators included. The owner is
+  prompted to add up to 2 more administrators so the platform is never
   locked out.
-- **No administrator can change another administrator**: role, enable or
-  disable, password, sessions, deletion. Each administrator manages only
-  their own account.
+- **Other administrators** manage monitors and operators only. They cannot
+  change another administrator, and **nobody can change the owner**.
 - An administrator leaves the role from My account ("Step down"), confirming
   with password, a 2FA code and typing `STEP DOWN`. The last administrator
   cannot step down. When the owner steps down, ownership passes to the

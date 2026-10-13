@@ -1,11 +1,13 @@
 """Account governance rules, in one place so routes cannot drift.
 
   - At most MAX_ADMINS (3) administrators.
-  - The owner (the first administrator) is the only account that can make
-    another account an administrator, by adding it or approving a sign-up.
-  - No administrator can change another administrator: role, status,
-    password, sessions or deletion. Administrators leave the role
-    themselves, confirming with their password and a 2FA code.
+  - The owner (the first, primary administrator) has full control: grants
+    and removes the administrator role, and changes, resets, signs out,
+    disables or deletes any other account, administrators included.
+  - Other administrators manage monitors and operators only; they cannot
+    change another administrator, and nobody can change the owner.
+    Administrators also leave the role themselves, confirming with their
+    password and a 2FA code.
   - When the owner steps down, ownership passes to the longest-serving
     remaining administrator. The last administrator cannot step down.
   - An administrator reset of a user's password also removes that user's 2FA,
@@ -33,8 +35,10 @@ def owner():
 
 def can_manage(actor, target):
     """Whether actor (an administrator) may change target's account."""
-    if not actor.is_admin() or target.id == actor.id:
+    if not actor.is_admin() or target.id == actor.id or target.is_owner:
         return False
+    if actor.is_owner:
+        return True                 # the primary admin manages everyone else
     return not target.is_admin()
 
 

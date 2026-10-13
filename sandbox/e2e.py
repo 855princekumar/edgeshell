@@ -457,7 +457,7 @@ def main():
                                         'confirm_password': adm2_pw + 'z'})
     adm2.get('/users/')
     adm2.post_form('/users/1/role', {'role': 'monitor'})
-    refused = 'No administrator can change another administrator' in adm2.get('/users/')[2]
+    refused = 'nobody can change the owner' in adm2.get('/users/')[2]
     check('a second admin cannot demote the owner', refused and admin.get('/users/')[0] == 200)
 
     print()

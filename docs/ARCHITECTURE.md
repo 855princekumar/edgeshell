@@ -12,7 +12,7 @@ image.
 flowchart TB
     U[Users: browser over HTTPS] --> PX
     subgraph Host[Control-plane host on the mesh]
-        PX[Nginx + Let's Encrypt<br/>or Caddy in Docker] --> G[Gunicorn 127.0.0.1:5000]
+        PX[Nginx + Let's Encrypt<br/>native or in Docker] --> G[Gunicorn 127.0.0.1:5000]
         G --> APP[Flask factory]
         APP --> RT[Routes: auth, dashboard, nodes, monitoring, terminal,<br/>files, logs, users, issues, settings, vpn, api, health]
         RT --> SV[Services]

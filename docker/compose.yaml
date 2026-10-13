@@ -1,24 +1,25 @@
-# EdgeShell production stack: EdgeShell + MariaDB + privacyIDEA (2FA) + Caddy
-# (automatic HTTPS). Every byte of state lives in ./data next to this file, so
-# a backup is one folder (plus .env).
+# EdgeShell production stack: nginx (the only public entry point) + EdgeShell
+# + MariaDB + privacyIDEA (2FA) + certbot (Let's Encrypt once a domain is set).
+# Every byte of state lives in ./data next to this file, so a backup is one
+# folder (plus .env).
 #
-#   mkdir edgeshell && cd edgeshell
+#   mkdir -p edgeshell/nginx && cd edgeshell
 #   base=https://raw.githubusercontent.com/855princekumar/edgeshell/main/docker
 #   curl -fsSLO $base/compose.yaml
-#   curl -fsSLO $base/Caddyfile
+#   curl -fsSLo nginx/entrypoint.sh $base/nginx/entrypoint.sh
+#   curl -fsSLo nginx/certbot.sh $base/nginx/certbot.sh
 #   curl -fsSLo .env $base/.env.example && chmod 600 .env
 #   for k in SECRET_KEY CREDENTIAL_KEY DB_PASSWORD DB_ROOT_PASSWORD MFA_ADMIN_PASSWORD MFA_PEPPER MFA_DB_PASSWORD; do
 #     sed -i "s|^$k=.*|$k=$(openssl rand -hex 32)|" .env; done
-#   nano .env                     # set EDGESHELL_DOMAIN and ACME_EMAIL
 #   docker compose up -d
 #
-# Open https://<EDGESHELL_DOMAIN> and sign in as admin / admin123. First sign-in
-# sets up two-factor authentication, a new password and your personal email.
-# The DNS A record must point at this host, with ports 80 and 443 open.
+# Open http://<server IP> and sign in as admin / admin123. First sign-in sets
+# up two-factor authentication, your personal email and a new password.
 #
-# No domain yet? Set EDGESHELL_DOMAIN=:80 and SESSION_COOKIE_SECURE=false to
-# serve plain HTTP on the server's IP; switch to the domain later and run
-# `docker compose up -d` again. Data in ./data is kept.
+# Domain later: point its DNS A record here, set EDGESHELL_DOMAIN, ACME_EMAIL,
+# SESSION_COOKIE_SECURE=true and PUBLIC_URL in .env, open port 443, and run
+# `docker compose up -d`. certbot gets the certificate and nginx switches to
+# HTTPS by itself. Data in ./data is kept.
 name: edgeshell
 
 services:
@@ -158,28 +159,50 @@ services:
     # Reach nodes published on the host (e.g. a Pi Fleet Emulator fleet).
     extra_hosts:
       - "host.docker.internal:host-gateway"
-    # No ports: the app is reachable only through Caddy.
+    # No ports: the app is reachable only through nginx.
     networks:
       - backend
       - frontend
 
-  caddy:
-    image: caddy:2.8
+  # The only container with published ports. Plain HTTP on the server's IP
+  # until a domain and certificate exist, then HTTPS (see nginx/entrypoint.sh).
+  nginx:
+    image: nginx:${NGINX_TAG:-1.30-alpine}
     restart: unless-stopped
     depends_on:
       edgeshell:
         condition: service_healthy
+    entrypoint: ["/bin/sh", "/edgeshell/entrypoint.sh"]
     ports:
       - "80:80"
       - "443:443"
-      - "443:443/udp"
     environment:
-      EDGESHELL_DOMAIN: ${EDGESHELL_DOMAIN:?set EDGESHELL_DOMAIN in .env}
-      ACME_EMAIL: ${ACME_EMAIL:?set ACME_EMAIL in .env}
+      EDGESHELL_DOMAIN: ${EDGESHELL_DOMAIN:-}
     volumes:
-      - ./Caddyfile:/etc/caddy/Caddyfile:ro
-      - ./data/caddy/data:/data
-      - ./data/caddy/config:/config
+      - ./nginx/entrypoint.sh:/edgeshell/entrypoint.sh:ro
+      - ./data/letsencrypt:/etc/letsencrypt:ro
+      - ./data/certbot-www:/var/www/certbot:ro
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1/healthz"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+    networks:
+      - frontend
+
+  # Let's Encrypt. Idle until EDGESHELL_DOMAIN is set; then issues and renews
+  # the certificate through nginx (HTTP-01 on port 80).
+  certbot:
+    image: certbot/certbot:${CERTBOT_TAG:-v5.8.0}
+    restart: unless-stopped
+    entrypoint: ["/bin/sh", "/edgeshell/certbot.sh"]
+    environment:
+      EDGESHELL_DOMAIN: ${EDGESHELL_DOMAIN:-}
+      ACME_EMAIL: ${ACME_EMAIL:-}
+    volumes:
+      - ./nginx/certbot.sh:/edgeshell/certbot.sh:ro
+      - ./data/letsencrypt:/etc/letsencrypt
+      - ./data/certbot-www:/var/www/certbot
     networks:
       - frontend
 
@@ -187,5 +210,6 @@ networks:
   # Database traffic only; no route to the internet.
   backend:
     internal: true
-  # Caddy <-> EdgeShell, plus outbound SSH from EdgeShell to the fleet.
+  # nginx <-> EdgeShell, certbot -> Let's Encrypt, and outbound SSH from
+  # EdgeShell to the fleet.
   frontend: {}
