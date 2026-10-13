@@ -93,11 +93,10 @@ with app.app_context():
 PY
 
 step "Interactive terminal over WebSocket (real PTY on an emulated node)"
-docker cp "$PW_FILE" "$ES:/tmp/e2e-admin.json"
-docker exec -i "$ES" python - <<'PY'
-import base64, hashlib, hmac, json, re, struct, time
+docker exec -i -e E2E_ADMIN_JSON="$(cat "$PW_FILE")" "$ES" python - <<'PY'
+import base64, hashlib, hmac, json, os, re, struct, time
 import requests, simple_websocket
-saved = json.load(open('/tmp/e2e-admin.json'))
+saved = json.loads(os.environ['E2E_ADMIN_JSON'])
 B = 'http://127.0.0.1:5000'
 def totp(secret, step):
     key = base64.b32decode(secret + '=' * (-len(secret) % 8), casefold=True)
@@ -133,7 +132,6 @@ assert 'WS_OK_42' in out and '/dev/pts' in out, out[-300:]
 ws.close()
 print(f"  PASS  interactive SSH terminal on {node['name']}: command ran on a real PTY, session closed")
 PY
-docker exec -u 0 "$ES" rm -f /tmp/e2e-admin.json
 
 step "Image hardening"
 uid="$(docker exec "$ES" id -u)"; [ "$uid" = 10001 ] && echo "  PASS  runs as non-root uid 10001" || { echo "  FAIL  uid=$uid"; exit 1; }
