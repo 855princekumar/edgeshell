@@ -394,3 +394,28 @@ def test_favicon_served(client):
     r = client.get('/static/favicon.svg')
     assert r.status_code == 200 and b'<svg' in r.data
     assert b'favicon.svg' in client.get('/login').data
+
+
+def test_every_rendered_template_is_in_the_repository():
+    """A .gitignore rule once hid app/templates/logs/, so those pages worked
+    locally and failed with a 500 in the published image. CI runs on a clean
+    checkout, so this catches any template that is missing from git."""
+    import re
+    from pathlib import Path
+    root = Path(__file__).resolve().parent.parent
+    names = set()
+    for py in (root / 'app').rglob('*.py'):
+        names.update(re.findall(r"render_template\(\s*'([^']+)'", py.read_text(encoding='utf-8')))
+    for html in (root / 'app' / 'templates').rglob('*.html'):
+        names.update(re.findall(r"{%\s*(?:extends|include)\s+\"([^\"]+)\"", html.read_text(encoding='utf-8')))
+    missing = sorted(n for n in names if not (root / 'app' / 'templates' / n).is_file())
+    assert not missing, f'templates referenced but missing: {missing}'
+
+
+def test_log_pages_render(app, client):
+    _login(app, client)
+    for path in ('/logs/', '/logs/activity', '/logs/node/no-such-node'):
+        r = client.get(path)
+        assert r.status_code in (200, 302, 404), (path, r.status_code)
+    assert client.get('/logs/').status_code == 200
+    assert client.get('/logs/activity').status_code == 200

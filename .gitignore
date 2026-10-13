@@ -18,7 +18,8 @@ instance/
 *.db-wal
 *.db-shm
 uploads/
-logs/
+# Runtime log folder at the project root only (not app/templates/logs/).
+/logs/
 .env
 releases/
 snapshot*.json

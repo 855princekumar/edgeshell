@@ -1,0 +1,456 @@
+{% extends "base.html" %}
+{% block title %}Log Viewer - EdgeShell{% endblock %}
+
+{% block content %}
+<div class="d-flex align-items-center justify-content-between mb-4">
+  <div>
+    <h4 class="fw-bold mb-0">Log Viewer</h4>
+    <small class="text-muted">Browse, view and download logs from any node over SSH</small>
+  </div>
+</div>
+
+<div class="row g-3" style="min-height:600px">
+
+  <!-- ── Left sidebar: node + path picker ───────────────── -->
+  <div class="col-12 col-lg-3" style="display:flex;flex-direction:column;gap:12px">
+
+    <!-- Node selector -->
+    <div class="card border-0 shadow-sm">
+      <div class="card-header bg-white border-bottom py-2">
+        <span class="fw-semibold small"><i class="bi bi-server me-2 text-info"></i>Select Node</span>
+      </div>
+      <div class="card-body p-2" style="max-height:220px;overflow-y:auto">
+        {% for node in nodes %}
+        <label class="d-flex align-items-center gap-2 px-2 py-2 rounded mb-1"
+               style="cursor:pointer;border:1px solid transparent"
+               id="node-label-{{ node.id }}">
+          <input type="radio" name="logNode" class="form-check-input mt-0 flex-shrink-0"
+                 value="{{ node.id }}" {% if loop.first %}checked{% endif %}
+                 onchange="onNodeChange({{ node.id }})">
+          <div class="flex-grow-1 min-w-0">
+            <div class="fw-medium small text-truncate">{{ node.name }}</div>
+            <div class="font-monospace text-muted" style="font-size:.65rem">{{ node.ip_address }}</div>
+          </div>
+          <span style="width:7px;height:7px;border-radius:50%;flex-shrink:0;background:
+            {{ '#059669' if node.status=='online' else '#dc2626' if node.status=='offline' else '#9ca3af' }}">
+          </span>
+        </label>
+        {% else %}
+        <div class="text-center text-muted small py-3">No nodes configured.</div>
+        {% endfor %}
+      </div>
+    </div>
+
+    <!-- Path + browse -->
+    <div class="card border-0 shadow-sm">
+      <div class="card-header bg-white border-bottom py-2">
+        <span class="fw-semibold small"><i class="bi bi-folder2-open me-2 text-warning"></i>Browse Path</span>
+      </div>
+      <div class="card-body p-3">
+        <div class="input-group mb-2">
+          <input type="text" id="logPath" class="form-control form-control-sm font-monospace"
+                 value="/var/log/" placeholder="/var/log/">
+          <button class="btn btn-sm btn-primary" onclick="browseLogs()">
+            <i class="bi bi-search"></i>
+          </button>
+        </div>
+        <!-- Quick path buttons -->
+        <div class="d-flex flex-wrap gap-1 mb-3">
+          {% for p in ['/var/log/', '/opt/', '/tmp/', '/home/pi/', '/var/log/edgeapp/'] %}
+          <button class="btn btn-xs btn-outline-secondary font-monospace"
+                  onclick="setPath('{{ p }}')">{{ p }}</button>
+          {% endfor %}
+        </div>
+        <div id="browseStatus" class="small text-muted"></div>
+      </div>
+    </div>
+
+    <!-- File list -->
+    <div class="card border-0 shadow-sm flex-grow-1">
+      <div class="card-header bg-white border-bottom py-2">
+        <span class="fw-semibold small"><i class="bi bi-files me-2"></i>Files</span>
+      </div>
+      <div id="fileList" class="p-2" style="overflow-y:auto;max-height:300px">
+        <div class="text-center text-muted small py-3">Browse a path to see files</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Right: Log viewer ────────────────────────────────── -->
+  <div class="col-12 col-lg-9" style="display:flex;flex-direction:column">
+
+    <!-- Log toolbar -->
+    <div class="card border-0 shadow-sm mb-3" id="logToolbar" style="display:none!important">
+      <!-- shown via JS -->
+    </div>
+
+    <!-- Empty state -->
+    <div id="logEmpty" class="card border-0 shadow-sm flex-grow-1 d-flex align-items-center justify-content-center">
+      <div class="text-center p-5">
+        <i class="bi bi-journal-text" style="font-size:3.5rem;color:#d1d5db;display:block;margin-bottom:16px"></i>
+        <div class="fw-semibold text-muted mb-2">No log selected</div>
+        <div class="small text-muted">Pick a node, browse a directory, then click a file to view it.</div>
+      </div>
+    </div>
+
+    <!-- Log content area -->
+    <div id="logArea" class="card border-0 shadow-sm flex-grow-1" style="display:none;flex-direction:column;overflow:hidden">
+
+      <!-- File header bar -->
+      <div class="card-header bg-white border-bottom py-2 d-flex align-items-center justify-content-between flex-wrap gap-2">
+        <div class="min-w-0">
+          <div class="fw-semibold font-monospace small text-truncate" id="logTitle">file.log</div>
+          <div class="text-muted" style="font-size:.7rem" id="logMeta"></div>
+        </div>
+        <div class="d-flex gap-2 align-items-center flex-shrink-0">
+          <!-- Lines selector -->
+          <select class="form-select form-select-sm" id="lineCount" style="width:90px"
+                  onchange="refetchLog()">
+            <option value="100">100 lines</option>
+            <option value="200" selected>200 lines</option>
+            <option value="500">500 lines</option>
+            <option value="1000">1000 lines</option>
+          </select>
+          <!-- View tabs -->
+          <div class="btn-group btn-group-sm">
+            <button class="btn btn-primary" id="tab-raw" onclick="switchView('raw')">Raw</button>
+            <button class="btn btn-outline-primary" id="tab-fmt" onclick="switchView('fmt')">Formatted</button>
+            <button class="btn btn-outline-primary" id="tab-sum" onclick="switchView('sum')">Summary</button>
+          </div>
+          <!-- Refresh + Download -->
+          <button class="btn btn-sm btn-outline-secondary" onclick="refetchLog()" title="Refresh">
+            <i class="bi bi-arrow-clockwise"></i>
+          </button>
+          <button class="btn btn-sm btn-outline-success" onclick="downloadLog()" title="Download file via SSH">
+            <i class="bi bi-download"></i>
+          </button>
+        </div>
+      </div>
+
+      <!-- Raw view -->
+      <div id="view-raw" style="flex:1;overflow:auto;background:#0d1117;border-radius:0 0 10px 10px">
+        <pre id="rawContent" style="margin:0;padding:16px;color:#c9d1d9;font-family:'JetBrains Mono',monospace;font-size:12.5px;line-height:1.7;white-space:pre-wrap;word-break:break-all"></pre>
+      </div>
+
+      <!-- Formatted view -->
+      <div id="view-fmt" style="display:none;flex:1;overflow:auto">
+        <div id="fmtContent" style="padding:8px"></div>
+      </div>
+
+      <!-- Summary view -->
+      <div id="view-sum" style="display:none;flex:1;overflow:auto">
+        <div class="p-4" id="sumContent"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<style>
+.btn-xs { padding: 2px 7px; font-size: .7rem; }
+.log-line { padding: 2px 8px; border-radius: 3px; font-family: 'JetBrains Mono', monospace; font-size: 12px; line-height: 1.6; }
+.log-line:hover { background: #f3f4f6; }
+.sev-error    { color: #dc2626; }
+.sev-warning  { color: #d97706; }
+.sev-info     { color: #374151; }
+.sev-debug    { color: #9ca3af; }
+.sev-critical { background: #fef2f2; color: #991b1b; font-weight: 600; }
+</style>
+{% endblock %}
+
+{% block scripts %}
+<script>
+// ── State ────────────────────────────────────────────────────
+let currentNodeId   = null;
+let currentFilePath = null;
+let currentView     = 'raw';
+let rawContent      = '';
+let fmtLines        = [];
+
+// Init - pick first node
+document.addEventListener('DOMContentLoaded', () => {
+  const first = document.querySelector('input[name="logNode"]');
+  if (first) currentNodeId = parseInt(first.value);
+});
+
+function onNodeChange(id) {
+  currentNodeId = id;
+  // Clear file list so user re-browses for this node
+  document.getElementById('fileList').innerHTML =
+    '<div class="text-center text-muted small py-3">Browse a path above</div>';
+  currentFilePath = null;
+  showEmpty();
+}
+
+function setPath(p) {
+  document.getElementById('logPath').value = p;
+}
+
+// ── Browse directory ─────────────────────────────────────────
+function browseLogs() {
+  const nodeId = getNodeId();
+  if (!nodeId) { alert('Select a node first.'); return; }
+  const path = document.getElementById('logPath').value.trim() || '/var/log/';
+
+  document.getElementById('browseStatus').textContent = 'Browsing…';
+  document.getElementById('fileList').innerHTML =
+    '<div class="text-center py-3"><div class="spinner-border spinner-border-sm text-primary"></div></div>';
+
+  // Route: POST /logs/browse  expects { node_id, log_path }
+  fetch('/logs/browse', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ node_id: nodeId, log_path: path })
+  })
+  .then(r => r.json())
+  .then(data => {
+    document.getElementById('browseStatus').textContent = '';
+    if (!data.success && !data.output) {
+      document.getElementById('fileList').innerHTML =
+        `<div class="text-danger small px-2 py-2"><i class="bi bi-exclamation-circle me-1"></i>${data.error || 'Browse failed'}</div>`;
+      return;
+    }
+    renderFileList(data.output || '', path, nodeId);
+  })
+  .catch(err => {
+    document.getElementById('browseStatus').textContent = '';
+    document.getElementById('fileList').innerHTML =
+      `<div class="text-danger small px-2 py-2">Network error: ${err.message}</div>`;
+  });
+}
+
+function renderFileList(lsOutput, basePath, nodeId) {
+  const lines = lsOutput.split('\n').filter(l => l.trim() && !l.startsWith('total'));
+  if (!lines.length) {
+    document.getElementById('fileList').innerHTML =
+      '<div class="text-muted small px-2 py-2">No files found in this path.</div>';
+    return;
+  }
+
+  let html = '';
+  lines.forEach(line => {
+    const parts    = line.trim().split(/\s+/);
+    const perms    = parts[0] || '';
+    const size     = parts[4] || '';
+    const filename = parts[parts.length - 1];
+    if (!filename || filename === '.' || filename === '..') return;
+
+    const isDir  = perms.startsWith('d');
+    const icon   = isDir ? 'bi-folder-fill text-warning' : 'bi-file-text text-secondary';
+    const fpath  = basePath.replace(/\/$/, '') + '/' + filename;
+
+    if (isDir) {
+      // Click to browse into directory
+      html += `<div class="d-flex align-items-center gap-2 px-2 py-1 rounded" style="cursor:pointer"
+                   onmouseover="this.style.background='#f3f4f6'" onmouseout="this.style.background=''"
+                   onclick="document.getElementById('logPath').value='${fpath}/'; browseLogs()">
+        <i class="bi ${icon}" style="font-size:.85rem;flex-shrink:0"></i>
+        <span class="small font-monospace text-truncate flex-grow-1">${esc(filename)}/</span>
+      </div>`;
+    } else {
+      // Click to view file
+      html += `<div class="d-flex align-items-center gap-2 px-2 py-1 rounded" style="cursor:pointer"
+                   onmouseover="this.style.background='#eff6ff'" onmouseout="this.style.background=''"
+                   onclick="fetchLog(${nodeId}, '${esc(fpath)}')">
+        <i class="bi ${icon}" style="font-size:.85rem;flex-shrink:0"></i>
+        <div class="flex-grow-1 min-w-0">
+          <div class="small font-monospace text-truncate">${esc(filename)}</div>
+          ${size ? `<div class="text-muted" style="font-size:.65rem">${size}</div>` : ''}
+        </div>
+        <i class="bi bi-eye text-muted" style="font-size:.75rem;flex-shrink:0"></i>
+      </div>`;
+    }
+  });
+
+  document.getElementById('fileList').innerHTML = html ||
+    '<div class="text-muted small px-2 py-2">No files found.</div>';
+}
+
+// ── Fetch & display log ──────────────────────────────────────
+function fetchLog(nodeId, filePath) {
+  currentNodeId   = nodeId;
+  currentFilePath = filePath;
+  const lines     = document.getElementById('lineCount').value;
+
+  // Highlight selected file
+  document.querySelectorAll('#fileList [onclick^="fetchLog"]').forEach(el => {
+    el.style.background = '';
+  });
+
+  showLogArea();
+  document.getElementById('logTitle').textContent   = filePath.split('/').pop();
+  document.getElementById('logMeta').textContent    = 'Loading…';
+  document.getElementById('rawContent').textContent = 'Fetching…';
+
+  // Route: POST /logs/fetch  expects { node_id, file_path, lines }
+  // Returns: { success, content, stderr, node, path }
+  fetch('/logs/fetch', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ node_id: nodeId, file_path: filePath, lines: parseInt(lines) })
+  })
+  .then(r => r.json())
+  .then(data => {
+    if (!data.success && !data.content) {
+      document.getElementById('rawContent').textContent = data.stderr || data.error || 'Failed to fetch file.';
+      document.getElementById('logMeta').textContent = 'Error reading file';
+      return;
+    }
+
+    rawContent = data.content || '';            // ← key is 'content' not 'raw'
+    const lineCount = rawContent.split('\n').length;
+
+    document.getElementById('logMeta').textContent =
+      `${data.node}  ·  ${filePath}  ·  ${lineCount} lines`;
+    document.getElementById('rawContent').textContent = rawContent || '(empty file)';
+
+    // Build formatted lines for the Formatted view
+    fmtLines = rawContent.split('\n').map((raw, i) => ({
+      no: i + 1, raw,
+      sev: detectSev(raw)
+    }));
+
+    if (currentView === 'fmt') renderFmt();
+    if (currentView === 'sum') renderSum();
+  })
+  .catch(err => {
+    document.getElementById('rawContent').textContent = 'Network error: ' + err.message;
+    document.getElementById('logMeta').textContent = 'Failed';
+  });
+}
+
+function refetchLog() {
+  if (currentFilePath && currentNodeId) fetchLog(currentNodeId, currentFilePath);
+}
+
+// ── Download ─────────────────────────────────────────────────
+function downloadLog() {
+  if (!currentFilePath || !currentNodeId) { alert('No file selected.'); return; }
+
+  // POST to /logs/download → returns file as attachment
+  fetch('/logs/download', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ node_id: currentNodeId, file_path: currentFilePath })
+  })
+  .then(r => {
+    if (!r.ok) return r.json().then(d => { throw new Error(d.error || 'Download failed'); });
+    return r.blob();
+  })
+  .then(blob => {
+    const fname = currentFilePath.split('/').pop();
+    const a     = document.createElement('a');
+    a.href      = URL.createObjectURL(blob);
+    a.download  = fname;
+    a.click();
+    URL.revokeObjectURL(a.href);
+  })
+  .catch(err => alert('Download failed: ' + err.message));
+}
+
+// ── View switching ───────────────────────────────────────────
+function switchView(v) {
+  currentView = v;
+  ['raw','fmt','sum'].forEach(k => {
+    document.getElementById('view-' + k).style.display = k === v ? '' : 'none';
+    const btn = document.getElementById('tab-' + k);
+    if (btn) {
+      btn.className = k === v ? 'btn btn-sm btn-primary' : 'btn btn-sm btn-outline-primary';
+    }
+  });
+  if (v === 'fmt') renderFmt();
+  if (v === 'sum') renderSum();
+}
+
+function renderFmt() {
+  const container = document.getElementById('fmtContent');
+  if (!fmtLines.length) {
+    container.innerHTML = '<div class="text-muted small p-3">No content.</div>';
+    return;
+  }
+  container.innerHTML = fmtLines.map(l =>
+    `<div class="log-line sev-${l.sev}">
+      <span style="color:#9ca3af;margin-right:10px;font-size:11px;user-select:none">${String(l.no).padStart(4,' ')}</span>${esc(l.raw)}
+    </div>`
+  ).join('');
+}
+
+function renderSum() {
+  const lines   = fmtLines;
+  const total   = lines.length;
+  const errors  = lines.filter(l => l.sev === 'error'   || l.sev === 'critical').length;
+  const warns   = lines.filter(l => l.sev === 'warning').length;
+  const infos   = lines.filter(l => l.sev === 'info').length;
+  const debugs  = lines.filter(l => l.sev === 'debug').length;
+
+  // Top 5 most common patterns
+  const freq = {};
+  lines.forEach(l => {
+    const key = l.raw.replace(/\d{4}-\d{2}-\d{2}[\sT]\d{2}:\d{2}:\d{2}/g, '<time>')
+                     .replace(/\d+\.\d+\.\d+\.\d+/g, '<ip>')
+                     .substring(0, 80);
+    freq[key] = (freq[key] || 0) + 1;
+  });
+  const topPatterns = Object.entries(freq).sort((a,b) => b[1]-a[1]).slice(0,5);
+
+  document.getElementById('sumContent').innerHTML = `
+    <div class="row g-3 mb-4">
+      <div class="col-6 col-md-3">
+        <div class="card border text-center p-3">
+          <div class="fw-bold fs-4">${total}</div><div class="small text-muted">Total Lines</div>
+        </div>
+      </div>
+      <div class="col-6 col-md-3">
+        <div class="card border text-center p-3">
+          <div class="fw-bold fs-4 text-danger">${errors}</div><div class="small text-muted">Errors</div>
+        </div>
+      </div>
+      <div class="col-6 col-md-3">
+        <div class="card border text-center p-3">
+          <div class="fw-bold fs-4 text-warning">${warns}</div><div class="small text-muted">Warnings</div>
+        </div>
+      </div>
+      <div class="col-6 col-md-3">
+        <div class="card border text-center p-3">
+          <div class="fw-bold fs-4 text-info">${infos}</div><div class="small text-muted">Info</div>
+        </div>
+      </div>
+    </div>
+    <div class="fw-semibold small mb-2">Top Patterns</div>
+    <div class="list-group list-group-flush">
+      ${topPatterns.map(([p,c]) =>
+        `<div class="list-group-item px-0 py-2 d-flex justify-content-between align-items-center border-0 border-bottom">
+          <div class="font-monospace text-truncate small flex-grow-1" style="font-size:.72rem">${esc(p)}</div>
+          <span class="badge bg-secondary ms-2">${c}</span>
+        </div>`
+      ).join('') || '<div class="text-muted small">No patterns.</div>'}
+    </div>`;
+}
+
+// ── Severity detection ───────────────────────────────────────
+function detectSev(line) {
+  const l = line.toLowerCase();
+  if (/\b(critical|fatal|emerg)\b/.test(l)) return 'critical';
+  if (/\b(error|err|exception|traceback|failed)\b/.test(l)) return 'error';
+  if (/\b(warn|warning)\b/.test(l)) return 'warning';
+  if (/\b(debug|trace|verbose)\b/.test(l)) return 'debug';
+  return 'info';
+}
+
+// ── UI helpers ───────────────────────────────────────────────
+function getNodeId() {
+  const el = document.querySelector('input[name="logNode"]:checked');
+  return el ? parseInt(el.value) : null;
+}
+function showEmpty() {
+  document.getElementById('logEmpty').style.display = '';
+  document.getElementById('logArea').style.display  = 'none';
+}
+function showLogArea() {
+  document.getElementById('logEmpty').style.display = 'none';
+  document.getElementById('logArea').style.display  = 'flex';
+}
+function esc(s) {
+  return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/'/g,'&#39;');
+}
+</script>
+{% endblock %}
