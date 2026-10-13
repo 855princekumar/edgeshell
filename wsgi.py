@@ -12,3 +12,8 @@ import os
 from app import create_app
 
 app = create_app(os.getenv('FLASK_ENV', 'production'))
+
+# Fleet metrics are collected by a background thread in the web process only
+# (not in CLI tools that also call create_app).
+from app.services import collector  # noqa: E402
+collector.start(app)

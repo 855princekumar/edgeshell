@@ -3,9 +3,6 @@ from flask_login import login_required
 from app.utils.timeutil import iso_utc
 from app.models.node import Node
 from app.models import SystemMetrics
-from app.services.ssh_service import collect_metrics
-from app import db
-from datetime import datetime
 
 monitoring_bp = Blueprint('monitoring', __name__, url_prefix='/monitoring')
 
@@ -17,44 +14,63 @@ def index():
     return render_template('monitoring/index.html', nodes=nodes)
 
 
+def _stored(node):
+    """A node's last known state from the database, in the poll format."""
+    la = (node.load_average or '').split()
+    num = lambda i: float(la[i]) if len(la) > i else None   # noqa: E731
+    metrics = None
+    if node.status == 'online' and node.cpu_percent is not None:
+        metrics = {'cpu_percent': node.cpu_percent, 'mem_percent': node.ram_percent,
+                   'disk_percent': node.disk_percent, 'temperature': node.temperature,
+                   'load_1': num(0), 'load_5': num(1), 'load_15': num(2),
+                   'uptime': node.uptime, 'arch': node.arch,
+                   'docker_installed': node.docker_installed,
+                   'nodered_installed': node.nodered_installed,
+                   'collected_at': iso_utc(node.last_seen)}
+    return metrics
+
+
+def _result(node, r=None):
+    """One node for the page: live collector result if there is one."""
+    from app.services.collector import COLLECTOR
+    r = r or COLLECTOR.latest.get(node.id)
+    if r:
+        return {'success': r['ok'], 'metrics': r['metrics'] if r['ok'] else None,
+                'node_name': node.name, 'status': node.status, 'kind': r['kind'],
+                'error': None if r['ok'] else r['message'],
+                'seconds': r.get('seconds')}
+    m = _stored(node)
+    return {'success': bool(m), 'metrics': m, 'node_name': node.name, 'status': node.status,
+            'kind': 'auth' if node.status == 'auth_failed' else None,
+            'error': node.last_error if not m else None, 'seconds': None}
+
+
 @monitoring_bp.route('/poll', methods=['POST'])
 @login_required
 def poll():
-    data     = request.get_json() or {}
-    node_ids = data.get('node_ids', [])
-    nodes    = Node.query.filter(Node.id.in_(node_ids), Node.is_active == True).all() \
-               if node_ids else Node.query.filter_by(is_active=True).all()
+    """cached: true  returns the background collector's latest results at once.
+    otherwise       collects the requested nodes now, in parallel."""
+    from app.services.collector import COLLECTOR
+    data = request.get_json() or {}
+    node_ids = [int(i) for i in data.get('node_ids') or [] if str(i).isdigit()]
+    q = Node.query.filter(Node.is_active.is_(True), Node.is_deleted.isnot(True))
+    if node_ids:
+        q = q.filter(Node.id.in_(node_ids))
+    if data.get('cached'):
+        return jsonify({'results': {n.id: _result(n) for n in q.all()},
+                        'collector': COLLECTOR.status()})
+    live = COLLECTOR.run_cycle(node_ids=[n.id for n in q.all()], force=True)
+    nodes = {n.id: n for n in q.all()}
+    return jsonify({'results': {nid: _result(nodes[nid], r) for nid, r in live.items()
+                                if nid in nodes},
+                    'collector': COLLECTOR.status()})
 
-    results = {}
-    for node in nodes:
-        m = collect_metrics(node)
-        if m:
-            node.cpu_percent  = m.get('cpu_percent')
-            node.ram_percent  = m.get('mem_percent')
-            node.disk_percent = m.get('disk_percent')
-            node.load_average = f"{m.get('load_1',0)} {m.get('load_5',0)} {m.get('load_15',0)}"
-            node.temperature  = m.get('temperature')
-            node.status       = 'online'
-            node.last_seen    = datetime.utcnow()
 
-            sm = SystemMetrics(
-                node_id       = node.id,
-                cpu_percent   = m.get('cpu_percent'),
-                ram_percent   = m.get('mem_percent'),
-                disk_percent  = m.get('disk_percent'),
-                load_avg_1    = m.get('load_1'),
-                load_avg_5    = m.get('load_5'),
-                load_avg_15   = m.get('load_15'),
-                uptime_seconds= m.get('uptime_seconds'),
-            )
-            db.session.add(sm)
-            results[node.id] = {'success': True, 'metrics': m, 'node_name': node.name}
-        else:
-            node.status = 'offline'
-            results[node.id] = {'success': False, 'node_name': node.name}
-
-    db.session.commit()
-    return jsonify({'results': results})
+@monitoring_bp.route('/collector')
+@login_required
+def collector_status():
+    from app.services.collector import COLLECTOR
+    return jsonify(COLLECTOR.status())
 
 
 @monitoring_bp.route('/fleet-summary')
@@ -65,12 +81,7 @@ def fleet_summary():
     total  = len(nodes)
     online = [n for n in nodes if n.status == 'online']
     offline= [n for n in nodes if n.status != 'online']
-
-    if not online:
-        return jsonify({'total': total, 'online': 0, 'offline': total,
-                        'sla_percent': 0, 'avg_cpu': 0, 'avg_mem': 0,
-                        'avg_disk': 0, 'avg_load_1': 0, 'avg_load_5': 0,
-                        'avg_load_15': 0, 'avg_temp': None, 'nodes': []})
+    auth_failed = sum(1 for n in nodes if n.status == 'auth_failed')
 
     def avg(lst): return round(sum(lst) / len(lst), 1) if lst else 0
 
@@ -91,7 +102,8 @@ def fleet_summary():
         la = n.load_average.split() if n.load_average else []
         nodes_out.append({
             'id': n.id, 'name': n.name, 'ip': n.ip_address,
-            'status': n.status, 'cpu': n.cpu_percent, 'mem': n.ram_percent,
+            'status': n.status, 'last_error': n.last_error,
+            'cpu': n.cpu_percent, 'mem': n.ram_percent, 'username': n.username,
             'disk': n.disk_percent, 'temp': n.temperature,
             'load_1':  float(la[0]) if len(la) > 0 else None,
             'load_5':  float(la[1]) if len(la) > 1 else None,
@@ -104,6 +116,7 @@ def fleet_summary():
 
     return jsonify({
         'total': total, 'online': len(online), 'offline': len(offline),
+        'auth_failed': auth_failed,
         'sla_percent': sla,
         'avg_cpu':    avg(cpus),
         'avg_mem':    avg(mems),

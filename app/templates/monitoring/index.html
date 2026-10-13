@@ -9,7 +9,8 @@
   </div>
   <div class="d-flex gap-2 align-items-center">
     <span class="text-muted small me-2" id="last-refresh"> n/a </span>
-    <button class="btn btn-sm btn-outline-primary" onclick="pollAll()">
+    <button class="btn btn-sm btn-outline-primary" onclick="refreshAll()" id="refreshAllBtn"
+            title="Collect every node now (the background collector also refreshes every 30 s)">
       <i class="bi bi-arrow-clockwise me-1"></i>Refresh All
     </button>
     <div class="form-check form-switch mb-0 ms-2">
@@ -164,7 +165,8 @@
           <div id="spark-{{ node.id }}" style="height:50px;margin-top:8px"></div>
         </div>
 
-        <div id="error-{{ node.id }}" style="display:none" class="alert alert-danger py-2 small mb-0"></div>
+        <div id="error-{{ node.id }}" style="display:none" class="alert alert-danger py-2 small mb-0"
+             data-name="{{ node.name }}" data-user="{{ node.username }}" data-port="{{ node.ssh_port or 22 }}"></div>
       </div>
     </div>
   </div>
@@ -224,27 +226,53 @@ function svcBadge(up) {
     : '<span class="badge bg-danger">Down</span>';
 }
 
+function applyResult(id, r) {
+  if (!r) { showNodeError(id, 'Not checked yet: the collector will reach it shortly'); return; }
+  if (r.success && r.metrics) { renderNode(id, r.metrics); return; }
+  showNodeError(id, r.error || 'Node offline or unreachable', r.kind);
+}
+
+// Live check of one node (the card's refresh button).
 function pollNode(id) {
   document.getElementById('loading-'+id).style.display = '';
   document.getElementById('data-'+id).style.display = 'none';
   document.getElementById('error-'+id).style.display = 'none';
-
   return fetch('/monitoring/poll', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCSRF() },
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ node_ids: [id] })
   })
   .then(r => r.json())
-  .then(data => {
-    const r = data.results && data.results[id];
-    if (!r) { showNodeError(id, 'No data returned'); return; }
-    if (r.error) { showNodeError(id, r.error); return; }
-    if (!r.success || !r.metrics) { showNodeError(id, 'Node offline or unreachable'); return; }
-    renderNode(id, r.metrics);
-  })
+  .then(data => applyResult(id, data.results && data.results[id]))
   .catch(e => showNodeError(id, e.message))
-  .finally(updateSummary);   // count from the rendered result, not before it arrives
+  .finally(updateSummary);
 }
+
+// All nodes in one request, from the background collector's latest results
+// (instant), or collected live when live is true.
+function fetchFleet(live) {
+  if (!nodeIds.length) return Promise.resolve();
+  const btn = document.getElementById('refreshAllBtn');
+  if (live && btn) { btn.disabled = true; }
+  document.getElementById('last-refresh').textContent = live ? 'Collecting all nodes...' : 'Updating...';
+  const t0 = Date.now();
+  return fetch('/monitoring/poll', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ node_ids: nodeIds, cached: !live })
+  })
+  .then(r => r.json())
+  .then(data => {
+    const res = data.results || {};
+    nodeIds.forEach(id => applyResult(id, res[id]));
+    const c = data.collector || {};
+    const took = ((Date.now() - t0) / 1000).toFixed(1);
+    document.getElementById('last-refresh').textContent = 'Updated ' + new Date().toLocaleTimeString()
+      + (live ? ' (' + took + ' s)' : (c.seconds != null ? ' (fleet pass ' + c.seconds + ' s)' : ''));
+  })
+  .catch(() => { document.getElementById('last-refresh').textContent = 'Update failed'; })
+  .finally(() => { if (btn) btn.disabled = false; updateSummary(); });
+}
+function pollAll() { return fetchFleet(false); }
+function refreshAll() { return fetchFleet(true); }
 
 function renderNode(id, m) {
   document.getElementById('loading-'+id).style.display = 'none';
@@ -303,14 +331,29 @@ function renderSpark(id) {
   });
 }
 
-function showNodeError(id, msg) {
+function showNodeError(id, msg, kind) {
   document.getElementById('loading-'+id).style.display = 'none';
   document.getElementById('data-'+id).style.display = 'none';
   const el = document.getElementById('error-'+id);
   el.style.display = '';
-  el.textContent = 'Error: ' + msg;
+  el.className = 'alert py-2 small mb-0 ' + (kind === 'auth' ? 'alert-warning' : 'alert-danger');
+  el.textContent = '';
+  const text = document.createElement('div');
+  text.textContent = kind === 'auth' ? 'SSH login failed: wrong username or password.' : msg;
+  el.appendChild(text);
+  if (kind === 'auth') {
+    const b = document.createElement('button');
+    b.className = 'btn btn-sm btn-warning mt-2';
+    b.innerHTML = '<i class="bi bi-key me-1"></i>Fix login';
+    b.addEventListener('click', () => esFixCreds(id, el.dataset.name, el.dataset.user, el.dataset.port,
+      d => { if (d.success) pollNode(id); }));
+    el.appendChild(b);
+  }
   const sb = document.getElementById('status-'+id);
-  if (sb) { sb.textContent = 'offline'; sb.className = 'status-badge status-offline'; }
+  if (sb) {
+    sb.textContent = kind === 'auth' ? 'login failed' : 'offline';
+    sb.className = 'status-badge ' + (kind === 'auth' ? 'status-auth_failed' : 'status-offline');
+  }
 }
 
 function pollAll() {
@@ -392,7 +435,7 @@ function renderHistory(history) {
 
 // Auto-refresh
 const toggle = document.getElementById('autoRefreshToggle');
-function startAuto() { autoTimer = setInterval(pollAll, 30000); }
+function startAuto() { autoTimer = setInterval(pollAll, 15000); }
 function stopAuto() { clearInterval(autoTimer); }
 toggle.addEventListener('change', () => toggle.checked ? startAuto() : stopAuto());
 

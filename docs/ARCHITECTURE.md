@@ -115,3 +115,29 @@ The `metrics` object carries `cpu_percent`, `mem_percent`, `disk_percent`,
 `docker_running`, `nodered_running`, `collected_at`. The frontend unwraps
 `metrics` and renders. The dashboard uses `GET /monitoring/fleet-summary`, a
 flat aggregate for the overview cards.
+
+
+## Metrics collection
+
+A background thread in the web process (`app/services/collector.py`,
+started from `wsgi.py`) keeps the fleet's metrics fresh; no web request waits
+on SSH.
+
+| Step | What happens |
+|---|---|
+| Connection | One SSH connection per node, kept open with keepalives and reused. Edited credentials always get a fresh login |
+| Command | One shell command reads `/proc/stat` (twice, 0.2 s apart, for CPU), `/proc/loadavg`, `/proc/meminfo`, `df`, `/proc/uptime`, the temperature, network counters and the Docker and Node-RED state |
+| Fan-out | All due nodes at once, `COLLECTOR_WORKERS` (48) in parallel, every `COLLECTOR_INTERVAL` (30 s) |
+| Storage | Only the collector thread writes: the node row, plus a history row at most once a minute |
+| Failures | `auth` (wrong username or password: card shows Fix login, retried every 10 min), `unreachable` (backs off up to 5 min), `error` |
+
+Measured on a 122-node Tailscale fleet:
+
+| | Before | Now |
+|---|---|---|
+| One fleet refresh | about 11 min, node after node, new login each time | 28 s cold, 5 to 8 s warm |
+| Per node | 2 s (TCP 0.3 s, login 0.9 s, Python script on the node 0.9 s) | 0.6 to 0.7 s (one round trip plus the CPU sample) |
+
+The remaining time per node is network latency to the device, which a
+faster language would not remove; the collector is Python by design. Run
+`tools/perf.py` to time every page, API and action against a simulated fleet.

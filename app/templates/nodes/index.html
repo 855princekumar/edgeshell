@@ -121,9 +121,18 @@
         </div>
 
         <div class="flex items-center gap-2 mt-4">
-            <span class="status-badge status-{{ node.status or 'unknown' }}" id="badge-{{ node.id }}">
-                {{ (node.status or 'Unknown').capitalize() }}
+            <span class="status-badge status-{{ node.status or 'unknown' }}" id="badge-{{ node.id }}"
+                  {% if node.last_error %}title="{{ node.last_error }}"{% endif %}>
+                {{ 'Login failed' if node.status == 'auth_failed' else (node.status or 'Unknown').capitalize() }}
             </span>
+            {% if current_user.can_execute() %}
+            <button type="button" class="btn btn-xs btn-warning es-fix-login" id="fix-{{ node.id }}"
+                    {% if node.status != 'auth_failed' %}style="display:none"{% endif %}
+                    data-id="{{ node.id }}" data-name="{{ node.name }}" data-user="{{ node.username }}" data-port="{{ node.ssh_port or 22 }}"
+                    title="Wrong SSH username or password: fix it here">
+                <i class="bi bi-key"></i> Fix login
+            </button>
+            {% endif %}
             {% if node.environment %}
             <span class="node-tag">{{ node.environment }}</span>
             {% endif %}
@@ -296,11 +305,19 @@ function testNode(id) {
             const badge = document.getElementById(`badge-${id}`);
             document.getElementById(`spinner-${id}`).style.display = 'none';
             document.getElementById(`wifiicon-${id}`).style.display = 'inline';
+            const fix = document.getElementById(`fix-${id}`);
             if (d.success) {
                 dot.className = 'node-status-dot dot-online';
                 badge.className = 'status-badge status-online';
                 badge.textContent = 'Online';
-                showToast(d.message, 'success');
+                if (fix) fix.style.display = 'none';
+                showToast(d.message + (d.seconds != null ? ` (${d.seconds}s)` : ''), 'success');
+            } else if (d.kind === 'auth') {
+                dot.className = 'node-status-dot dot-auth_failed';
+                badge.className = 'status-badge status-auth_failed';
+                badge.textContent = 'Login failed';
+                if (fix) fix.style.display = '';
+                showToast(d.message, 'danger');
             } else {
                 dot.className = 'node-status-dot dot-offline';
                 badge.className = 'status-badge status-offline';
@@ -309,6 +326,15 @@ function testNode(id) {
             }
         });
 }
+
+document.addEventListener('click', function (e) {
+    const b = e.target.closest('.es-fix-login');
+    if (!b) return;
+    e.preventDefault();
+    esFixCreds(b.dataset.id, b.dataset.name, b.dataset.user, b.dataset.port, function (d) {
+        if (d.success) { b.style.display = 'none'; testNode(parseInt(b.dataset.id)); }
+    });
+});
 
 function toggleNode(id, btn) {
     apiPost(`/nodes/${id}/toggle`, {})

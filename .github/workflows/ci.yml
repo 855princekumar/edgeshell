@@ -76,6 +76,11 @@ jobs:
         env:
           FLASK_ENV: testing
         run: python -m pytest -q -W ignore
+      - name: Performance budget (300 nodes, every page and API under 300 ms)
+        if: matrix.python == '3.12'
+        env:
+          FLASK_ENV: testing
+        run: python -W ignore tools/perf.py --nodes 300 --runs 10 --budget-ms 300
 
   image:
     name: Image build (amd64 + arm64) and hardening audit
