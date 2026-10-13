@@ -222,6 +222,26 @@ def test_admin_reset_removes_2fa_and_ends_sessions(app):
     assert r.status_code == 302 and '/change-password' in r.headers['Location']
 
 
+def test_first_admin_order_is_2fa_then_email_then_password(app):
+    with app.app_context():
+        u = db.session.get(User, 1)
+        u.email, u.must_change_password = 'admin@edgeshell.local', True
+        db.session.commit()
+    c = app.test_client()
+    r = c.post('/login', data={'username': 'admin', 'password': 'admin123'})
+    assert '/login/setup' in r.headers['Location']              # 1. 2FA
+    secret = _secret_from(c.get('/login/setup').get_data(as_text=True))
+    c.post('/login/setup', data={'code': mfa.totp_now(secret)})
+    r = c.post('/login/setup/done', data={'saved': '1'})
+    assert '/account/email' in r.headers['Location']            # 2. personal email
+    assert '/account/email' in c.get('/nodes/').headers['Location']
+    r = c.post('/account/email', data={'email': 'me@fleet.test', 'password': 'admin123'})
+    assert '/change-password' in r.headers['Location']          # 3. new password
+    c.post('/change-password', data={'current_password': 'admin123', 'new_password': 'My-own-pass-1',
+                                     'confirm_password': 'My-own-pass-1'})
+    assert c.get('/nodes/').status_code == 200
+
+
 def test_forgot_password_user_creates_one_request(app):
     _mk(app, 'olly')
     c = app.test_client()
@@ -309,18 +329,39 @@ def test_at_most_three_admins_and_only_owner_grants(app):
         assert not db.session.get(User, four).is_admin() and db.session.get(User, a2).is_admin()
 
 
-def test_admins_cannot_touch_other_admins(app):
+def test_admins_cannot_touch_other_admins_or_the_owner(app):
+    a3 = _mk(app, 'adm3', role='administrator')
+    _mk(app, 'adm2', role='administrator')
+    peer = _admin_client(app, 'adm2', 'pw-adm2-123')
+    for target in (a3, 1):                                     # another admin, the owner
+        for path, data in ((f'/users/{target}/role', {'role': 'monitor'}), (f'/users/{target}/toggle', {}),
+                           (f'/users/{target}/reset-password', {'new_password': 'Takeover-123'}),
+                           (f'/users/{target}/signout', {}), (f'/users/{target}/delete', {}),
+                           (f'/users/{target}/sessions', {'max_sessions': '4'})):
+            r = peer.post(path, data=data, follow_redirects=True)
+            assert b'nobody can change the owner' in r.data, (target, path)
+    with app.app_context():
+        for uid, pw in ((a3, 'pw-adm3-123'), (1, 'admin123')):
+            u = db.session.get(User, uid)
+            assert u.is_admin() and u.is_active and u.check_password(pw) and u.max_sessions == 1
+
+
+def test_owner_has_full_control_over_admins(app):
     a2 = _mk(app, 'adm2', role='administrator')
     owner = _admin_client(app)
-    for path, data in ((f'/users/{a2}/role', {'role': 'monitor'}), (f'/users/{a2}/toggle', {}),
-                       (f'/users/{a2}/reset-password', {'new_password': 'Takeover-123'}),
-                       (f'/users/{a2}/signout', {}), (f'/users/{a2}/delete', {}),
-                       (f'/users/{a2}/sessions', {'max_sessions': '4'})):
-        r = owner.post(path, data=data, follow_redirects=True)
-        assert b'No administrator can change another administrator' in r.data, path
+    owner.post(f'/users/{a2}/sessions', data={'max_sessions': '3'})
+    owner.post(f'/users/{a2}/reset-password', data={'new_password': 'Owner-reset-1'})
     with app.app_context():
         u = db.session.get(User, a2)
-        assert u.is_admin() and u.is_active and u.check_password('pw-adm2-123') and u.max_sessions == 1
+        assert u.max_sessions == 3 and u.check_password('Owner-reset-1') and u.must_change_password
+    owner.post(f'/users/{a2}/role', data={'role': 'operator'})        # demote
+    owner.post(f'/users/{a2}/toggle')                                 # disable
+    with app.app_context():
+        u = db.session.get(User, a2)
+        assert u.role == 'operator' and not u.is_active and u.admin_since is None
+    owner.post(f'/users/{a2}/delete')
+    with app.app_context():
+        assert db.session.get(User, a2) is None
 
 
 def test_step_down_rules_and_owner_handover(app):

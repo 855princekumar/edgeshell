@@ -17,19 +17,22 @@ Node-RED access, bulk onboarding and role-based access.
 
 ## Production setup (recommended)
 
-EdgeShell, MariaDB, [privacyIDEA](https://privacyidea.org) for mandatory
-two-factor authentication and [Caddy](https://caddyserver.com) for automatic
-HTTPS, in one Compose file. All state lives in a `./data` folder on the host, so backups,
-upgrades and moving to another server are a folder copy.
+EdgeShell behind [nginx](https://nginx.org), with MariaDB,
+[privacyIDEA](https://privacyidea.org) for mandatory two-factor authentication
+and certbot for Let's Encrypt, in one Compose file. nginx is the only container
+with published ports; everything else is on internal Docker networks. All state
+lives in a `./data` folder on the host, so backups, upgrades and moving to
+another server are a folder copy.
 
-**You need:** a Linux host with Docker and the Compose plugin, a DNS `A` record
-pointing at it, and ports **80** and **443** open to the internet.
+**You need:** a Linux host with Docker and the Compose plugin, and port **80**
+open to the internet (plus **443** once you add a domain).
 
 ```bash
-mkdir edgeshell && cd edgeshell
+mkdir -p edgeshell/nginx && cd edgeshell
 base=https://raw.githubusercontent.com/855princekumar/edgeshell/main/docker
 curl -fsSLO $base/compose.yaml
-curl -fsSLO $base/Caddyfile
+curl -fsSLo nginx/entrypoint.sh $base/nginx/entrypoint.sh
+curl -fsSLo nginx/certbot.sh $base/nginx/certbot.sh
 curl -fsSLo .env $base/.env.example && chmod 600 .env
 
 # Generate the seven secrets
@@ -37,31 +40,40 @@ for k in SECRET_KEY CREDENTIAL_KEY DB_PASSWORD DB_ROOT_PASSWORD MFA_ADMIN_PASSWO
   sed -i "s|^$k=.*|$k=$(openssl rand -hex 32)|" .env
 done
 
-nano .env          # set EDGESHELL_DOMAIN=fleet.yourdomain.com and ACME_EMAIL
 docker compose up -d
 ```
 
-Open `https://fleet.yourdomain.com` and sign in as **`admin` / `admin123`**.
-Before anything else you set up two-factor authentication (scan the QR code
-with any authenticator app and save the 10 backup codes), a new password and
-your personal email.
+Open `http://<server IP>` and sign in as **`admin` / `admin123`**. Before
+anything else you set up two-factor authentication (scan the QR code with any
+authenticator app and save the 10 backup codes), your personal email (where
+password reset links go) and a new password.
 
 **Password reset emails (optional):** set `PUBLIC_URL` and the `SMTP_*` values
 in `.env` (any SMTP server: Gmail app password, AWS SES, Brevo...) so
 administrators can get a reset link. Without them, administrators recover with
 a backup code, and other users ask an administrator.
 
-**No domain yet?** Set `EDGESHELL_DOMAIN=:80` and `SESSION_COOKIE_SECURE=false`
-in `.env` to run over plain HTTP on the server's IP. When the domain is ready,
-set it (and `SESSION_COOKIE_SECURE=true`) and run `docker compose up -d`
-again: Caddy gets the certificate and all data in `./data` is kept.
+**Adding a domain (HTTPS):** point its DNS `A` record at the server, open port
+443, then set in `.env`:
+
+```bash
+EDGESHELL_DOMAIN=fleet.yourdomain.com
+ACME_EMAIL=you@yourdomain.com
+SESSION_COOKIE_SECURE=true
+PUBLIC_URL=https://fleet.yourdomain.com
+```
+
+and run `docker compose up -d`. certbot gets the certificate within a minute
+and nginx switches to HTTPS by itself (HTTP and the bare IP then redirect to
+the domain). Renewal is automatic and all data in `./data` is kept.
 
 ### What you get
 
 | Service | Role | Exposed |
 |---|---|---|
-| `caddy` | HTTPS with automatic Let's Encrypt certificates and renewal, HTTP→HTTPS redirect, HSTS and security headers | **80, 443** |
-| `edgeshell` | The application | only to Caddy |
+| `nginx` | Reverse proxy and the only public entry point: TLS, HTTP→HTTPS redirect, HSTS and security headers, rate limit on sign-in and recovery forms, client IP forwarding that cannot be spoofed | **80, 443** |
+| `certbot` | Let's Encrypt certificates and renewal, idle until a domain is set | nothing |
+| `edgeshell` | The application | only to nginx |
 | `privacyidea` | Checks every 2FA code ([privacyIDEA](https://privacyidea.org) 3.13, non-root). Token secrets stay here, encrypted with its own key | nothing |
 | `mariadb` | Database (MariaDB 11.4) for EdgeShell and privacyIDEA, on an internal network with no internet access | nothing |
 | `init-data`, `mfa-db-init` | One-shot: prepare the host data folders and privacyIDEA's database | nothing |
@@ -74,14 +86,15 @@ restart automatically after a crash or a host reboot.
 ```
 edgeshell/
 ├── compose.yaml
-├── Caddyfile
+├── nginx/               entrypoint.sh (generates the site config), certbot.sh
 ├── .env                 settings and secrets (chmod 600)
 └── data/
     ├── mariadb/         database
     ├── instance/        app state
     ├── uploads/         files staged for deployment
     ├── privacyidea/     2FA encryption key and audit keys (back up with .env)
-    └── caddy/           TLS certificates and keys
+    ├── letsencrypt/     TLS certificates and keys
+    └── certbot-www/     ACME challenge files
 ```
 
 > **Back up `.env` with `data/`.** `CREDENTIAL_KEY` decrypts the stored node SSH
@@ -91,8 +104,9 @@ edgeshell/
 
 | Variable | Required | Default | Purpose |
 |---|---|---|---|
-| `EDGESHELL_DOMAIN` | yes | | Public hostname; Caddy gets its certificate |
-| `ACME_EMAIL` | yes | | Let's Encrypt expiry notices |
+| `EDGESHELL_DOMAIN` | no | empty | Public hostname. Empty: plain HTTP on the server's IP. Set: certbot gets a certificate and nginx serves HTTPS |
+| `ACME_EMAIL` | no | | Let's Encrypt expiry notices |
+| `SESSION_COOKIE_SECURE` | no | `false` | Set `true` together with a domain |
 | `SECRET_KEY` | yes | | Session signing key |
 | `CREDENTIAL_KEY` | yes | | Encrypts node passwords and API keys |
 | `DB_PASSWORD`, `DB_ROOT_PASSWORD` | yes | | MariaDB passwords (hex, so they are URL-safe) |
@@ -123,19 +137,27 @@ The app refuses to start if any required value is missing.
 
 ### Upgrading from 1.2.x
 
-1.3.0 adds the `privacyidea` and `mfa-db-init` services. Fetch the new
-`compose.yaml`, add the three new secrets to your existing `.env`, then
-start as usual; users, nodes and passwords are kept, and everyone sets up 2FA
-at their next sign-in:
+1.3.0 adds the `privacyidea` and `mfa-db-init` services and replaces Caddy
+with nginx and certbot. Fetch the new files, add the three new secrets to your
+existing `.env`, then start as usual; users, nodes and passwords are kept, and
+everyone sets up 2FA at their next sign-in:
 
 ```bash
-curl -fsSLO https://raw.githubusercontent.com/855princekumar/edgeshell/main/docker/compose.yaml
+base=https://raw.githubusercontent.com/855princekumar/edgeshell/main/docker
+mkdir -p nginx
+curl -fsSLO $base/compose.yaml
+curl -fsSLo nginx/entrypoint.sh $base/nginx/entrypoint.sh
+curl -fsSLo nginx/certbot.sh $base/nginx/certbot.sh
+sed -i 's|^EDGESHELL_DOMAIN=:80$|EDGESHELL_DOMAIN=|' .env    # IP mode is now an empty value
 for k in MFA_ADMIN_PASSWORD MFA_PEPPER MFA_DB_PASSWORD; do
   grep -q "^$k=" .env || echo "$k=$(openssl rand -hex 32)" >> .env
 done
 sed -i 's|^EDGESHELL_TAG=.*|EDGESHELL_TAG=1.3.0|' .env
-docker compose pull && docker compose up -d
+docker compose pull && docker compose up -d --remove-orphans   # removes the old caddy container
 ```
+
+With a domain already set, certbot requests a new certificate on the first
+start (Caddy's certificates are not reused); keep port 80 open.
 
 ### Reaching your fleet
 

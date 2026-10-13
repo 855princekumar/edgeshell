@@ -15,8 +15,8 @@
 {% if current_user.is_owner and admin_count < max_admins %}
 <div class="alert alert-info small">
   <i class="bi bi-lightbulb me-1"></i>Recommended: add up to {{ max_admins - admin_count }} more administrator(s) so the
-  platform is never locked out if one person loses access. As the owner, you are the only one who can grant the
-  administrator role (at most {{ max_admins }}).
+  platform is never locked out if one person loses access. As the owner (primary administrator) you are the only one who
+  can grant or remove the administrator role (at most {{ max_admins }}), and you can change any account.
 </div>
 {% endif %}
 
@@ -169,14 +169,14 @@
               <form method="POST" action="{{ url_for('users.set_role', user_id=user.id) }}" class="d-inline">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                 <select name="role" class="form-select form-select-sm d-inline w-auto" onchange="this.form.submit()">
-                  {% if 'administrator' in grantable %}<option value="administrator">Administrator</option>{% endif %}
+                  {% if user.is_admin() or 'administrator' in grantable %}<option value="administrator" {% if user.is_admin() %}selected{% endif %}>Administrator</option>{% endif %}
                   <option value="operator" {% if user.role == 'operator' %}selected{% endif %}>Operator</option>
                   <option value="monitor" {% if user.role == 'monitor' %}selected{% endif %}>Monitor</option>
                 </select>
               </form>
               {% else %}
               <span class="small fw-semibold" style="text-transform:capitalize">{{ user.role }}</span>
-              {% if user.is_admin() and not is_me %}<i class="bi bi-lock-fill text-muted ms-1" title="Administrators manage their own accounts"></i>{% endif %}
+              {% if user.is_admin() and not is_me %}<i class="bi bi-lock-fill text-muted ms-1" title="Only the owner can change administrators; nobody can change the owner"></i>{% endif %}
               {% endif %}
             </td>
             <td>
@@ -243,7 +243,7 @@
                   <i class="bi bi-person-gear"></i>
                 </a>
                 {% else %}
-                <span class="small text-muted" title="No administrator can change another administrator">protected</span>
+                <span class="small text-muted" title="Only the owner can change administrators; nobody can change the owner">protected</span>
                 {% endif %}
               </div>
             </td>

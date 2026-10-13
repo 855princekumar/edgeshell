@@ -37,8 +37,9 @@ docker compose up -d            # pulls devprincekumar/edgeshell (amd64 or arm64
 ## 3. Production with Docker (HTTPS + MariaDB)
 
 [`docker/compose.yaml`](../docker/compose.yaml) runs EdgeShell, MariaDB 11.4
-(internal network only) and Caddy with automatic Let's Encrypt certificates.
-All state lives in `./data` on the host and only ports 80 and 443 are exposed.
+(internal network only), privacyIDEA for 2FA, and nginx as the only public
+entry point, with certbot for Let's Encrypt once a domain is set. All state
+lives in `./data` on the host and only ports 80 and 443 are exposed.
 Step-by-step instructions, backups and upgrades are on the
 [Docker Hub page](https://hub.docker.com/r/devprincekumar/edgeshell) and in
 [docker/DOCKERHUB.md](../docker/DOCKERHUB.md).

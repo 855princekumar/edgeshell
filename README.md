@@ -144,7 +144,7 @@ flowchart LR
 | **Hardened login** | Account lockout, per-IP rate limiting, forced password change, and login errors that never reveal which usernames exist |
 | **Two-factor auth** | Mandatory for every account: authenticator app plus one-time backup codes, checked by [privacyIDEA](https://privacyidea.org) in its own isolated container |
 | **Account recovery** | Users request a reset from an admin (which also resets their 2FA); admins use an emailed link or a backup code |
-| **Admin governance** | At most 3 admins; only the owner grants admin; no admin can change another admin; admins step down themselves with 2FA |
+| **Admin governance** | At most 3 admins; the owner (primary admin) has full control over every account; other admins manage only monitors and operators; nobody can change the owner |
 | **Sign-up approval** | Anyone can request an account; an admin approves it with a role |
 | **Session control** | One device at a time by default, up to 4 per user (set by an admin). Each device is listed by type and can be signed out; idle sessions ask "still there?" and sign out |
 | **Encrypted credentials** | Node SSH passwords and API keys encrypted at rest (Fernet), with key rotation |
@@ -214,19 +214,21 @@ reach nodes over a mesh from inside a container, see
 
 ### Production Compose (HTTPS + MariaDB)
 
-[`docker/compose.yaml`](docker/compose.yaml) runs EdgeShell with MariaDB and
-Caddy (automatic Let's Encrypt HTTPS). All data lives in a `./data` folder on
-the host, and nothing but ports 80 and 443 is exposed.
+[`docker/compose.yaml`](docker/compose.yaml) runs EdgeShell behind nginx, with
+MariaDB, privacyIDEA (2FA) and certbot (Let's Encrypt once you set a domain).
+All data lives in a `./data` folder on the host, and only nginx's ports 80 and
+443 are exposed.
 
 ```bash
-mkdir edgeshell && cd edgeshell
+mkdir -p edgeshell/nginx && cd edgeshell
 base=https://raw.githubusercontent.com/855princekumar/edgeshell/main/docker
-curl -fsSLO $base/compose.yaml && curl -fsSLO $base/Caddyfile
+curl -fsSLO $base/compose.yaml
+curl -fsSLo nginx/entrypoint.sh $base/nginx/entrypoint.sh
+curl -fsSLo nginx/certbot.sh $base/nginx/certbot.sh
 curl -fsSLo .env $base/.env.example && chmod 600 .env
 for k in SECRET_KEY CREDENTIAL_KEY DB_PASSWORD DB_ROOT_PASSWORD MFA_ADMIN_PASSWORD MFA_PEPPER MFA_DB_PASSWORD; do
   sed -i "s|^$k=.*|$k=$(openssl rand -hex 32)|" .env; done
-nano .env                  # EDGESHELL_DOMAIN and ACME_EMAIL
-docker compose up -d
+docker compose up -d       # http://<server IP>; add a domain later for HTTPS
 ```
 
 Backups, upgrades and every setting are documented on the
@@ -581,7 +583,7 @@ edgeshell/
 │   └── templates/        Jinja2 pages
 ├── ansible/              Playbooks for fleet-wide commands, deploys, log fetch, installs
 ├── deploy/               Production provisioner, systemd units, Nginx templates, scripts
-├── docker/               Production Compose (EdgeShell + MariaDB + Caddy), Docker Hub page
+├── docker/               Production Compose (nginx + EdgeShell + MariaDB + privacyIDEA), Docker Hub page
 ├── docs/                 Guides, ADRs, and diagrams
 ├── sandbox/              EdgeShell + Pi Fleet Emulator stack and the end-to-end suite
 ├── sim/                  Older self-contained demo fleet (superseded by sandbox/)
@@ -669,7 +671,7 @@ Ideas and feature requests are welcome in
 | **Discovering usernames** | Every failure shows the same message, and unknown usernames take the same time to answer as real ones |
 | **Stolen or guessed password** | **Two-factor authentication is mandatory.** A 6-digit code from an authenticator app (or a one-time backup code) is required after the password; nothing is signed in before it, and failed codes count toward the lockout |
 | **Weak or default passwords** | Passwords are bcrypt-hashed, at least 10 characters, and the seeded `admin` must change its password, set up 2FA and add a personal email on first sign-in |
-| **Admin takeover** | At most 3 administrators; only the owner grants the role; no administrator can change, reset or demote another; stepping down needs password + 2FA |
+| **Admin takeover** | At most 3 administrators; only the owner grants or removes the role; other administrators cannot change an administrator and nobody can change the owner; stepping down needs password + 2FA |
 | **Forgotten password** | Users: reset by an admin, which also resets their 2FA. Admins: single-use emailed link (30 minutes, built from `PUBLIC_URL`, never the Host header) or a backup code |
 
 ### Session protection

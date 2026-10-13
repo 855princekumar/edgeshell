@@ -69,8 +69,8 @@
         <form method="POST" action="{{ url_for('account.step_down') }}" onsubmit="return confirm('Leave the administrator role? This cannot be undone by you.')">
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
           <div class="small fw-semibold mb-1">Step down from administrator</div>
-          <div class="small text-muted mb-2">No administrator can change another administrator, so only you can do this.
-            {% if current_user.is_owner %}Ownership passes to the longest-serving remaining administrator.{% endif %}
+          <div class="small text-muted mb-2">{% if current_user.is_owner %}Ownership (full control over every account) passes
+            to the longest-serving remaining administrator.{% else %}Only you or the owner can remove your administrator role.{% endif %}
             The last administrator cannot step down.</div>
           <div class="d-flex gap-2 flex-wrap">
             <select name="new_role" class="form-select form-select-sm" style="max-width:130px">

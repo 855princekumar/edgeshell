@@ -38,8 +38,12 @@ You will be credited in the release notes unless you ask not to be.
 - Login lockout after repeated failures (passwords and 2FA codes), per-IP rate
   limiting, and identical errors for unknown users, wrong passwords and
   locked accounts.
-- At most 3 administrators; only the owner grants the role; no administrator
-  can change another; stepping down requires password and 2FA.
+- At most 3 administrators. The owner (primary administrator) alone grants or
+  removes the role and can manage every other account; other administrators
+  cannot change an administrator, and nobody can change the owner. Stepping
+  down requires password and 2FA.
+- nginx is the only container with published ports; the app, database and
+  privacyIDEA sit on internal Docker networks.
 - Password reset links are single-use, expire in 30 minutes and are built from
   `PUBLIC_URL`, never from the request's Host header. An admin reset of a
   user's password also resets that user's 2FA.
