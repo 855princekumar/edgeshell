@@ -228,7 +228,7 @@ docker_up = bool(_run('sudo -n docker ps -q 2>/dev/null || docker ps -q 2>/dev/n
     if docker_installed else False
 nodered_installed = bool(_run('command -v node-red 2>/dev/null') or
     _run('systemctl list-unit-files 2>/dev/null | grep -c -E "nodered|node-red"'))
-nodered_up = bool(_run('pgrep -f node-red 2>/dev/null') or \
+nodered_up = bool(_run('pgrep -x node-red 2>/dev/null') or \
     _run('systemctl is-active nodered 2>/dev/null | grep -c active'))
 
 print(json.dumps({

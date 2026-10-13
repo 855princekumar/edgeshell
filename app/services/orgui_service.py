@@ -1,9 +1,18 @@
 """OpenRemoteGUI lifecycle over SSH.
 
-Detection strategy (first positive wins):
-  1. systemd unit `openremotegui` is active
-  2. the ORGUI port is listening
-  3. the repo directory ~/OpenRemoteGUI exists
+Detection: OpenRemoteGUI counts as available only when its install
+(/opt/openremotegui, /etc/openremotegui, or a ~/OpenRemoteGUI checkout) is
+present AND its web gateway port (6080 by default) is listening.
+
+  RUNNING     installed and the gateway port is listening: usable
+  STOPPED     installed, but nothing listens on the port
+  PORT_OTHER  something else listens on the port; OpenRemoteGUI is not installed
+  MISSING     not installed
+
+Process names are deliberately not used: Raspberry Pi OS runs its own
+wayvnc (and Raspberry Pi Connect's rpi-connectd) on every node with VNC
+enabled, which made every reachable Pi look like it had OpenRemoteGUI. And
+`pgrep -f` also matches the checking shell's own command line.
 
 Install runs the documented one-liner:
   git clone <repo> && cd OpenRemoteGUI && sudo ./install.sh
@@ -14,13 +23,15 @@ from app import db
 from app.services.ssh_service import execute_command
 
 _CHECK = (
-    "systemctl is-active openremotegui 2>/dev/null | grep -q '^active' && echo ACTIVE && exit 0; "
-    "(ss -ltn 2>/dev/null || netstat -ltn 2>/dev/null) | grep -qE ':{port}([^0-9]|$)' && echo PORT && exit 0; "
-    "[ -d \"$HOME/noVNC\" ] && echo NOVNC && exit 0; "
-    "pgrep -f 'websockify|wayvnc|novnc' >/dev/null 2>&1 && echo PROC && exit 0; "
-    "[ -d \"$HOME/OpenRemoteGUI\" ] && echo REPO && exit 0; "
-    "echo MISSING"
+    'd=0; ( [ -d /opt/openremotegui ] || [ -d /etc/openremotegui ] || [ -d "$HOME/OpenRemoteGUI" ] ) && d=1; p=0; (ss -ltn 2>/dev/null || netstat -ltn 2>/dev/null) | grep -qE \'[:.]{port}([^0-9]|$)\' && p=1; if [ $d = 1 ] && [ $p = 1 ]; then echo RUNNING; elif [ $d = 1 ]; then echo STOPPED; elif [ $p = 1 ]; then echo PORT_OTHER; else echo MISSING; fi'
 )
+
+SIGNAL_TEXT = {
+    'RUNNING': 'running',
+    'STOPPED': 'installed but not running (start it on the node)',
+    'PORT_OTHER': 'not installed (another program uses the port)',
+    'MISSING': 'not installed',
+}
 
 
 def check_installed(node):
@@ -31,7 +42,7 @@ def check_installed(node):
         return None, r.get('stderr') or 'unreachable'
     out = (r.get('stdout') or '').strip().splitlines()
     signal = out[-1].strip() if out else 'MISSING'
-    return (signal in ('ACTIVE', 'PORT', 'REPO', 'NOVNC', 'PROC')), signal
+    return signal == 'RUNNING', signal
 
 
 def persist_check(node):

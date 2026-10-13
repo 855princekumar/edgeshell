@@ -103,6 +103,7 @@ def create_app(config_name='default'):
         _normalize_roles()
         from app.services.account_service import ensure_owner
         ensure_owner()
+        _one_time_fixes()
 
     return app
 
@@ -238,6 +239,21 @@ def _ensure_schema():
         with bind.begin() as conn:
             conn.execute(text("UPDATE users SET role = LOWER(role) "
                               "WHERE role <> LOWER(role)"))
+
+
+def _one_time_fixes():
+    """Data repairs that must run once per database, recorded in settings."""
+    from app.models import Settings
+    from app.models.node import Node
+    done = {r.key for r in Settings.query.filter(Settings.key.like('fix_%')).all()}
+    if 'fix_orgui_detection_v2' not in done:
+        # Older scans counted Raspberry Pi OS's own wayvnc as OpenRemoteGUI, so
+        # every reachable Pi was marked installed. Forget those results; the
+        # metrics collector re-detects it correctly on its next pass.
+        Node.query.update({Node.orgui_installed: None, Node.orgui_checked_at: None},
+                          synchronize_session=False)
+        db.session.add(Settings(key='fix_orgui_detection_v2', value='done'))
+        db.session.commit()
 
 
 def _seed_defaults():

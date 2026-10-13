@@ -58,7 +58,13 @@ METRICS_CMD = (
     "(command -v docker >/dev/null 2>&1 && echo docker_installed); "
     "(pgrep -x dockerd >/dev/null 2>&1 && echo docker_running); "
     "(command -v node-red >/dev/null 2>&1 || ls /lib/systemd/system/nodered.service >/dev/null 2>&1) && echo nodered_installed; "
-    "(pgrep -f node-red >/dev/null 2>&1 && echo nodered_running); echo @@"
+    # Match the process name (Node-RED sets it to 'node-red'), never 'pgrep -f':
+    # that searches command lines, and this shell's own line mentions node-red.
+    "((systemctl is-active --quiet nodered 2>/dev/null || pgrep -x node-red >/dev/null 2>&1) && echo nodered_running); "
+    # OpenRemoteGUI: installed and its web gateway listening (see orgui_service).
+    "( ( [ -d /opt/openremotegui ] || [ -d /etc/openremotegui ] || [ -d \"$HOME/OpenRemoteGUI\" ] ) "
+    "&& echo orgui_installed && (ss -ltn 2>/dev/null || netstat -ltn 2>/dev/null) "
+    "| grep -qE '[:.]__ORGUI_PORT__([^0-9]|$)' && echo orgui_running ); echo @@"
 )
 
 
@@ -141,6 +147,8 @@ def parse_metrics(output):
         'docker_running': 'docker_running' in flags,
         'nodered_installed': 'nodered_installed' in flags,
         'nodered_running': 'nodered_running' in flags,
+        'orgui_installed': 'orgui_installed' in flags,
+        'orgui_running': 'orgui_running' in flags,
         'collected_at': time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime()),
     }
 
@@ -224,7 +232,8 @@ def collect_one(target):
         for attempt in (1, 2):
             try:
                 client, fresh = POOL.get(target)
-                _, out, _ = client.exec_command(METRICS_CMD, timeout=COMMAND_TIMEOUT_S)
+                cmd = METRICS_CMD.replace('__ORGUI_PORT__', str(int(target.get('orgui_port') or 6080)))
+                _, out, _ = client.exec_command(cmd, timeout=COMMAND_TIMEOUT_S)
                 text = out.read().decode('utf-8', 'replace')
                 metrics = parse_metrics(text)
                 return {'ok': True, 'metrics': metrics, 'kind': None, 'message': None,
@@ -296,7 +305,8 @@ class Collector:
         nodes = q.all()
         due = [n for n in nodes if force or self.next_at.get(n.id, 0) <= now]
         targets = [{'id': n.id, 'ip': n.ip_address, 'port': n.ssh_port or 22,
-                    'username': n.username, 'password': n.password} for n in due]
+                    'username': n.username, 'password': n.password,
+                    'orgui_port': n.orgui_port or 6080} for n in due]
         workers = int(current_app.config.get('COLLECTOR_WORKERS', WORKERS))
         started = time.time()
         results = {}
@@ -333,6 +343,8 @@ class Collector:
                     n.arch = m['arch']
                 n.docker_installed = m['docker_installed']
                 n.nodered_installed = m['nodered_installed']
+                n.orgui_installed = m['orgui_running']      # usable only when running
+                n.orgui_checked_at = datetime.utcnow()
                 n.status, n.last_error = 'online', None
                 n.last_seen = datetime.utcnow()
                 if now - self.last_history.get(nid, 0) >= HISTORY_EVERY_S:
