@@ -469,6 +469,8 @@ def test_large_import_stays_out_of_the_cookie_and_checks_in_background(app, clie
     assert r.status_code == 200 and b'400' in r.data
     cookie = r.headers.get('Set-Cookie', '')
     assert len(cookie) < 1500, f'session cookie is {len(cookie)} bytes'
+    with app.app_context():                 # before the job starts (see below)
+        uid = User.query.filter_by(username='admin').first().id
     t0 = time.time()
     r = client.post('/nodes/import/commit', data={
         'map__name': 'name', 'map__ip': 'ip_address', 'map__username': 'username',
@@ -477,18 +479,18 @@ def test_large_import_stays_out_of_the_cookie_and_checks_in_background(app, clie
     with app.app_context():
         from app.models.node import Node
         assert Node.query.filter(Node.name.like('bulk-node-%')).count() == 400
-    # Watch the job registry directly: the in-memory test database shares one
-    # connection between threads, so a request here could roll back a write
-    # the job is making. (MariaDB and file SQLite have separate connections.)
+    # Touch neither the app nor the database while the job runs: the in-memory
+    # test database shares one connection between threads, so another
+    # session's cleanup could roll back a write the job is making. (MariaDB and
+    # file SQLite give each session its own connection.)
     from app.services import jobs as jobs_service
-    with app.app_context():
-        uid = User.query.filter_by(username='admin').first().id
     for _ in range(300):
         jobs = jobs_service.for_user(uid)
         if jobs and jobs[0]['state'] != 'running':
             break
         time.sleep(0.2)
     job = jobs[0]
+    time.sleep(0.3)                          # let the last write commit
     assert client.get('/nodes/jobs').get_json()['jobs'][0]['id'] == job['id']
     assert job['state'] == 'done' and job['total'] == 400 and job['ok'] == 40, job
     online = 0
