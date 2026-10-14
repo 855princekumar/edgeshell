@@ -1,5 +1,14 @@
 # EdgeShell
 
+![EdgeShell: one portal for every edge device. Self-hosted fleet management over a private mesh.](https://raw.githubusercontent.com/855princekumar/edgeshell/main/docs/assets/banner.svg)
+
+[![CI](https://github.com/855princekumar/edgeshell/actions/workflows/ci.yml/badge.svg)](https://github.com/855princekumar/edgeshell/actions/workflows/ci.yml)
+[![Version](https://img.shields.io/github/v/release/855princekumar/edgeshell?label=version&color=blue)](https://github.com/855princekumar/edgeshell/blob/main/CHANGELOG.md)
+[![Docker Pulls](https://img.shields.io/docker/pulls/devprincekumar/edgeshell)](https://hub.docker.com/r/devprincekumar/edgeshell)
+[![Image size](https://img.shields.io/docker/image-size/devprincekumar/edgeshell?sort=semver)](https://hub.docker.com/r/devprincekumar/edgeshell/tags)
+[![Platforms](https://img.shields.io/badge/platforms-amd64%20%7C%20arm64-informational)](https://hub.docker.com/r/devprincekumar/edgeshell/tags)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green)](https://github.com/855princekumar/edgeshell/blob/main/LICENSE)
+
 Self-hosted fleet management for Raspberry Pi and edge devices. One secure web
 portal to monitor, control and deploy to your whole fleet over SSH and Ansible:
 live metrics, web terminal, file deployment, log browser, remote desktop,

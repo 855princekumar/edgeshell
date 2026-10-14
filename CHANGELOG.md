@@ -7,7 +7,7 @@ All notable changes are documented here. Format loosely follows Keep a Changelog
 ### Added
 - **Administration, API Access**: turn the API or parts of it (read, write, control, admin) off, stop new service keys, block any user's API access (every credential of theirs is revoked), see every credential of every user (purpose, permissions, addresses, expiry, last use) with Revoke, and a usage log of every API request (user, credential, endpoint, result, time, address; never bodies or values), read from the data lake.
 - Service keys need a **purpose**, shown to administrators and in the logs.
-- The Docker Hub description is pushed whenever `docker/DOCKERHUB.md` changes on main (as well as with every release), and CI fails if it or the README falls behind `VERSION`.
+- The Docker Hub description is pushed whenever `docker/DOCKERHUB.md` changes on main (as well as with every release), and CI fails if it or the README falls behind `VERSION`. It now opens with the project banner and badges, like the README.
 - API request log table, kept for good in the data lake (`API_LOG_RETENTION_DAYS`, default 30, on the hot database).
 
 ### Changed
