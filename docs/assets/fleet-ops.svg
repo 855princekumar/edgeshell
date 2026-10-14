@@ -1,31 +1,46 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 820 250" font-family="Segoe UI,Roboto,Arial,sans-serif">
-  <rect width="820" height="250" fill="#f8fafc"/>
-  <text x="30" y="34" font-size="17" font-weight="700" fill="#0f172a">OpenRemoteGUI fleet flow</text>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 940 290" font-family="Segoe UI,Roboto,Arial,sans-serif">
+  <defs>
+    <marker id="b" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0,0 L7,3 L0,6 Z" fill="#334155"/></marker>
+  </defs>
+  <rect width="940" height="290" fill="#f8fafc"/>
+  <text x="30" y="34" font-size="17" font-weight="700" fill="#0f172a">OpenRemoteGUI: guided install, one node at a time</text>
+  <text x="30" y="54" font-size="12" fill="#64748b">Production-safe: a node that fails a check is skipped untouched, and a fleet install stops at the first failure</text>
+
   <g font-size="12">
-    <rect x="30" y="60" width="150" height="70" rx="10" fill="#eff6ff" stroke="#1a56db"/>
-    <text x="105" y="90" text-anchor="middle" font-weight="700" fill="#0f172a">Check all</text>
-    <text x="105" y="110" text-anchor="middle" fill="#475569">SSH scan, counts</text>
+    <rect x="30" y="80" width="150" height="96" rx="10" fill="#eff6ff" stroke="#1a56db" stroke-width="1.5"/>
+    <text x="105" y="108" text-anchor="middle" font-weight="700" fill="#0f172a">1. Detect</text>
+    <text x="105" y="130" text-anchor="middle" fill="#475569">install folder and</text>
+    <text x="105" y="148" text-anchor="middle" fill="#475569">page on :6080</text>
 
-    <rect x="230" y="60" width="150" height="70" rx="10" fill="#fff" stroke="#cbd5e1"/>
-    <text x="305" y="86" text-anchor="middle" font-weight="700" fill="#0f172a">Installed?</text>
-    <text x="305" y="106" text-anchor="middle" fill="#059669">yes: open :6080</text>
-    <text x="305" y="122" text-anchor="middle" fill="#d97706">no: prompt install</text>
+    <rect x="214" y="80" width="160" height="96" rx="10" fill="#fff" stroke="#cbd5e1" stroke-width="1.5"/>
+    <text x="294" y="108" text-anchor="middle" font-weight="700" fill="#0f172a">2. Safety checks</text>
+    <text x="294" y="130" text-anchor="middle" fill="#475569">OS 12+, free disk,</text>
+    <text x="294" y="148" text-anchor="middle" fill="#475569">GitHub reachable,</text>
+    <text x="294" y="166" text-anchor="middle" fill="#475569">desktop, sudo</text>
 
-    <rect x="430" y="60" width="170" height="70" rx="10" fill="#f0fdf4" stroke="#059669"/>
-    <text x="515" y="86" text-anchor="middle" font-weight="700" fill="#0f172a">Install on fleet</text>
-    <text x="515" y="106" text-anchor="middle" fill="#475569">Ansible playbook</text>
-    <text x="515" y="122" text-anchor="middle" fill="#475569">git clone + install.sh</text>
+    <rect x="408" y="80" width="180" height="96" rx="10" fill="#f0fdf4" stroke="#059669" stroke-width="1.5"/>
+    <text x="498" y="108" text-anchor="middle" font-weight="700" fill="#0f172a">3. Install</text>
+    <text x="498" y="130" text-anchor="middle" fill="#475569">git clone, then cd,</text>
+    <text x="498" y="148" text-anchor="middle" fill="#475569">then sudo bash install.sh</text>
+    <text x="498" y="166" text-anchor="middle" fill="#475569">live output in the job log</text>
 
-    <rect x="650" y="60" width="150" height="70" rx="10" fill="#fff7ed" stroke="#d97706"/>
-    <text x="725" y="86" text-anchor="middle" font-weight="700" fill="#0f172a">Per-host result</text>
-    <text x="725" y="106" text-anchor="middle" fill="#475569">ok / failed logged</text>
-    <text x="725" y="122" text-anchor="middle" fill="#475569">Deployment row</text>
+    <rect x="622" y="80" width="140" height="96" rx="10" fill="#fff" stroke="#cbd5e1" stroke-width="1.5"/>
+    <text x="692" y="108" text-anchor="middle" font-weight="700" fill="#0f172a">4. Verify</text>
+    <text x="692" y="130" text-anchor="middle" fill="#475569">the remote desktop</text>
+    <text x="692" y="148" text-anchor="middle" fill="#475569">answers on :6080</text>
+
+    <rect x="796" y="80" width="114" height="96" rx="10" fill="#fff7ed" stroke="#d97706" stroke-width="1.5"/>
+    <text x="853" y="108" text-anchor="middle" font-weight="700" fill="#0f172a">5. Result</text>
+    <text x="853" y="130" text-anchor="middle" fill="#059669">ok: Remote</text>
+    <text x="853" y="148" text-anchor="middle" fill="#059669">button works</text>
+    <text x="853" y="166" text-anchor="middle" fill="#d97706">failed: stop</text>
   </g>
-  <defs><marker id="b" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0,0 L7,3 L0,6 Z" fill="#334155"/></marker></defs>
-  <line x1="180" y1="95" x2="230" y2="95" stroke="#334155" stroke-width="2" marker-end="url(#b)"/>
-  <line x1="380" y1="95" x2="430" y2="95" stroke="#334155" stroke-width="2" marker-end="url(#b)"/>
-  <line x1="600" y1="95" x2="650" y2="95" stroke="#334155" stroke-width="2" marker-end="url(#b)"/>
-  <text x="30" y="175" font-size="12" fill="#64748b">Unreachable nodes are handled by Ansible and reported per host, never silently dropped.</text>
-  <rect x="30" y="190" width="770" height="40" rx="8" fill="#fff" stroke="#e2e8f0"/>
-  <text x="44" y="215" font-size="12" fill="#0f172a" font-family="monospace">git clone https://github.com/855princekumar/OpenRemoteGUI.git &amp;&amp; cd OpenRemoteGUI &amp;&amp; sudo bash install.sh</text>
+  <line x1="180" y1="128" x2="213" y2="128" stroke="#334155" stroke-width="2" marker-end="url(#b)"/>
+  <line x1="374" y1="128" x2="407" y2="128" stroke="#334155" stroke-width="2" marker-end="url(#b)"/>
+  <line x1="588" y1="128" x2="621" y2="128" stroke="#334155" stroke-width="2" marker-end="url(#b)"/>
+  <line x1="762" y1="128" x2="795" y2="128" stroke="#334155" stroke-width="2" marker-end="url(#b)"/>
+
+  <text x="30" y="212" font-size="12" fill="#64748b">The commands EdgeShell runs on each node, step by step (the sudo password goes over stdin, never on a command line):</text>
+  <rect x="30" y="226" width="880" height="42" rx="8" fill="#fff" stroke="#e2e8f0"/>
+  <text x="44" y="252" font-size="12" fill="#0f172a" font-family="monospace">git clone --depth 1 https://github.com/855princekumar/OpenRemoteGUI.git &amp;&amp; cd OpenRemoteGUI &amp;&amp; sudo bash install.sh</text>
 </svg>

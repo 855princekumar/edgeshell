@@ -1,86 +1,96 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 470" font-family="Segoe UI,Roboto,Helvetica,Arial,sans-serif">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 510" font-family="Segoe UI,Roboto,Helvetica,Arial,sans-serif">
   <defs>
     <linearGradient id="hdr" x1="0" y1="0" x2="1" y2="1">
       <stop offset="0" stop-color="#1a56db"/><stop offset="1" stop-color="#0f172a"/>
     </linearGradient>
-    <style>
-      .box{rx:10;stroke-width:1.5}
-      .t{font-size:13px;fill:#0f172a}.tt{font-size:15px;font-weight:700;fill:#0f172a}
-      .w{fill:#fff}.mut{font-size:11px;fill:#64748b}
-      .lbl{font-size:11px;fill:#475569}
-    </style>
-  </defs>
-  <rect width="900" height="470" fill="#f8fafc"/>
-  <text x="30" y="34" class="tt" font-size="18">EdgeShell Control Plane</text>
-  <text x="30" y="52" class="mut">Self-hosted fleet management for edge nodes over a private mesh</text>
-
-  <!-- Users -->
-  <rect x="30" y="80" width="180" height="90" rx="10" fill="#fff" stroke="#cbd5e1"/>
-  <text x="120" y="108" class="tt" text-anchor="middle">Operators</text>
-  <text x="120" y="130" class="mut" text-anchor="middle">Browser, HTTPS</text>
-  <text x="120" y="148" class="mut" text-anchor="middle">domain login, RBAC</text>
-
-  <!-- EC2 EdgeShell -->
-  <rect x="300" y="70" width="300" height="330" rx="12" fill="#fff" stroke="#1a56db" stroke-width="2"/>
-  <rect x="300" y="70" width="300" height="40" rx="12" fill="url(#hdr)"/>
-  <text x="450" y="96" class="w tt" text-anchor="middle" fill="#fff">EC2 host (Tailscale joined)</text>
-
-  <rect x="320" y="124" width="260" height="52" rx="8" fill="#eff6ff" stroke="#bfdbfe"/>
-  <text x="334" y="146" class="t" font-weight="700">Flask + Gunicorn</text>
-  <text x="334" y="164" class="lbl">Auth, RBAC, CSRF, sessions</text>
-
-  <rect x="320" y="184" width="260" height="52" rx="8" fill="#f0fdf4" stroke="#bbf7d0"/>
-  <text x="334" y="206" class="t" font-weight="700">Services</text>
-  <text x="334" y="224" class="lbl">SSH, Ansible, ORGUI, VPN, import</text>
-
-  <rect x="320" y="244" width="125" height="52" rx="8" fill="#fff7ed" stroke="#fed7aa"/>
-  <text x="334" y="266" class="t" font-weight="700">SQLite WAL</text>
-  <text x="334" y="284" class="lbl">to PG/MariaDB</text>
-
-  <rect x="455" y="244" width="125" height="52" rx="8" fill="#faf5ff" stroke="#e9d5ff"/>
-  <text x="469" y="266" class="t" font-weight="700">Watchdog</text>
-  <text x="469" y="284" class="lbl">/healthz + restart</text>
-
-  <rect x="320" y="304" width="260" height="76" rx="8" fill="#f8fafc" stroke="#e2e8f0"/>
-  <text x="334" y="326" class="t" font-weight="700">systemd</text>
-  <text x="334" y="344" class="lbl">edgeshell.service (always on)</text>
-  <text x="334" y="360" class="lbl">heartbeat.timer, watchdog.service</text>
-  <text x="334" y="376" class="lbl">manifest-based update / rollback</text>
-
-  <!-- Mesh -->
-  <rect x="660" y="80" width="210" height="60" rx="10" fill="#0f172a"/>
-  <text x="765" y="106" class="w" fill="#fff" text-anchor="middle" font-weight="700" font-size="13">Private mesh</text>
-  <text x="765" y="126" fill="#94a3b8" text-anchor="middle" font-size="11">Tailscale now, WireGuard later</text>
-
-  <!-- Nodes -->
-  <g>
-    <rect x="660" y="176" width="210" height="66" rx="10" fill="#fff" stroke="#059669"/>
-    <text x="675" y="200" class="t" font-weight="700">Raspberry Pi node</text>
-    <text x="675" y="218" class="lbl">SSH, metrics, Node-RED :1880</text>
-    <text x="675" y="234" class="lbl">OpenRemoteGUI :6080</text>
-  </g>
-  <g>
-    <rect x="660" y="256" width="210" height="66" rx="10" fill="#fff" stroke="#059669"/>
-    <text x="675" y="280" class="t" font-weight="700">Edge gateway</text>
-    <text x="675" y="298" class="lbl">Docker, sensors, PLC</text>
-    <text x="675" y="314" class="lbl">heartbeat every 15s</text>
-  </g>
-  <g>
-    <rect x="660" y="336" width="210" height="64" rx="10" fill="#fff" stroke="#94a3b8" stroke-dasharray="4 3"/>
-    <text x="675" y="360" class="t" font-weight="700">... N nodes</text>
-    <text x="675" y="378" class="lbl">bulk CSV import, fleet ops</text>
-  </g>
-
-  <!-- arrows -->
-  <line x1="210" y1="125" x2="300" y2="150" stroke="#1a56db" stroke-width="2" marker-end="url(#a)"/>
-  <line x1="600" y1="110" x2="660" y2="110" stroke="#0f172a" stroke-width="2" marker-end="url(#a)"/>
-  <line x1="765" y1="140" x2="765" y2="176" stroke="#059669" stroke-width="2" marker-end="url(#a)"/>
-  <line x1="765" y1="140" x2="765" y2="256" stroke="#059669" stroke-width="1.5" marker-end="url(#a)"/>
-  <defs>
     <marker id="a" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto">
       <path d="M0,0 L7,3 L0,6 Z" fill="#334155"/>
     </marker>
+    <marker id="g" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto">
+      <path d="M0,0 L7,3 L0,6 Z" fill="#059669"/>
+    </marker>
+    <style>
+      .t{font-size:13px;fill:#0f172a;font-weight:700}
+      .tt{font-size:15px;font-weight:700;fill:#0f172a}
+      .mut{font-size:11px;fill:#64748b}
+      .lbl{font-size:11px;fill:#475569}
+    </style>
   </defs>
-  <text x="215" y="118" class="lbl">HTTPS</text>
-  <text x="608" y="102" fill="#fff" font-size="10">SSH / Ansible</text>
+  <rect width="960" height="510" fill="#f8fafc"/>
+  <text x="30" y="34" class="tt" font-size="18">EdgeShell Control Plane</text>
+  <text x="30" y="52" class="mut">Self-hosted fleet management for edge nodes over a private mesh</text>
+
+  <!-- Operators -->
+  <rect x="30" y="92" width="170" height="96" rx="10" fill="#fff" stroke="#cbd5e1" stroke-width="1.5"/>
+  <text x="115" y="120" class="tt" text-anchor="middle">Operators</text>
+  <text x="115" y="142" class="mut" text-anchor="middle">Browser, phone or desktop</text>
+  <text x="115" y="160" class="mut" text-anchor="middle">password + 2FA</text>
+  <text x="115" y="176" class="mut" text-anchor="middle">roles, device limits</text>
+
+  <line x1="200" y1="150" x2="269" y2="150" stroke="#1a56db" stroke-width="2" marker-end="url(#a)"/>
+  <text x="234" y="142" class="lbl" text-anchor="middle">HTTPS</text>
+
+  <!-- EdgeShell host -->
+  <rect x="270" y="70" width="340" height="420" rx="12" fill="#fff" stroke="#1a56db" stroke-width="2"/>
+  <path d="M282,70 H598 A12,12 0 0 1 610,82 V110 H270 V82 A12,12 0 0 1 282,70 Z" fill="url(#hdr)"/>
+  <text x="440" y="96" class="tt" text-anchor="middle" fill="#fff" style="fill:#fff">EdgeShell host (Docker, on the tailnet)</text>
+
+  <rect x="290" y="124" width="300" height="52" rx="8" fill="#f1f5f9" stroke="#cbd5e1"/>
+  <text x="304" y="146" class="t">nginx</text>
+  <text x="304" y="164" class="lbl">only public port: TLS (Let's Encrypt), reverse proxy</text>
+
+  <rect x="290" y="186" width="300" height="52" rx="8" fill="#eff6ff" stroke="#bfdbfe"/>
+  <text x="304" y="208" class="t">Flask + Gunicorn</text>
+  <text x="304" y="226" class="lbl">pages, API, WebSocket terminals, CSRF, sessions</text>
+
+  <rect x="290" y="248" width="300" height="68" rx="8" fill="#f0fdf4" stroke="#bbf7d0"/>
+  <text x="304" y="270" class="t">Background services</text>
+  <text x="304" y="288" class="lbl">metrics collector: every node every 30 s</text>
+  <text x="304" y="304" class="lbl">login policy, jobs, exports, hourly history</text>
+
+  <rect x="290" y="326" width="145" height="56" rx="8" fill="#fff7ed" stroke="#fed7aa"/>
+  <text x="304" y="348" class="t">MariaDB</text>
+  <text x="304" y="366" class="lbl">nodes, history, audit</text>
+
+  <rect x="445" y="326" width="145" height="56" rx="8" fill="#faf5ff" stroke="#e9d5ff"/>
+  <text x="459" y="348" class="t">privacyIDEA</text>
+  <text x="459" y="366" class="lbl">2FA, internal only</text>
+
+  <rect x="290" y="392" width="300" height="82" rx="8" fill="#f8fafc" stroke="#e2e8f0"/>
+  <text x="304" y="414" class="t">Operations</text>
+  <text x="304" y="432" class="lbl">certbot renewal, health checks, auto restart</text>
+  <text x="304" y="448" class="lbl">fail2ban and key-only SSH on the host</text>
+  <text x="304" y="464" class="lbl">one Compose file, amd64 and arm64 image</text>
+
+  <!-- host to mesh -->
+  <line x1="610" y1="130" x2="689" y2="130" stroke="#0f172a" stroke-width="2" marker-end="url(#a)"/>
+  <text x="650" y="122" class="lbl" text-anchor="middle">SSH</text>
+  <text x="650" y="148" class="mut" text-anchor="middle">pooled</text>
+
+  <!-- Mesh -->
+  <rect x="690" y="90" width="240" height="80" rx="10" fill="#0f172a"/>
+  <text x="810" y="122" text-anchor="middle" font-weight="700" font-size="14" fill="#fff">Private mesh</text>
+  <text x="810" y="146" text-anchor="middle" font-size="11" fill="#94a3b8">Tailscale now, WireGuard later</text>
+
+  <!-- connector: a bus beside the nodes, one branch into each box -->
+  <line x1="710" y1="170" x2="710" y2="416" stroke="#059669" stroke-width="2"/>
+  <line x1="710" y1="236" x2="729" y2="236" stroke="#059669" stroke-width="2" marker-end="url(#g)"/>
+  <line x1="710" y1="326" x2="729" y2="326" stroke="#059669" stroke-width="2" marker-end="url(#g)"/>
+  <line x1="710" y1="416" x2="729" y2="416" stroke="#059669" stroke-width="2" marker-end="url(#g)"/>
+
+  <!-- Nodes -->
+  <rect x="730" y="200" width="200" height="72" rx="10" fill="#fff" stroke="#059669" stroke-width="1.5"/>
+  <text x="745" y="224" class="t">Raspberry Pi node</text>
+  <text x="745" y="242" class="lbl">SSH, metrics, Node-RED :1880</text>
+  <text x="745" y="258" class="lbl">OpenRemoteGUI :6080</text>
+
+  <rect x="730" y="290" width="200" height="72" rx="10" fill="#fff" stroke="#059669" stroke-width="1.5"/>
+  <text x="745" y="314" class="t">Edge gateway</text>
+  <text x="745" y="332" class="lbl">Docker, sensors, PLC</text>
+  <text x="745" y="348" class="lbl">checked every 30 s</text>
+
+  <rect x="730" y="380" width="200" height="72" rx="10" fill="#fff" stroke="#94a3b8" stroke-width="1.5" stroke-dasharray="4 3"/>
+  <text x="745" y="404" class="t">... N nodes</text>
+  <text x="745" y="422" class="lbl">CSV import, bulk login update</text>
+  <text x="745" y="438" class="lbl">categories, fleet operations</text>
 </svg>

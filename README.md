@@ -506,9 +506,14 @@ Full guide: [docs/DEPLOY-EC2.md](docs/DEPLOY-EC2.md).
 
 ![Architecture](docs/assets/architecture.svg)
 
-EdgeShell is a Flask application built with the app-factory pattern. Routes
-handle HTTP and permissions; all side effects (SSH, Ansible, VPN, email) live in
-`app/services`, so they are isolated and testable.
+EdgeShell is a Flask application built with the app-factory pattern. In the
+Docker stack, nginx is the only public container; the app, MariaDB and
+privacyIDEA sit on internal networks. Routes handle HTTP and permissions; all
+side effects (SSH, Ansible, VPN, email) live in `app/services`, so they are
+isolated and testable. A background collector keeps one SSH connection per
+node and checks every node every 30 seconds, so pages read its latest results
+instead of logging in to nodes themselves. More in
+[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
 ### Request lifecycle
 
@@ -565,11 +570,15 @@ separate open-source project by the same author: a self-hosted, browser-based
 remote desktop for Debian and Raspberry Pi. EdgeShell does not bundle it; it
 detects, installs, and opens it on each node.
 
-For each node EdgeShell checks whether OpenRemoteGUI is present (systemd unit,
-listening port, or install directory). If it is, the **Remote** button opens it.
-If not, you can install it over SSH with one click. Fleet-wide installs run
-through Ansible, so every host reports success or failure individually. The
-source repository is configurable with `ORGUI_REPO`.
+For each node the background collector checks whether OpenRemoteGUI is
+installed (its install folder) and actually running (its page answers on port
+6080). If it is, the **Remote** button opens it. If not, **Install** runs the
+guided flow above: safety checks first (a node that fails one is skipped
+untouched), then `git clone`, `cd` and `sudo bash install.sh` as separate steps
+with live output in the job window, then a check that the page answers.
+**Install on Fleet** goes one node at a time and stops at the first failure, so
+a problem cannot spread across production nodes. The source repository is
+configurable with `ORGUI_REPO`.
 
 ## Configuration
 
