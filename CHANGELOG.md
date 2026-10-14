@@ -2,7 +2,10 @@
 
 All notable changes are documented here. Format loosely follows Keep a Changelog.
 
-## [Unreleased]
+## [1.7.4] - 2026-10-14
+
+### Documentation
+- **Tailscale SSH on the nodes** ([docs/VPN-NETWORK.md](docs/VPN-NETWORK.md#tailscale-ssh-on-the-nodes)): why every node can show "login failed" while ping, Node-RED and the VPN page are fine; how to recognise it; the default `check` rule; that a matching `check` rule overrides `accept` whatever the order; three fixes (a non-overlapping accept rule, tags, or Tailscale SSH off); how to change the policy safely and verify it (`tailscale debug netmap`, a test login, root still checked); and that sudo still uses the node's password. Linked from the EC2 guide's troubleshooting table, the README's Tailscale step, and the messages on node cards and Node Fleet.
 
 ### Changed
 - **CI runs in two stages.** The gate (lint, secret scan, unit tests on Python 3.11 to 3.13, and the browser UI test with 1500 nodes on every screen size and zoom level) runs first; the image build and the amd64 and arm64 sandbox start only when it passed. The browser UI test is now a required check on `main`.
