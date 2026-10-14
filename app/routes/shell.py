@@ -20,12 +20,11 @@ import time
 from datetime import datetime, timedelta
 from urllib.parse import urlparse
 
-import paramiko
 from flask import request, session
 from flask_login import current_user
 
 from app import db, sock
-from app.services import collector
+from app.services import collector, ssh_service
 from app.services.activity_service import log_activity
 
 MAX_SESSIONS = 12
@@ -91,16 +90,14 @@ def node_shell(ws, node_id):
 
     cols = _clamp(request.args.get('cols'), 20, 500, 120)
     rows = _clamp(request.args.get('rows'), 5, 200, 32)
-    client = paramiko.SSHClient()
-    client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+    client = None
     started = time.time()
     chan = None
     try:
         ws.send(f"\x1b[90mConnecting to {target['username']}@{target['ip']}:{target['port']}...\x1b[0m\r\n")
         try:
-            client.connect(target['ip'], port=target['port'], username=target['username'],
-                           password=target['password'], timeout=10, banner_timeout=10,
-                           auth_timeout=10, allow_agent=False, look_for_keys=False)
+            client = ssh_service.connect(target['ip'], target['port'], target['username'],
+                                         target['password'], timeout=10)
         except Exception as e:
             kind, message = collector.classify(e)
             ws.send(f'\r\n\x1b[31m{message}\x1b[0m\r\n')
@@ -162,7 +159,8 @@ def node_shell(ws, node_id):
             except Exception:
                 pass
         try:
-            client.close()
+            if client is not None:
+                client.close()
         except Exception:
             pass
         with _guard:

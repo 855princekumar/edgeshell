@@ -213,6 +213,7 @@ Docker Hub page has the upgrade steps.
 | "Two-factor verification service is not responding" | `docker compose ps privacyidea` and `docker compose logs privacyidea` |
 | Locked out of SSH by fail2ban | From the AWS console (EC2 Instance Connect or Session Manager): `sudo fail2ban-client set sshd unbanip <ip>` |
 | VPN page says status unavailable | Tailscale is not running on the host: `sudo tailscale up` |
+| Every node turns "login failed" at once, the message mentions Tailscale SSH | The nodes run Tailscale SSH (`tailscale set --ssh`), which answers port 22 on their tailnet address and ignores the password. A policy rule with action `check` makes it wait for a browser approval that EdgeShell can never give, and the approval lapses after the check period (12 hours by default). Tag the EdgeShell server (for example `tag:edgeshell`) and add a rule `{"action": "accept", "src": ["tag:edgeshell"], "dst": ["tag:<nodes>"], "users": ["<node user>"]}` in the Tailscale admin console, or turn Tailscale SSH off on the nodes (`sudo tailscale set --ssh=false`) so port 22 reaches their own SSH server. Test from the host: `ssh <node user>@<node tailnet IP>` must not print "requires an additional check" |
 
 ---
 

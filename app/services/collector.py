@@ -183,12 +183,8 @@ class _Pool:
             self.drop(t['id'])
         elif entry:
             self.drop(t['id'])
-        client = paramiko.SSHClient()
-        client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-        client.connect(hostname=t['ip'], port=t['port'], username=t['username'],
-                       password=t['password'], timeout=CONNECT_TIMEOUT_S,
-                       banner_timeout=CONNECT_TIMEOUT_S, auth_timeout=CONNECT_TIMEOUT_S,
-                       allow_agent=False, look_for_keys=False)
+        from app.services.ssh_service import connect
+        client = connect(t['ip'], t['port'], t['username'], t['password'], CONNECT_TIMEOUT_S)
         client.get_transport().set_keepalive(20)
         self._conns[t['id']] = (self.key(t), client)
         return client, True
@@ -210,6 +206,9 @@ POOL = _Pool()
 
 def classify(exc):
     """('auth' | 'unreachable' | 'error', human message) for an exception."""
+    from app.services.ssh_service import TailscaleCheckRequired, TAILSCALE_CHECK_MESSAGE
+    if isinstance(exc, TailscaleCheckRequired):
+        return 'auth', TAILSCALE_CHECK_MESSAGE
     if isinstance(exc, paramiko.AuthenticationException):
         return 'auth', 'Authentication failed: check the SSH username and password'
     if isinstance(exc, (socket.timeout, TimeoutError)):

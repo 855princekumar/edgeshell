@@ -2,6 +2,12 @@
 
 All notable changes are documented here. Format loosely follows Keep a Changelog.
 
+## [1.7.1] - 2026-10-14
+
+### Fixed
+- **File handle leak in SSH connections.** A login that failed (wrong password, time-out, refused) left its half-open connection and transport thread behind. With a few dozen nodes failing every 10 minutes the web process ran out of file handles after about three hours, then crashed and restarted, and new connections failed. Every SSH connection now goes through one helper that closes it on any failure.
+- **Tailscale SSH is named as the cause.** When port 22 of a node is answered by Tailscale SSH and the login is refused or held for a browser check (an SSH policy rule with action `check`), the card says so instead of "check the SSH username and password", which no password change can fix. See the EC2 guide's troubleshooting table.
+
 ## [1.7.0] - 2026-10-14
 
 ### Added
