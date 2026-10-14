@@ -452,6 +452,56 @@ def test_page_scripts_parse(app, client):
                 assert res.returncode == 0, f'{page} script {i}: {res.stderr.strip()[:400]}'
 
 
+def test_no_page_defines_a_function_twice(app, client):
+    """All inline scripts of a page share one scope, so a second
+    `function x()` silently replaces the first. Monitoring once had an old
+    pollAll that collected every node live over SSH every 15 seconds, one
+    request per node, hidden behind the fast one-request version."""
+    import collections
+    import re
+    _login(app, client)
+    pages = ['/', '/nodes/', '/monitoring/', '/terminal/', '/files/', '/logs/', '/logs/activity',
+             '/users/', '/users/add', '/account/', '/tailscale/', '/settings/', '/issues/',
+             '/nodes/add', '/nodes/import']
+    decl = re.compile(r'(?:async\s+)?function\s+([A-Za-z_$][\w$]*)\s*\(')
+
+    def top_level_functions(js):
+        """Names declared at brace depth 0 (strings, templates, comments skipped)."""
+        out, depth, i, n = [], 0, 0, len(js)
+        while i < n:
+            c = js[i]
+            if js.startswith('//', i):
+                i = js.find('\n', i)
+                i = n if i < 0 else i
+                continue
+            if js.startswith('/*', i):
+                i = js.find('*/', i + 2)
+                i = n if i < 0 else i + 2
+                continue
+            if c in '\'"`':
+                j = i + 1
+                while j < n and js[j] != c:
+                    j += 2 if js[j] == '\\' else 1
+                i = j + 1
+                continue
+            if c == '{':
+                depth += 1
+            elif c == '}':
+                depth -= 1
+            elif depth == 0 and js.startswith('function', i):
+                m = decl.match(js, i)
+                if m:
+                    out.append(m.group(1))
+            i += 1
+        return out
+
+    for page in pages:
+        html = client.get(page).get_data(as_text=True)
+        names = [f for js in re.findall(r'<script>(.*?)</script>', html, re.S) for f in top_level_functions(js)]
+        twice = [n for n, c in collections.Counter(names).items() if c > 1]
+        assert not twice, f'{page} defines {twice} more than once'
+
+
 def test_large_import_stays_out_of_the_cookie_and_checks_in_background(app, client, monkeypatch):
     """Rows used to live in the session cookie: a few hundred nodes overflowed
     the proxy header limit (502). They now wait on the server, and the SSH

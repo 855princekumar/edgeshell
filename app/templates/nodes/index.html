@@ -379,6 +379,12 @@ document.addEventListener('change', e => { if (e.target.classList && e.target.cl
 
 function esDialog(title, bodyHtml, okLabel, okClass) {
     const old = document.getElementById('esBulkDlg'); if (old) old.remove();
+    // An open side panel (Recycle Bin) keeps keyboard focus inside itself, so
+    // nothing could be typed in this dialog: close it first.
+    document.querySelectorAll('.offcanvas.show').forEach(el => {
+        const oc = window.bootstrap && bootstrap.Offcanvas.getInstance(el);
+        if (oc) oc.hide();
+    });
     const o = document.createElement('div');
     o.id = 'esBulkDlg';
     o.style.cssText = 'position:fixed;inset:0;z-index:99996;background:rgba(15,23,42,.55);display:flex;align-items:center;justify-content:center;padding:16px';
@@ -394,6 +400,8 @@ function esDialog(title, bodyHtml, okLabel, okClass) {
     const close = () => o.remove();
     o.querySelector('#esDlgCancel').addEventListener('click', close);
     o.addEventListener('click', e => { if (e.target === o) close(); });
+    const first = o.querySelector('.es-dlg-body input');
+    if (first) setTimeout(() => first.focus(), 50);
     return {el: o, close: close, ok: o.querySelector('#esDlgOk'), msg: o.querySelector('#esDlgMsg')};
 }
 function namesOf(ids) {

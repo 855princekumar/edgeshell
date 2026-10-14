@@ -164,3 +164,19 @@ def test_importing_a_deleted_node_restores_it_with_the_new_details(app, client, 
         assert Node.query.filter_by(name='pi-new').count() == 1
 
 
+
+
+def test_monitoring_auto_refresh_choice_is_kept_on_the_account(app, client):
+    page = client.get('/monitoring/').get_data(as_text=True)
+    assert 'id="autoRefreshToggle" checked' in page                  # default: on
+    assert client.post('/account/prefs', json={'monitoring_auto_refresh': False}).get_json()['success']
+    assert 'id="autoRefreshToggle" checked' not in client.get('/monitoring/').get_data(as_text=True)
+    client.get('/logout')
+    again = app.test_client()                                        # a new sign-in, another browser
+    again.post('/login', data={'username': 'admin', 'password': 'admin123'})
+    assert 'id="autoRefreshToggle" checked' not in again.get('/monitoring/').get_data(as_text=True)
+    op = app.test_client()                                           # other users keep their own
+    op.post('/login', data={'username': 'op', 'password': 'Operator-pass-1'})
+    assert 'id="autoRefreshToggle" checked' in op.get('/monitoring/').get_data(as_text=True)
+    assert again.post('/account/prefs', json={'is_admin': True}).status_code == 400
+    assert again.post('/account/prefs', json={'monitoring_auto_refresh': 'no'}).status_code == 400
