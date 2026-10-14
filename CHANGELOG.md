@@ -26,6 +26,9 @@ Fixes from an end-to-end review before release:
 - A delete refused because the lake is behind changes nothing (no rename, no revoked sessions, no 2FA removal).
 - The Docker Hub description action is pinned to a commit.
 
+### Docs
+- Decision records 0008 to 0012: why the data lake, the API control model, the fleet safety guards, CI as the release gate, and the CIA triad security model.
+
 ## [1.8.0] - 2026-10-15
 
 ### Added
