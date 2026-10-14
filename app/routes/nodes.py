@@ -152,14 +152,150 @@ def restore(node_id):
     return redirect(url_for('nodes.index'))
 
 
+def _purge_nodes(nodes):
+    """Delete nodes for good, with their history rows (which reference them)."""
+    from app.models import MetricsHourly, SystemMetrics
+    from app.services.collector import POOL
+    ids = [n.id for n in nodes]
+    if not ids:
+        return 0
+    SystemMetrics.query.filter(SystemMetrics.node_id.in_(ids)).delete(synchronize_session=False)
+    MetricsHourly.query.filter(MetricsHourly.node_id.in_(ids)).delete(synchronize_session=False)
+    for n in nodes:
+        POOL.drop(n.id)
+        db.session.delete(n)
+    db.session.commit()
+    return len(ids)
+
+
+def _ids(data, limit=5000):
+    try:
+        ids = [int(i) for i in (data.get('node_ids') or [])][:limit]
+    except (TypeError, ValueError):
+        ids = []
+    return ids
+
+
+# ── Bulk actions on selected nodes ───────────────────────────────────────────
+@nodes_bp.route('/bulk/delete', methods=['POST'])
+@login_required
+@operator_required
+def bulk_delete():
+    """Move the selected nodes to the recycle bin (undo: Restore)."""
+    from app.services.collector import POOL
+    ids = _ids(request.get_json(silent=True) or {})
+    nodes = Node.query.filter(Node.id.in_(ids), Node.is_deleted.isnot(True)).all() if ids else []
+    if not nodes:
+        return jsonify({'success': False, 'message': 'Select at least one node.'}), 400
+    now = datetime.utcnow()
+    for n in nodes:
+        n.is_deleted, n.deleted_at, n.is_active = True, now, False
+        POOL.drop(n.id)
+    db.session.commit()
+    log_activity('Bulk delete (recycle bin)', response=f'{len(nodes)} node(s): '
+                 + ', '.join(n.name for n in nodes[:20]) + (' ...' if len(nodes) > 20 else ''),
+                 status='success')
+    return jsonify({'success': True, 'count': len(nodes),
+                    'message': f'Moved {len(nodes)} node(s) to the recycle bin. Restore brings them back.'})
+
+
+@nodes_bp.route('/bulk/restore', methods=['POST'])
+@login_required
+@operator_required
+def bulk_restore():
+    data = request.get_json(silent=True) or {}
+    q = Node.query.filter(Node.is_deleted.is_(True))
+    if not data.get('all'):
+        q = q.filter(Node.id.in_(_ids(data) or [0]))
+    nodes = q.all()
+    for n in nodes:
+        n.is_deleted, n.deleted_at, n.is_active = False, None, True
+    db.session.commit()
+    if nodes:
+        from app.services.collector import COLLECTOR
+        COLLECTOR.kick([n.id for n in nodes])
+    log_activity('Bulk restore', response=f'{len(nodes)} node(s)', status='success')
+    return jsonify({'success': True, 'count': len(nodes), 'message': f'Restored {len(nodes)} node(s).'})
+
+
+@nodes_bp.route('/bulk/purge', methods=['POST'])
+@login_required
+@admin_required
+def bulk_purge():
+    """Delete recycle-bin nodes for good (typed confirmation)."""
+    data = request.get_json(silent=True) or {}
+    if data.get('confirm') != 'DELETE':
+        return jsonify({'success': False, 'message': 'Type DELETE to confirm.'}), 400
+    q = Node.query.filter(Node.is_deleted.is_(True))           # only from the recycle bin
+    if not data.get('all'):
+        q = q.filter(Node.id.in_(_ids(data) or [0]))
+    nodes = q.all()
+    names = [n.name for n in nodes]
+    count = _purge_nodes(nodes)
+    log_activity('Bulk purge (permanent)', response=f'{count} node(s): ' + ', '.join(names[:20])
+                 + (' ...' if count > 20 else ''), status='warning')
+    return jsonify({'success': True, 'count': count, 'message': f'Deleted {count} node(s) permanently.'})
+
+
+def _check_logins(node_ids):
+    """Background job: one login per node with its new details."""
+    from app.services.collector import COLLECTOR
+    results = COLLECTOR.run_cycle(node_ids=node_ids, force=True, manual=True)
+    return sum(1 for r in results.values() if r.get('ok'))
+
+
+@nodes_bp.route('/bulk/credentials', methods=['POST'])
+@login_required
+@operator_required
+def bulk_credentials():
+    """Set the SSH username, password and/or port of the selected nodes, then
+    check each once in the background. Empty fields keep the current value."""
+    from app.services import login_policy
+    from app.services.collector import POOL
+    data = request.get_json(silent=True) or {}
+    ids = _ids(data)
+    username = (data.get('username') or '').strip()
+    password = data.get('password') or ''
+    port = str(data.get('ssh_port') or '').strip()
+    if not ids:
+        return jsonify({'success': False, 'message': 'Select at least one node.'}), 400
+    if not (username or password or port):
+        return jsonify({'success': False, 'message': 'Enter a username, a password or a port to change.'}), 400
+    if port and (not port.isdigit() or not 0 < int(port) < 65536):
+        return jsonify({'success': False, 'message': 'The SSH port must be 1 to 65535.'}), 400
+    if len(username) > 64 or len(password) > 256:
+        return jsonify({'success': False, 'message': 'Username or password is too long.'}), 400
+    nodes = Node.query.filter(Node.id.in_(ids), Node.is_deleted.isnot(True)).all()
+    for n in nodes:
+        if username:
+            n.username = username
+        if password:
+            n.password = password
+        if port:
+            n.ssh_port = int(port)
+        login_policy.resume(n)                         # new details: one attempt each
+        n.updated_at = datetime.utcnow()
+        POOL.drop(n.id)
+    db.session.commit()
+    changed = ', '.join(f for f, v in (('username', username), ('password', password), ('port', port)) if v)
+    log_activity('Bulk login update', response=f'{changed} on {len(nodes)} node(s)', status='success')
+    jid = _jobs.run_batches(
+        'login-check', f'Checking the new login on {len(nodes)} node(s)', current_user.id,
+        [n.id for n in nodes], _check_logins,
+        summary=lambda j: f"{j['ok']} of {j['total']} node(s) log in with the new details"
+                          + (f"; {j['failed']} still fail (they pause again)" if j['failed'] else ''))
+    return jsonify({'success': True, 'count': len(nodes), 'job_id': jid,
+                    'message': f'Updated {changed} on {len(nodes)} node(s). Each is checked once now; '
+                               'progress shows at the bottom of the page.'})
+
+
 @nodes_bp.route('/<int:node_id>/purge', methods=['POST'])
 @login_required
 @admin_required
 def purge(node_id):
     node = Node.query.get_or_404(node_id)
     name = node.name
-    db.session.delete(node)
-    db.session.commit()
+    _purge_nodes([node])
     log_activity('Purge Node (permanent)', node=name, status='success')
     flash(f'Node "{name}" permanently deleted.', 'warning')
     return redirect(url_for('nodes.index'))
@@ -428,8 +564,24 @@ def bulk_import_commit():
         host_override=request.form.get('host_override', '').strip())
 
     existing = {name for (name,) in db.session.query(Node.name)}
-    created, skipped, new_nodes = 0, 0, []
+    binned = {n.name: n for n in Node.query.filter(Node.is_deleted.is_(True))}
+    created, skipped, revived, new_nodes = 0, 0, 0, []
     for rec in nodes_data:
+        if rec['name'] in binned:
+            # re-adding a deleted node: restore it with the imported details
+            # (keeps its history) instead of skipping it
+            node = binned.pop(rec['name'])
+            pw = rec.pop('password', '')
+            for k, v in rec.items():
+                if k in Node.__table__.columns.keys() and k not in ('id', 'name'):
+                    setattr(node, k, v)
+            if pw:
+                node.password = pw
+            node.is_deleted, node.deleted_at, node.is_active = False, None, True
+            node.status, node.login_paused_at, node.login_pause_reason = 'unknown', None, None
+            new_nodes.append(node)
+            revived += 1
+            continue
         if rec['name'] in existing:
             skipped += 1
             continue
@@ -444,13 +596,19 @@ def bulk_import_commit():
         created += 1
     db.session.commit()
     _unstage(_session.pop('import_token', None))
-    log_activity('Bulk import', response=f'{created} created, {skipped} skipped',
-                 status='success')
+    log_activity('Bulk import', response=f'{created} created, {revived} restored from the recycle bin, '
+                 f'{skipped} skipped', status='success')
 
     msg = f'Imported {created} node(s), skipped {skipped} already present.'
+    if revived:
+        msg = (f'Imported {created} node(s) and restored {revived} from the recycle bin with the new details; '
+               f'skipped {skipped} already present.')
     if new_nodes:
+        from app.services.collector import POOL
+        for n in new_nodes:
+            POOL.drop(n.id)
         _jobs.run_batches(
-            'import-check', f'Checking {created} imported node(s)', current_user.id,
+            'import-check', f'Checking {len(new_nodes)} imported node(s)', current_user.id,
             [n.id for n in new_nodes], _check_imported_nodes,
             summary=lambda j: f"{j['ok']} of {j['total']} imported node(s) log in over SSH"
                               + (f"; {j['failed']} need attention (see their cards)" if j['failed'] else ''))

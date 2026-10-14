@@ -62,12 +62,26 @@
 </div>
 {% endif %}
 
+{% if current_user.can_execute() %}
+<div id="bulkBar" class="card mb-4" style="display:none;position:sticky;top:calc(var(--topbar-h) + 8px);z-index:20;border-left:4px solid var(--primary)">
+    <div class="card-body" style="padding:10px 16px;display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+        <span class="fw-semibold" id="bulkCount">0 selected</span>
+        <span class="text-xs text-muted" id="bulkHint">only nodes shown by the filters</span>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-left:auto">
+            <button type="button" class="btn btn-sm btn-outline" id="bulkLoginBtn"><i class="bi bi-key"></i> Edit login</button>
+            <button type="button" class="btn btn-sm btn-danger" id="bulkDeleteBtn"><i class="bi bi-trash"></i> Delete</button>
+            <button type="button" class="btn btn-sm btn-outline" id="bulkClearBtn">Clear</button>
+        </div>
+    </div>
+</div>
+{% endif %}
+
 <!-- Filter/Search Bar -->
 <div class="card mb-6">
     <div class="card-body" style="padding:14px 18px">
         <div class="flex gap-3 items-center flex-wrap">
             <div class="flex items-center gap-2">
-                <input type="checkbox" id="selectAll" onchange="selectAllNodes(this.checked)" style="width:16px;height:16px;accent-color:var(--primary)">
+                <input type="checkbox" id="selectAll" onchange="selectVisibleNodes(this.checked)" style="width:16px;height:16px;accent-color:var(--primary)">
                 <label for="selectAll" style="font-size:13px;font-weight:500;cursor:pointer">Select All</label>
             </div>
             <input type="text" id="nodeSearch" placeholder="Search nodes..." class="form-control" style="max-width:220px" oninput="filterNodes()">
@@ -216,7 +230,7 @@
             <button class="btn btn-outline btn-xs" onclick="toggleNode({{ node.id }}, this)" data-active="{{ node.is_active|lower }}">
                 {% if node.is_active %}<i class="bi bi-pause"></i>{% else %}<i class="bi bi-play"></i>{% endif %}
             </button>
-            <form method="POST" action="{{ url_for('nodes.delete', node_id=node.id) }}" style="margin-left:auto" onsubmit="return confirm('Move node {{ node.name }} to the recycle bin?')">
+            <form method="POST" action="{{ url_for('nodes.delete', node_id=node.id) }}" style="margin-left:auto" onsubmit="return confirm('Move node ' + {{ node.name|tojson|forceescape }} + ' to the recycle bin?')">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                 <button type="submit" class="btn btn-danger btn-xs"><i class="bi bi-trash"></i></button>
             </form>
@@ -248,7 +262,16 @@
   </div>
   <div class="offcanvas-body">
     {% if deleted %}
-    <p class="text-muted text-sm">Deleted nodes keep their details here. Revive puts a node back in the fleet in one click.</p>
+    <p class="text-muted text-sm">Deleted nodes keep their details here. Revive puts a node back in the fleet in one click.
+      Importing a node with the same name also brings it back, with the imported details.</p>
+    {% if current_user.can_execute() %}
+    <div class="flex gap-2 mb-3" style="flex-wrap:wrap">
+      <button type="button" class="btn btn-primary btn-sm" id="binRestoreAll"><i class="bi bi-arrow-counterclockwise"></i> Restore all ({{ deleted|length }})</button>
+      {% if current_user.is_admin() %}
+      <button type="button" class="btn btn-danger btn-sm" id="binPurgeAll" style="margin-left:auto"><i class="bi bi-x-octagon"></i> Delete all permanently</button>
+      {% endif %}
+    </div>
+    {% endif %}
     {% for node in deleted %}
     <div class="card mb-3">
       <div class="card-body" style="padding:12px 14px">
@@ -274,7 +297,7 @@
           </form>
           {% if current_user.is_admin() %}
           <form method="POST" action="{{ url_for('nodes.purge', node_id=node.id) }}" style="margin-left:auto"
-                onsubmit="return confirm('Permanently delete {{ node.name }}? This cannot be undone.')">
+                onsubmit="return confirm('Permanently delete ' + {{ node.name|tojson|forceescape }} + '? This cannot be undone.')">
             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <button type="submit" class="btn btn-danger btn-xs" title="Delete forever"><i class="bi bi-x-octagon"></i></button>
           </form>
@@ -333,6 +356,124 @@
 
 {% block extra_js %}
 <script>
+// ── Bulk actions on the selected (and visible) nodes ─────────────────────────
+function visibleCards() {
+    return [...document.querySelectorAll('.node-card')].filter(c => c.style.display !== 'none');
+}
+function selectedIds() {
+    return visibleCards().map(c => c.querySelector('.node-checkbox')).filter(cb => cb && cb.checked)
+        .map(cb => parseInt(cb.value));
+}
+function selectVisibleNodes(checked) {          // the filters decide what "all" means
+    document.querySelectorAll('.node-checkbox').forEach(cb => { cb.checked = false; });
+    if (checked) visibleCards().forEach(c => { const cb = c.querySelector('.node-checkbox'); if (cb) cb.checked = true; });
+    updateBulkBar();
+}
+function updateBulkBar() {
+    const bar = document.getElementById('bulkBar'); if (!bar) return;
+    const n = selectedIds().length;
+    bar.style.display = n ? '' : 'none';
+    document.getElementById('bulkCount').textContent = n + ' node(s) selected';
+}
+document.addEventListener('change', e => { if (e.target.classList && e.target.classList.contains('node-checkbox')) updateBulkBar(); });
+
+function esDialog(title, bodyHtml, okLabel, okClass) {
+    const old = document.getElementById('esBulkDlg'); if (old) old.remove();
+    const o = document.createElement('div');
+    o.id = 'esBulkDlg';
+    o.style.cssText = 'position:fixed;inset:0;z-index:99996;background:rgba(15,23,42,.55);display:flex;align-items:center;justify-content:center;padding:16px';
+    o.innerHTML = '<div class="es-dlg" style="background:#fff;border-radius:14px;width:100%;max-width:480px;max-height:calc(100vh - 32px);overflow:auto;box-shadow:0 10px 40px rgba(0,0,0,.25)">'
+        + '<div style="padding:18px 20px;border-bottom:1px solid #e5e7eb;font-size:17px;font-weight:700"></div>'
+        + '<div style="padding:16px 20px;display:grid;gap:12px" class="es-dlg-body">' + bodyHtml + '<div class="small" id="esDlgMsg" style="overflow-wrap:anywhere"></div></div>'
+        + '<div style="padding:14px 20px;border-top:1px solid #e5e7eb;display:flex;gap:10px;justify-content:flex-end;flex-wrap:wrap">'
+        + '<button type="button" class="btn btn-sm btn-outline" id="esDlgCancel">Cancel</button>'
+        + '<button type="button" class="btn btn-sm ' + okClass + '" id="esDlgOk"></button></div></div>';
+    o.querySelector('.es-dlg > div').textContent = title;
+    o.querySelector('#esDlgOk').textContent = okLabel;
+    document.body.appendChild(o);
+    const close = () => o.remove();
+    o.querySelector('#esDlgCancel').addEventListener('click', close);
+    o.addEventListener('click', e => { if (e.target === o) close(); });
+    return {el: o, close: close, ok: o.querySelector('#esDlgOk'), msg: o.querySelector('#esDlgMsg')};
+}
+function namesOf(ids) {
+    const names = ids.map(id => (document.querySelector('#node-' + id + ' .node-name') || {}).textContent || ('#' + id))
+        .map(s => s.trim());
+    return names.slice(0, 8).join(', ') + (names.length > 8 ? ' and ' + (names.length - 8) + ' more' : '');
+}
+function postJSON(url, body) {
+    return apiPost(url, body).then(r => r.json().then(d => ({ok: r.ok && d.success !== false, d: d})));
+}
+function bulkDelete() {
+    const ids = selectedIds(); if (!ids.length) return;
+    const d = esDialog('Delete ' + ids.length + ' node(s)?',
+        '<div class="small">They move to the Recycle Bin: monitoring and SSH to them stop, nothing on the nodes changes, '
+        + 'and Restore (or importing them again) brings them back.</div><div class="small text-muted" id="esDelNames"></div>',
+        'Move to Recycle Bin', 'btn-danger');
+    d.el.querySelector('#esDelNames').textContent = namesOf(ids);
+    d.ok.addEventListener('click', () => {
+        d.ok.disabled = true;
+        postJSON('/nodes/bulk/delete', {node_ids: ids}).then(({ok, d: r}) => {
+            if (!ok) { d.ok.disabled = false; d.msg.textContent = r.message || 'Failed'; return; }
+            showToast(r.message, 'success'); setTimeout(() => location.reload(), 600);
+        });
+    });
+}
+function bulkLogin() {
+    const ids = selectedIds(); if (!ids.length) return;
+    const d = esDialog('Edit login of ' + ids.length + ' node(s)',
+        '<div class="small text-muted" id="esLoginNames"></div>'
+        + '<div class="small">Fill in only what changes; empty fields keep each node\'s current value. '
+        + 'Each node is then checked once with the new details.</div>'
+        + '<label class="small fw-semibold">SSH username<input class="form-control form-control-sm mt-1" id="blUser" autocomplete="off" maxlength="64" placeholder="keep current"></label>'
+        + '<label class="small fw-semibold">SSH password<div style="display:flex;gap:6px;margin-top:4px">'
+        + '<input class="form-control form-control-sm" id="blPass" type="password" autocomplete="new-password" maxlength="256" placeholder="keep current">'
+        + '<button type="button" class="btn btn-sm btn-outline" id="blShow" title="Show or hide"><i class="bi bi-eye"></i></button></div></label>'
+        + '<label class="small fw-semibold">SSH port<input class="form-control form-control-sm mt-1" id="blPort" inputmode="numeric" maxlength="5" placeholder="keep current"></label>',
+        'Save and check', 'btn-primary');
+    d.el.querySelector('#esLoginNames').textContent = namesOf(ids);
+    d.el.querySelector('#blShow').addEventListener('click', () => {
+        const p = d.el.querySelector('#blPass'); p.type = p.type === 'password' ? 'text' : 'password';
+    });
+    d.ok.addEventListener('click', () => {
+        const body = {node_ids: ids, username: d.el.querySelector('#blUser').value.trim(),
+                      password: d.el.querySelector('#blPass').value, ssh_port: d.el.querySelector('#blPort').value.trim()};
+        if (!body.username && !body.password && !body.ssh_port) { d.msg.textContent = 'Enter a username, a password or a port.'; return; }
+        d.ok.disabled = true;
+        postJSON('/nodes/bulk/credentials', body).then(({ok, d: r}) => {
+            d.ok.disabled = false;
+            if (!ok) { d.msg.textContent = r.message || 'Failed'; return; }
+            d.close(); showToast(r.message, 'success');
+        });
+    });
+}
+document.addEventListener('DOMContentLoaded', () => {
+    const on = (id, fn) => { const b = document.getElementById(id); if (b) b.addEventListener('click', fn); };
+    on('bulkDeleteBtn', bulkDelete);
+    on('bulkLoginBtn', bulkLogin);
+    on('bulkClearBtn', () => { document.getElementById('selectAll').checked = false; selectVisibleNodes(false); });
+    on('binRestoreAll', () => {
+        postJSON('/nodes/bulk/restore', {all: true}).then(({ok, d: r}) => {
+            showToast(r.message || 'Failed', ok ? 'success' : 'danger'); if (ok) setTimeout(() => location.reload(), 600);
+        });
+    });
+    on('binPurgeAll', () => {
+        const d = esDialog('Delete every node in the Recycle Bin permanently?',
+            '<div class="small">This cannot be undone: the nodes and their monitoring history are removed. '
+            + 'Type <b>DELETE</b> to confirm.</div><input class="form-control form-control-sm" id="bpConfirm" autocomplete="off">',
+            'Delete permanently', 'btn-danger');
+        d.ok.addEventListener('click', () => {
+            const c = d.el.querySelector('#bpConfirm').value.trim();
+            if (c !== 'DELETE') { d.msg.textContent = 'Type DELETE to confirm.'; return; }
+            d.ok.disabled = true;
+            postJSON('/nodes/bulk/purge', {all: true, confirm: c}).then(({ok, d: r}) => {
+                if (!ok) { d.ok.disabled = false; d.msg.textContent = r.message || 'Failed'; return; }
+                showToast(r.message, 'success'); setTimeout(() => location.reload(), 600);
+            });
+        });
+    });
+});
+
 function testNode(id, bulk) {
     document.getElementById(`spinner-${id}`).style.display = 'inline-block';
     document.getElementById(`wifiicon-${id}`).style.display = 'none';
@@ -389,13 +530,13 @@ function toggleNode(id, btn) {
 }
 
 function testSelectedNodes() {
-    const ids = getSelectedNodeIds();
+    const ids = selectedIds();
     if (!ids.length) { showToast('Select at least one node', 'danger'); return; }
     ids.forEach(id => testNode(id));
 }
 
 function restartSelected() {
-    const ids = getSelectedNodeIds();
+    const ids = selectedIds();
     if (!ids.length) { showToast('Select at least one node', 'danger'); return; }
     if (!confirm(`Restart ${ids.length} node(s)?`)) return;
     apiPost('/terminal/restart', { node_ids: ids })
@@ -556,6 +697,7 @@ function filterNodes() {
                       (!arch || card.dataset.arch === arch);
         card.style.display = match ? '' : 'none';
     });
+    if (typeof updateBulkBar === 'function') updateBulkBar();
 }
 </script>
 {% endblock %}
