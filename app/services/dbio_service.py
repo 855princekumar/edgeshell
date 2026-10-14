@@ -11,6 +11,8 @@ snapshot is only as portable as the CREDENTIAL_KEY. Keep the key with the dump.
 import json
 from datetime import datetime, date
 
+from flask import current_app
+
 from app import db
 from app.models.user import PasswordResetRequest, User, UserMFA, UserSession
 from app.models.node import Node
@@ -83,6 +85,10 @@ def _fit(model, row):
 
 def import_snapshot(path, wipe=False, bulk=False):
     """bulk=True: fast executemany INSERT for an empty target (migration)."""
+    if (wipe or bulk) and current_app.config.get('LAKE_DATABASE_URL') and             any(db.session.query(m).first() is not None for m in (User, Node, SystemMetrics)):
+        # A wipe replicates: on a database with data it would empty the lake too.
+        raise RuntimeError('db-import with --wipe or bulk is refused while a data lake is configured '
+                           '(LAKE_DATABASE_URL): it would delete the lake as well.')
     with open(path) as f:
         snapshot = json.load(f)
     counts = {}

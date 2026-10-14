@@ -170,7 +170,12 @@ def _revoke(rows, reason, detail=None):
 
 
 def _prune(user):
-    """Drop rows that can no longer matter (idle-expired or long revoked)."""
+    """Drop rows that can no longer matter (idle-expired or long revoked).
+    With a data lake the collector does this on the hot database only, so the
+    lake keeps every session for the audit trail."""
+    from app.services import lake
+    if lake.configured():
+        return
     cutoff = datetime.utcnow() - _idle()
     (UserSession.query
      .filter(UserSession.user_id == user.id,
@@ -201,10 +206,18 @@ def start_session(user):
 
 
 def end_session(user):
-    """Logout: delete this browser's session row."""
+    """Logout: end this browser's session row (deleted without a data lake;
+    with one it is marked signed out, and housekeeping removes it from the hot
+    database only)."""
+    from app.services import lake
     sid = session.pop('sid', None)
     if user and sid:
-        UserSession.query.filter_by(user_id=user.id, token=sid).delete()
+        q = UserSession.query.filter_by(user_id=user.id, token=sid)
+        if lake.configured():
+            q.filter(UserSession.revoked_at.is_(None)).update(
+                {'revoked_at': datetime.utcnow(), 'revoked_reason': 'logout'}, synchronize_session=False)
+        else:
+            q.delete()
 
 
 def revoke_sessions(user, reason, keep_current=False):

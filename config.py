@@ -175,6 +175,7 @@ class Config:
     LAKE_DATABASE_URL = _normalize_db_uri(os.environ.get('LAKE_DATABASE_URL', '')) if os.environ.get(
         'LAKE_DATABASE_URL') else ''
     EVENT_RETENTION_DAYS = int(os.environ.get('EVENT_RETENTION_DAYS', '90'))
+    API_LOG_RETENTION_DAYS = int(os.environ.get('API_LOG_RETENTION_DAYS', '30'))   # hot DB; the lake keeps all
 
     # Background metrics collector (persistent SSH, parallel, off the request
     # path). Interval in seconds between fleet passes; workers = nodes polled

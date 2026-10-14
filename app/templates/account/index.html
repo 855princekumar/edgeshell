@@ -173,6 +173,8 @@
             <div class="row g-2">
               <div class="col-12 col-md-6"><label class="small fw-semibold">What it is for
                 <input class="form-control form-control-sm mt-1" name="name" maxlength="80" required placeholder="e.g. Grafana, ERP sync"></label></div>
+              <div class="col-12"><label class="small fw-semibold">Purpose (shown to administrators and in the logs)
+                <input class="form-control form-control-sm mt-1" name="purpose" minlength="5" maxlength="200" required placeholder="e.g. hourly sync of node status into the ERP"></label></div>
               <div class="col-6 col-md-3"><label class="small fw-semibold">Valid for (days)
                 <input class="form-control form-control-sm mt-1" name="expires_in_days" type="number" min="1" max="365" value="90"></label></div>
               <div class="col-6 col-md-3"><label class="small fw-semibold">Only from (optional)

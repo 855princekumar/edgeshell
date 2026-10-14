@@ -1,0 +1,166 @@
+{% extends "base.html" %}
+{% block title %}API Access{% endblock %}
+{% block content %}
+<div class="page-header">
+  <div>
+    <div class="page-title">API Access</div>
+    <div class="page-subtitle">Who may use the API, every credential, and every API request
+      (<a href="{{ url_for('api.openapi') }}">OpenAPI</a>, guide: docs/API.md)</div>
+  </div>
+</div>
+
+<div class="row g-4">
+  <div class="col-12 col-xl-5">
+    <div class="card h-100" id="apiPolicy">
+      <div class="card-body">
+        <h6 class="fw-bold mb-3"><i class="bi bi-sliders me-1"></i>Policy</h6>
+        <form method="POST" action="{{ url_for('users.api_policy') }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <div class="form-check form-switch mb-2">
+            <input class="form-check-input" type="checkbox" name="enabled" id="apiOn" {{ 'checked' if policy.enabled }}>
+            <label class="form-check-label fw-semibold" for="apiOn">API turned on</label>
+          </div>
+          <div class="small mb-2"><span class="fw-semibold">Allowed parts:</span>
+            {% for s in scopes %}
+            <label class="ms-2 text-nowrap"><input type="checkbox" name="scopes" value="{{ s }}" {{ 'checked' if s in policy.scopes }}> {{ s }}</label>
+            {% endfor %}
+          </div>
+          <div class="form-check form-switch mb-2">
+            <input class="form-check-input" type="checkbox" name="keys" id="apiKeys" {{ 'checked' if policy.keys }}>
+            <label class="form-check-label" for="apiKeys">Users may create service keys</label>
+          </div>
+          <div class="form-text mb-3">read: data, history, events. write: change nodes, exports. control: run
+            commands ({{ 'also allowed on this server' if commands_allowed else 'additionally off on this server: API_ALLOW_COMMANDS' }}).
+            admin: everyone's keys. Turning a part off refuses it at the next request; credentials stay valid
+            for the parts still on.</div>
+          {% if current_user.is_owner %}<button class="btn btn-primary btn-sm"><i class="bi bi-save me-1"></i>Save policy</button>{% else %}<span class="small text-muted">Only the owner can change the policy.</span>{% endif %}
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-12 col-xl-7">
+    <div class="card h-100">
+      <div class="card-body">
+        <h6 class="fw-bold mb-1"><i class="bi bi-people me-1"></i>Users</h6>
+        <p class="small text-muted mb-2">Blocking a user refuses their API sign-ins and revokes every API session and key
+          they have. The web app is not affected.</p>
+        <div class="table-responsive">
+          <table class="table table-sm align-middle mb-0">
+            <thead class="table-light"><tr><th>User</th><th>Role</th><th>API</th><th>Requests (24 h)</th><th></th></tr></thead>
+            <tbody>
+            {% set counts = {} %}
+            {% for name, n, refused in usage %}{% set _ = counts.update({name: (n, refused)}) %}{% endfor %}
+            {% for u in users %}
+              <tr>
+                <td class="small fw-semibold text-nowrap">{{ u.username }}</td>
+                <td class="small text-nowrap">{{ u.role }}</td>
+                <td class="small">{% if u.api_access %}<span class="status-badge status-online">allowed</span>{% else %}<span class="status-badge status-offline">blocked</span>{% endif %}</td>
+                <td class="small text-nowrap">{% if counts.get(u.username) %}{{ counts[u.username][0] }}{% if counts[u.username][1] %} <span class="text-danger">({{ counts[u.username][1] }} refused)</span>{% endif %}{% else %}<span class="text-muted">0</span>{% endif %}</td>
+                <td class="text-end">
+                  {% if u.id == current_user.id or can_manage(current_user, u) %}
+                  <form method="POST" action="{{ url_for('users.api_user_access', user_id=u.id) }}" class="d-inline">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <input type="hidden" name="allow" value="{{ '0' if u.api_access else '1' }}">
+                    <button class="btn btn-sm {{ 'btn-outline-danger' if u.api_access else 'btn-outline-primary' }}"{% if not u.api_access and u.id == current_user.id %} disabled title="Another administrator or the owner must allow it"{% endif %}>{{ 'Block API' if u.api_access else 'Allow API' }}</button>
+                  </form>
+                  {% endif %}
+                </td>
+              </tr>
+            {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-12">
+    <div class="card" id="apiCredentials">
+      <div class="card-body">
+        <h6 class="fw-bold mb-1"><i class="bi bi-key me-1"></i>Credentials</h6>
+        <p class="small text-muted mb-2">Every API session and service key of every user: who created it, what for, what it
+          may do and when it was last used. Secrets are never stored or shown.</p>
+        <div class="table-responsive">
+          <table class="table table-sm align-middle mb-0">
+            <thead class="table-light"><tr><th>User</th><th>Credential</th><th>Purpose</th><th>Permissions</th>
+              <th>Created</th><th>Expires</th><th>Last used</th><th>State</th><th></th></tr></thead>
+            <tbody>
+            {% for t in creds %}
+              {% set live = t.revoked_at is none and t.expires_at > now %}
+              <tr class="{{ '' if live else 'text-muted' }}">
+                <td class="small fw-semibold text-nowrap">{{ t.user.username if t.user else '?' }}</td>
+                <td class="small text-nowrap">{{ 'Service key' if t.kind == 'key' else 'API session' }}
+                  <span class="font-monospace">{{ t.prefix }}</span>{% if t.name %} <b>{{ t.name }}</b>{% endif %}
+                  {% if t.allowed_ips %}<div class="text-muted">from {{ t.allowed_ips }}</div>{% endif %}</td>
+                <td class="small">{{ t.purpose or ('signed in with password + 2FA' if t.kind == 'session' else '') }}</td>
+                <td class="small text-nowrap">{{ t.scopes.replace(',', ', ') }}</td>
+                <td class="small text-nowrap">{{ t.created_at|localtime('%d %b %Y %H:%M') }}{% if t.created_ip %}<div class="text-muted">{{ t.created_ip }}</div>{% endif %}</td>
+                <td class="small text-nowrap">{{ t.expires_at|localtime('%d %b %Y %H:%M') }}</td>
+                <td class="small text-nowrap">{% if t.last_used_at %}{{ t.last_used_at|localtime('%d %b %H:%M') }}<div class="text-muted">{{ t.last_used_ip or '' }}</div>{% else %}<span class="text-muted">never</span>{% endif %}</td>
+                <td class="small text-nowrap">{% if live %}<span class="status-badge status-online">active</span>{% elif t.revoked_at %}revoked{% if t.revoked_reason %} ({{ t.revoked_reason.replace('_', ' ') }}){% endif %}{% else %}expired{% endif %}</td>
+                <td class="text-end">
+                  {% if live %}
+                  <form method="POST" action="{{ url_for('users.api_revoke', token_id=t.id) }}" class="d-inline">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <button class="btn btn-outline-danger btn-sm">Revoke</button>
+                  </form>
+                  {% endif %}
+                </td>
+              </tr>
+            {% else %}
+              <tr><td colspan="9" class="small text-muted">No API credentials yet.</td></tr>
+            {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-12">
+    <div class="card" id="apiLog">
+      <div class="card-body">
+        <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-2">
+          <h6 class="fw-bold mb-0"><i class="bi bi-journal-text me-1"></i>API usage log</h6>
+          <span class="small text-muted">latest 300, read from the {{ 'data lake' if source == 'lake' else 'hot database' }}</span>
+        </div>
+        <form method="GET" action="{{ url_for('users.api_access') }}" class="d-flex gap-2 flex-wrap mb-2">
+          <select name="user" class="form-select form-select-sm" style="max-width:220px" title="User">
+            <option value="">All users</option>
+            {% for u in users %}<option value="{{ u.username }}" {{ 'selected' if q_user == u.username }}>{{ u.username }}</option>{% endfor %}
+          </select>
+          <select name="result" class="form-select form-select-sm" style="max-width:180px" title="Result">
+            <option value="">Any result</option>
+            <option value="ok" {{ 'selected' if q_status == 'ok' }}>Succeeded</option>
+            <option value="refused" {{ 'selected' if q_status == 'refused' }}>Refused (4xx)</option>
+            <option value="error" {{ 'selected' if q_status == 'error' }}>Errors (5xx)</option>
+          </select>
+          <button class="btn btn-sm btn-outline">Filter</button>
+        </form>
+        <div class="table-responsive" style="max-height:520px;overflow:auto">
+          <table class="table table-sm align-middle mb-0">
+            <thead class="table-light" style="position:sticky;top:0"><tr><th>Time</th><th>User</th><th>Credential</th><th>Request</th>
+              <th>Result</th><th>Time taken</th><th>From</th></tr></thead>
+            <tbody>
+            {% for x in log_rows %}
+              <tr>
+                <td class="small text-nowrap">{{ x.timestamp }}</td>
+                <td class="small text-nowrap">{{ x.user or '-' }}</td>
+                <td class="small text-nowrap">{{ x.credential or '-' }}</td>
+                <td class="small text-nowrap font-monospace">{{ x.method }} {{ x.endpoint }}</td>
+                <td class="small"><span class="status-badge {{ 'status-online' if x.status < 400 else 'status-offline' }}">{{ x.status }}</span></td>
+                <td class="small text-nowrap">{{ x.duration_ms }} ms</td>
+                <td class="small text-nowrap">{{ x.ip }}</td>
+              </tr>
+            {% else %}
+              <tr><td colspan="7" class="small text-muted">No API requests recorded.</td></tr>
+            {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

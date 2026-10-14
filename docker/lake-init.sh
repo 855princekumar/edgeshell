@@ -31,7 +31,18 @@ ALTER USER 'lake_repl'@'%' IDENTIFIED BY '$REPL_PW';
 GRANT REPLICATION SLAVE ON *.* TO 'lake_repl'@'%';
 GRANT BINLOG ADMIN ON *.* TO 'edgeshell'@'%';"
 
+# The app reads the lake but may never change it: its account there can only
+# SELECT (and the server is read-only besides). Changing the lake needs the
+# root password, which only the host's .env holds, from the host itself: the
+# lake has no published port.
+lock_app_user() {
+    lake -e "
+REVOKE ALL PRIVILEGES, GRANT OPTION FROM 'edgeshell'@'%';
+GRANT SELECT ON edgeshell.* TO 'edgeshell'@'%';" && echo "lake-init: app account on the lake is read-only (SELECT)"
+}
+
 if lake -e 'SHOW REPLICA STATUS\G' | grep -q 'Master_Host: mariadb'; then
+    lock_app_user
     lake -e 'START REPLICA' 2>/dev/null || true
     sleep 2
     io=$(lake -e 'SHOW REPLICA STATUS\G' | sed -n 's/^ *Slave_IO_Running: //p')
@@ -56,4 +67,5 @@ CHANGE MASTER TO MASTER_HOST='mariadb', MASTER_PORT=3306, MASTER_USER='lake_repl
 START REPLICA;"
 sleep 3
 lake -e 'SHOW REPLICA STATUS\G' | grep -E 'Slave_(IO|SQL)_Running:|Seconds_Behind_Master:|Last_Error:' | sed 's/^ */lake-init: /'
+lock_app_user
 echo "lake-init: replication started from GTID '${gtid}'"

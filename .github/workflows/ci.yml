@@ -61,6 +61,14 @@ jobs:
             fi
           done <<< "$FORBIDDEN_TERMS"
           exit $found
+      - name: Docker Hub page and README name the current version
+        # docker/DOCKERHUB.md is the Docker Hub description (pushed on every
+        # release and on every change to main), so it must not fall behind.
+        run: |
+          v="$(cat VERSION)"
+          for f in docker/DOCKERHUB.md README.md docker/compose.yaml docker/.env.example; do
+            grep -qF "$v" "$f" || { echo "::error file=$f::does not mention version $v"; exit 1; }
+          done
       - name: Compose files are valid
         run: |
           cp .env.example .env

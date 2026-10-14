@@ -203,3 +203,49 @@ def test_history_reads_report_their_source(app, lake_url):
         pass
     assert c.get(f'/api/v1/metrics/history?node_id={nid}', headers=h).get_json()['source'] == 'lake'
     assert c.get('/api/v1/activity', headers=h).get_json()['source'] == 'lake'
+
+
+def test_a_deleted_name_keeps_its_unique_suffix_at_full_width():
+    from app.services.lake import tombstone
+    long = 'n' * 64
+    t = tombstone(long, 12345)
+    assert len(t) == 64 and t.endswith('~deleted-12345')
+    assert tombstone(t, 12345) == t                               # a retry does not stack suffixes
+    assert tombstone('web', 5) == 'web~deleted-5'
+    assert tombstone(long, 1) != tombstone(long, 2)
+
+
+def test_mariadb_urls_count_as_mysql(app, monkeypatch):
+    from app.services import lake
+    with app.app_context():
+        monkeypatch.setattr(db.engine.dialect, 'name', 'mariadb')
+        assert lake._mysql()
+
+
+def test_purge_accepts_only_listed_table_and_column_pairs(app):
+    from app.services import lake
+    with app.app_context():
+        with pytest.raises(ValueError):
+            lake.purge('system_metrics', 'hour', datetime.utcnow())   # a column of another table
+
+
+def test_a_refused_delete_changes_nothing(app, monkeypatch):
+    from app.models.node import Node
+    from app.services import lake
+    c = app.test_client()
+    c.post('/login', data={'username': 'admin', 'password': 'admin123'})
+    with app.app_context():
+        n = Node(name='keep-me', ip_address='10.0.0.7', username='pi', status='offline', is_deleted=True)
+        db.session.add(n)
+        db.session.commit()
+        nid, uid = n.id, User.query.filter_by(username='op').first().id
+
+    def refuse():
+        raise lake.LakeNotReady('replication stopped')
+    monkeypatch.setattr(lake, 'require_ready', refuse)
+    c.post(f'/nodes/{nid}/purge')
+    c.post(f'/users/{uid}/delete')
+    with app.app_context():
+        assert db.session.get(Node, nid).name == 'keep-me'
+        u = db.session.get(User, uid)
+        assert u.username == 'op' and u.is_active

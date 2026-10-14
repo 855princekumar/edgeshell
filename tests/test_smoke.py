@@ -441,7 +441,7 @@ def test_page_scripts_parse(app, client):
         db.session.add(Node(name="quote's-test-node", ip_address='10.0.0.1', username='pi'))
         db.session.commit()
     pages = ['/', '/nodes/', '/monitoring/', '/terminal/', '/files/', '/logs/', '/logs/activity',
-             '/users/', '/users/add', '/account/', '/tailscale/', '/settings/', '/issues/',
+             '/users/', '/users/add', '/users/api', '/account/', '/tailscale/', '/settings/', '/issues/',
              '/nodes/add', '/nodes/import']
     with tempfile.TemporaryDirectory() as tmp:
         for page in pages:
@@ -463,7 +463,7 @@ def test_no_page_defines_a_function_twice(app, client):
     import re
     _login(app, client)
     pages = ['/', '/nodes/', '/monitoring/', '/terminal/', '/files/', '/logs/', '/logs/activity',
-             '/users/', '/users/add', '/account/', '/tailscale/', '/settings/', '/issues/',
+             '/users/', '/users/add', '/users/api', '/account/', '/tailscale/', '/settings/', '/issues/',
              '/nodes/add', '/nodes/import']
     decl = re.compile(r'(?:async\s+)?function\s+([A-Za-z_$][\w$]*)\s*\(')
 

@@ -61,8 +61,13 @@ You will be credited in the release notes unless you ask not to be.
   action audited with the user and the credential. CI fuzzes every parameter
   with injection payloads and checks no response contains a secret.
 - Data lake: a read-only replica on the internal network keeps all history;
-  privacyIDEA's 2FA data is not replicated. Hot-database purges never delete
-  rows the lake has not got.
+  privacyIDEA's 2FA data is not replicated. Nothing done in the app can remove
+  data from it: retention, clearing logs, and deleting nodes or users act on
+  the hot database only (with `sql_log_bin=0`, after confirming the lake holds
+  the rows), and the app's database account on the lake can only SELECT.
+- API administration: administrators can turn the API or parts of it off,
+  block any user's API access (revoking every credential), revoke any
+  credential, and read a log of every API request (no bodies or values).
 - Static and dependency scanning on every pull request: Bandit (no unreviewed
   medium or high finding), pip-audit (no dependency with a known
   vulnerability), CodeQL (Python and JavaScript), gitleaks over the full history.
@@ -94,6 +99,10 @@ You will be credited in the release notes unless you ask not to be.
   device is authenticated by the mesh, impersonating a node is impractical, but
   on an untrusted network a man in the middle could see the node password on
   first contact. Keep nodes on the mesh. Host key pinning is planned.
+- **The data lake protects against app actions, not a stolen database password.**
+  Nothing the app does deletes lake data, but whoever holds the hot database's
+  app password can run statements that replicate. Keep regular disk snapshots
+  (or dumps) of the lake as well.
 
 ## Social engineering
 

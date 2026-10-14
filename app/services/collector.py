@@ -412,11 +412,19 @@ class Collector:
         lake.purge('system_metrics', 'timestamp', datetime.utcnow() - timedelta(days=days))
         lake.purge('node_events', 'timestamp', datetime.utcnow() - timedelta(
             days=int(current_app.config.get('EVENT_RETENTION_DAYS', 90))))
-        from app.models.api import ApiToken
-        # expired API credentials are kept 30 days for the audit view, then removed
-        ApiToken.query.filter(ApiToken.expires_at < datetime.utcnow() - timedelta(days=30)).delete(
-            synchronize_session=False)
-        db.session.commit()
+        lake.purge('api_requests', 'timestamp', datetime.utcnow() - timedelta(
+            days=int(current_app.config.get('API_LOG_RETENTION_DAYS', 30))))
+        # Housekeeping of credentials: long-expired API credentials and dead
+        # browser sessions leave the hot database only (the lake keeps them for
+        # the audit trail). Skipped while the lake is behind; the next run does it.
+        old = datetime.utcnow() - timedelta(days=30)
+        idle = datetime.utcnow() - current_app.config.get('PERMANENT_SESSION_LIFETIME', timedelta(hours=8))
+        try:
+            lake.hot_only([('DELETE FROM api_tokens WHERE expires_at < :old', {'old': old}),
+                           ('DELETE FROM user_sessions WHERE seen_at < :idle OR revoked_at < :idle',
+                            {'idle': idle})])
+        except lake.LakeNotReady:
+            pass
         lake.apply_retention()                  # the optional hot retention policy (Settings)
 
     def status(self):

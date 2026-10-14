@@ -34,7 +34,7 @@ SCREENS = [('phone', 390, 844, 3), ('tablet', 820, 1180, 2), ('laptop', 1366, 76
 ZOOMS = [('laptop', 1366, 768, z) for z in (0.67, 1.25, 1.5, 2.0)] + \
         [('desktop', 1920, 1080, z) for z in (1.5, 2.0)]
 PAGES = ['/', '/nodes/', '/monitoring/', '/terminal/', '/files/', '/logs/', '/logs/activity',
-         '/users/', '/users/add', '/account/', '/tailscale/', '/settings/', '/issues/',
+         '/users/', '/users/add', '/users/api', '/account/', '/tailscale/', '/settings/', '/issues/',
          '/nodes/add', '/nodes/import']
 TYPES = [('pi-node', 0.86, 'site-a-pi-node'), ('gateway', 0.10, 'site-b-gateway'),
          ('mini-pc', 0.02, 'site-c-mini-pc'), ('rtu', 0.02, 'plant-east-gate-sensor-hub-panel')]
@@ -373,6 +373,7 @@ def run_interactions(pw, base, rep, total, real_id, label, w, h, scale):
     page.goto(base + '/account/')
     page.locator('#api summary').click()
     page.fill('#api input[name=name]', f'ui-test-{label}')
+    page.fill('#api input[name=purpose]', 'browser test of the API access section')
     page.fill('#api input[name=password]', 'admin123')
     page.fill('#api input[name=code]', '000000')            # 2FA is off in the test app
     page.locator('#api button', has_text='Create key').click()

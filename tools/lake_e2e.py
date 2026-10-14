@@ -94,6 +94,99 @@ def main():
         check('hot retention leaves the lake complete',
               lake_count("select count(*) from activity_logs where action = 'old entry'") == 1)
 
+        # App deletes reach the hot database only; names can be reused safely.
+        from app.models.user import User
+        from app.routes.nodes import _purge_nodes
+        from app.routes.users import _delete_user_row
+        doomed = Node(name='reused-name', ip_address='10.0.0.9', username='pi', status='offline')
+        db.session.add(doomed)
+        u = User(username='leaver', email='leaver@example.org', role='monitor', is_active=True,
+                 must_change_password=False)
+        u.set_password('Monitor-pass-1')
+        db.session.add(u)
+        db.session.commit()
+        doomed_id, uid = doomed.id, u.id
+        db.session.add(SystemMetrics(node_id=doomed_id, timestamp=datetime.utcnow(), status='offline'))
+        db.session.commit()
+        wait(lambda: lake_count('select count(*) from system_metrics where node_id = :i', i=doomed_id) == 1
+             and lake_count('select count(*) from users where id = :i', i=uid) == 1, label='new rows')
+        lake.beat(force=True)
+        wait(lambda: lake.status()['healthy'], label='heartbeat')
+        with app.test_request_context():
+            _purge_nodes([db.session.get(Node, doomed_id)])
+            _delete_user_row(db.session.get(User, uid))
+        check('a deleted node and user leave the hot database',
+              db.session.get(Node, doomed_id) is None and db.session.get(User, uid) is None)
+        time.sleep(3)
+        check('the lake keeps the deleted node, its history and the user',
+              lake_count('select count(*) from nodes where id = :i', i=doomed_id) == 1
+              and lake_count('select count(*) from system_metrics where node_id = :i', i=doomed_id) == 1
+              and lake_count('select count(*) from users where id = :i', i=uid) == 1)
+        check('the kept rows were renamed so the names are free again',
+              lake_count("select count(*) from nodes where name = 'reused-name'") == 0
+              and lake_count("select count(*) from users where username = 'leaver'") == 0)
+        db.session.add(Node(name='reused-name', ip_address='10.0.0.10', username='pi', status='offline'))
+        u2 = User(username='leaver', email='leaver@example.org', role='monitor', is_active=True,
+                  must_change_password=False)
+        u2.set_password('Monitor-pass-1')
+        db.session.add(u2)
+        db.session.commit()
+        check('re-creating a node and a user with the same names keeps replication running',
+              wait(lambda: lake_count("select count(*) from nodes where name = 'reused-name'") == 1
+                   and lake_count("select count(*) from users where username = 'leaver'") == 1, label='reuse'))
+        # A full-width name, deleted and reused twice: the suffix must survive
+        # or the second tombstone collides on the lake and stops replication.
+        long = 'L' * 64
+        for round_ in (1, 2):
+            ln = Node(name=long, ip_address=f'10.0.1.{round_}', username='pi', status='offline')
+            db.session.add(ln)
+            db.session.commit()
+            wait(lambda: lake_count('select count(*) from nodes where name = :n', n=long) == 1, label='long name')
+            lake.beat(force=True)
+            wait(lambda: lake.status()['healthy'], label='heartbeat')
+            with app.test_request_context():
+                _purge_nodes([ln])
+        db.session.add(Node(name=long, ip_address='10.0.1.3', username='pi', status='offline'))
+        db.session.commit()
+        check('a 64-character name can be deleted and reused again and again',
+              wait(lambda: lake_count('select count(*) from nodes where name = :n', n=long) == 1
+                   and lake_count("select count(*) from nodes where name like '%~deleted-%'") >= 3, label='reuse long'))
+
+        # Housekeeping of sessions and expired credentials leaves the lake alone.
+        from app.models.user import UserSession
+        lake.beat(force=True)
+        wait(lambda: lake.status()['healthy'], label='heartbeat')
+        old = datetime.utcnow() - timedelta(days=60)
+        s_row = UserSession(user_id=u2.id, token='t' * 64, ip='10.0.0.1', agent='test', started_at=old,
+                            seen_at=old, active_at=old)
+        db.session.add(s_row)
+        db.session.commit()
+        sid = s_row.id
+        wait(lambda: lake_count('select count(*) from user_sessions where id = :i', i=sid) == 1, label='session')
+        lake.beat(force=True)
+        wait(lambda: lake.status()['healthy'], label='heartbeat')
+        from app.services.collector import COLLECTOR
+        COLLECTOR._purge_history()
+        time.sleep(3)
+        check('old sessions leave the hot database but stay in the lake',
+              db.session.get(UserSession, sid) is None
+              and lake_count('select count(*) from user_sessions where id = :i', i=sid) == 1)
+
+        before = lake_count('select count(*) from activity_logs')
+        lake.beat(force=True)
+        wait(lambda: lake.status()['healthy'], label='heartbeat')
+        lake.hot_only([('DELETE FROM activity_logs', {})])
+        time.sleep(3)
+        check('clearing the activity log keeps it in the lake',
+              ActivityLog.query.count() == 0 and lake_count('select count(*) from activity_logs') >= before > 0)
+        try:
+            with lake_eng.begin() as c:
+                c.execute(text("insert into settings (`key`, value) values ('x-from-app', 'y')"))
+            wrote = True
+        except Exception:
+            wrote = False
+        check('the app account cannot change the lake', not wrote)
+
         with root.connect() as c:
             c.execute(text('STOP REPLICA'))
         db.session.add(SystemMetrics(node_id=n.id, timestamp=datetime.utcnow() - timedelta(days=30),
