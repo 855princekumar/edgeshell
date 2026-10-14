@@ -121,6 +121,37 @@ TLS follows Mozilla's intermediate profile: TLS 1.2 and 1.3 only, forward
 secret AEAD ciphers, ECDSA keys, HSTS. Check the result with
 `curl -I https://<SERVER_IP>` or an online TLS test.
 
+**One canonical address.** nginx serves HTTPS only for `EDGESHELL_DOMAIN` and
+redirects every other name to it. If you add a domain later but leave
+`EDGESHELL_DOMAIN` (and `PUBLIC_URL`) on the IP, visiting the domain shows "Not
+secure" (the certificate is for the IP) and then jumps to the IP in the
+address bar. DNS is not the problem in that case; switch the server to the
+domain as below.
+
+**Moving from the IP to a domain, without downtime.** Get the domain's
+certificate first, while the site keeps running on the IP, then switch:
+
+```bash
+cd ~/edgeshell
+nslookup fleet.yourdomain.com                      # must return the Elastic IP
+cp .env backups/env-before-domain                  # keep the old settings
+EMAIL=$(grep '^ACME_EMAIL=' .env | cut -d= -f2-)
+sudo docker compose run --rm --no-deps --entrypoint certbot certbot certonly \
+  --webroot -w /var/www/certbot -d fleet.yourdomain.com --cert-name fleet.yourdomain.com \
+  --email "$EMAIL" --key-type ecdsa --elliptic-curve secp256r1 \
+  --agree-tos --non-interactive --no-eff-email
+sed -i 's|^EDGESHELL_DOMAIN=.*|EDGESHELL_DOMAIN=fleet.yourdomain.com|; s|^PUBLIC_URL=.*|PUBLIC_URL=https://fleet.yourdomain.com|' .env
+sudo docker compose up -d nginx certbot edgeshell
+curl -sI https://fleet.yourdomain.com/login | head -1  # 200 with a valid certificate
+curl -sI http://<SERVER_IP>/login | grep -i location   # redirects to the domain
+```
+
+The IP keeps working as a redirect to the domain, so old bookmarks still land
+on the right page. Everyone signs in again once on the new address (cookies
+belong to the address they were set on). certbot renews the domain
+certificate from then on. To go back, restore `backups/env-before-domain` and
+run the same `docker compose up -d`.
+
 ### A7. Harden the host
 
 ```bash
@@ -213,6 +244,7 @@ Docker Hub page has the upgrade steps.
 | "Two-factor verification service is not responding" | `docker compose ps privacyidea` and `docker compose logs privacyidea` |
 | Locked out of SSH by fail2ban | From the AWS console (EC2 Instance Connect or Session Manager): `sudo fail2ban-client set sshd unbanip <ip>` |
 | VPN page says status unavailable | Tailscale is not running on the host: `sudo tailscale up` |
+| Visiting the domain shows "Not secure", then the address bar shows the IP | `EDGESHELL_DOMAIN` and `PUBLIC_URL` are still the IP, so the certificate is for the IP and nginx redirects to it. Switch to the domain as in [A6](#a6-https-free-certificate-automatic-renewal) ("Moving from the IP to a domain") |
 | Every node turns "login failed" at once while ping, Node-RED and the VPN page are fine; the message mentions Tailscale SSH | The nodes run Tailscale SSH, which answers port 22 and decides logins from the tailnet policy's `"ssh"` section. The default rule is `check` (browser approval), which EdgeShell can never give. Add an `accept` rule for EdgeShell and make sure no `check` rule matches the same login (a matching `check` overrides `accept`, whatever the order), or turn Tailscale SSH off on the nodes. Exact rules, safe steps and how to verify: [Tailscale SSH on the nodes](VPN-NETWORK.md#tailscale-ssh-on-the-nodes). Nodes resume by themselves within 30 minutes, or with **Retry paused logins** |
 
 ---
