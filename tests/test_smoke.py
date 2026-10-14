@@ -100,6 +100,8 @@ def test_soft_delete_and_restore(app, client):
         assert n.is_deleted is False and n.is_active is True
 
 
+@pytest.mark.skipif(__import__('sys').platform == 'win32',
+                    reason='runs the wrapper in a POSIX shell, as on the nodes; Git Bash on Windows rewrites /tmp')
 def test_cd_persistence_wrapper(app):
     import subprocess, shlex
     from app.services.ssh_service import _CWD_MARKER

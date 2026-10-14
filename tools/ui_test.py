@@ -477,6 +477,8 @@ def main():
     ap.add_argument('--quick', action='store_true', help='base screen sizes only, no zoom levels')
     ap.add_argument('--pages', default='', help='comma-separated paths to check (default: all)')
     ap.add_argument('--only', default='', help='interactions only, on this screen (desktop or phone)')
+    ap.add_argument('--min-checks', type=int, default=0,
+                    help='fail if fewer checks ran (guards against a suite that silently shrinks)')
     args = ap.parse_args()
 
     from app import create_app
@@ -500,10 +502,24 @@ def main():
             run_interactions(pw, base, rep, total, real_id, 'desktop', 1920, 1080, 1)
         if args.only in ('', 'phone'):
             run_interactions(pw, base, rep, total, real_id, 'phone', 390, 844, 3)
+    total_checks = rep.passes + len(rep.fails)
+    short = args.min_checks and total_checks < args.min_checks
     print(f'\n{rep.passes} checks passed, {len(rep.fails)} failed')
+    if short:
+        print(f'Only {total_checks} checks ran, fewer than the required {args.min_checks}: '
+              'part of the suite was skipped')
     if rep.fails:
         print(f'Screenshots of failures: {os.path.abspath(args.out)}')
-    return 1 if rep.fails else 0
+    summary = os.environ.get('GITHUB_STEP_SUMMARY')
+    if summary:
+        with open(summary, 'a', encoding='utf-8') as f:
+            f.write(f'### Browser UI test\n\n| Checks | Passed | Failed | Required at least |\n|---|---|---|---|\n'
+                    f'| {total_checks} | {rep.passes} | {len(rep.fails)} | {args.min_checks or "-"} |\n\n'
+                    f'{args.nodes} nodes; phone, tablet, laptop and desktop; zoom 67 to 200 percent'
+                    f'{"; SSH terminal on an emulated Pi" if args.ssh else ""}.\n\n')
+            for line in rep.fails[:40]:
+                f.write(f'- FAIL {line}\n')
+    return 1 if rep.fails or short else 0
 
 
 if __name__ == '__main__':
