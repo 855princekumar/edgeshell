@@ -14,6 +14,11 @@ concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
+# Stage 1 (the gate, all required): lint, secret scan, every unit test on
+# three Python versions, and the browser test of every page on every screen
+# size. Each enforces a minimum count, so a change cannot pass by making tests
+# skip. Stage 2 (image build, then the end-to-end sandbox on amd64 and arm64)
+# starts only when the whole gate is green.
 jobs:
   lint:
     name: Lint and static checks
@@ -75,7 +80,10 @@ jobs:
       - name: pytest
         env:
           FLASK_ENV: testing
-        run: python -m pytest -q -W ignore
+        run: python -m pytest -q -W ignore --junitxml=pytest.xml
+      - name: Every test ran and passed (at least 110, none skipped)
+        if: always()
+        run: python tools/test_gate.py pytest.xml --min 110 --max-skipped 0 --label "Unit tests (Python ${{ matrix.python }})"
       - name: Performance budget (300 nodes, every page and API under 300 ms)
         if: matrix.python == '3.12'
         env:
@@ -100,7 +108,7 @@ jobs:
       - name: Every page on every screen size and zoom, plus interactions
         env:
           FLASK_ENV: testing
-        run: python -W ignore tools/ui_test.py --nodes 1500 --ssh 127.0.0.1:2299 --out ui-report
+        run: python -W ignore tools/ui_test.py --nodes 1500 --ssh 127.0.0.1:2299 --out ui-report --min-checks 375
       - name: Screenshots of failures
         if: failure()
         uses: actions/upload-artifact@v4
@@ -111,7 +119,7 @@ jobs:
 
   image:
     name: Image build (amd64 + arm64) and hardening audit
-    needs: [lint, secrets]
+    needs: [lint, secrets, test, ui]      # stage 2: only after the whole gate passed
     runs-on: ubuntu-24.04
     permissions:
       contents: read

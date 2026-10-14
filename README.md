@@ -602,6 +602,10 @@ edgeshell/
 python run.py --dev                                  # dev server with auto setup
 FLASK_ENV=testing ./venv/bin/python -m pytest -q     # unit tests
 bash sandbox/run.sh                                  # full end-to-end suite in Docker
+
+# browser UI test, as CI runs it (pip install playwright, playwright install chromium)
+docker run -d --rm --name ui-pi -p 2299:22 devprincekumar/pi-fleet-node:1.0.0
+FLASK_ENV=testing python tools/ui_test.py --nodes 1500 --ssh 127.0.0.1:2299 --min-checks 375
 ```
 
 Contribution guidelines and code conventions are in
@@ -609,13 +613,25 @@ Contribution guidelines and code conventions are in
 
 ## CI/CD and quality gates
 
-Every push and pull request runs [CI](.github/workflows/ci.yml):
+Every push and pull request runs [CI](.github/workflows/ci.yml) in two
+stages. Every check is required on `main`, so a pull request cannot be
+merged until all of them pass.
+
+**Stage 1, the gate** (in parallel):
 
 | Gate | What it checks |
 |---|---|
-| **Lint** | Python syntax and undefined names (ruff), shell scripts parse, both Compose files valid |
+| **Lint** | Python syntax and undefined names (ruff), shell scripts parse, both Compose files valid, no em dashes |
 | **Secret scan** | gitleaks over the full Git history |
-| **Unit tests** | pytest on Python 3.11, 3.12 and 3.13 |
+| **Unit tests** | the whole pytest suite on Python 3.11, 3.12 and 3.13, plus the 300-node performance budget; fails unless every test passed, none was skipped and at least 110 ran ([tools/test_gate.py](tools/test_gate.py)) |
+| **Browser UI** | [tools/ui_test.py](tools/ui_test.py) in Chromium: 1500 nodes, every page on phone, tablet, laptop and desktop sizes and at 67 to 200 percent zoom (nothing outside its card, no sideways scroll, no broken words, no script errors), then the interactions: filters, Select All, bulk actions, dialogs, Recycle Bin, VPN filters, stats export, saved settings, fleet terminal and a real SSH terminal on a Pi Fleet Emulator node; at least 375 checks must run. Failure screenshots are kept as an artifact |
+
+Each job writes its counts to the run's summary page.
+
+**Stage 2**, only when the whole gate passed:
+
+| Gate | What it checks |
+|---|---|
 | **Image** | amd64 and arm64 builds; non-root user, no `.env`, databases, keys or secrets in layers or history; refuses to start without keys; Trivy vulnerability scan to the Security tab |
 | **Sandbox E2E** | The full [sandbox suite](#validate-before-you-deploy-sandbox-with-pi-fleet-emulator) on a native **amd64** runner and a native **arm64** runner |
 

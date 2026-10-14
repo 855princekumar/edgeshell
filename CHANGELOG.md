@@ -2,6 +2,13 @@
 
 All notable changes are documented here. Format loosely follows Keep a Changelog.
 
+## [Unreleased]
+
+### Changed
+- **CI runs in two stages.** The gate (lint, secret scan, unit tests on Python 3.11 to 3.13, and the browser UI test with 1500 nodes on every screen size and zoom level) runs first; the image build and the amd64 and arm64 sandbox start only when it passed. The browser UI test is now a required check on `main`.
+- **Test counts are enforced.** Unit tests fail the gate unless every test passed, none was skipped and at least 110 ran (`tools/test_gate.py`); the browser test needs at least 375 checks (`--min-checks`). Counts appear on each run's summary page.
+- The cd-persistence unit test is skipped on Windows only (it needs a POSIX shell); CI runs it on Linux.
+
 ## [1.7.3] - 2026-10-14
 
 ### Fixed
