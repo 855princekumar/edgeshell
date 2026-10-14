@@ -143,6 +143,20 @@ faster language would not remove; the collector is Python by design. Run
 `tools/perf.py` to time every page, API and action against a simulated fleet.
 
 
+## Node login policy
+
+| Event | What EdgeShell does |
+|---|---|
+| Password rejected | Retry once after 10 minutes; at `LOGIN_PAUSE_AFTER_FAILURES` (2) in a row the node is paused |
+| Tailscale SSH refuses (browser check) | Paused at once: repeating cannot succeed |
+| Paused | No automatic or bulk logins (collector, Refresh All, Test All, fleet terminal, deploys, scans). Stored on the node, so restarts do not retry |
+| Every `LOGIN_RECHECK_MINUTES` (30) | Read each paused node's SSH banner (TCP, no login). Changed server: one new attempt. One canary login for the Tailscale group; success resumes the group |
+| Person acts | Test on the card or Fix login: one attempt. Retry paused logins: one attempt each, a new failure pauses again |
+
+All SSH logins go through `ssh_service.connect` (closes failed connections,
+names Tailscale SSH refusals); `tests/test_login_policy.py` fails the build if
+code opens SSH any other way.
+
 ## Long-term history and the stats export
 
 | Table | What | Kept |

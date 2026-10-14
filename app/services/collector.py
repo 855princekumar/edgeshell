@@ -206,9 +206,12 @@ POOL = _Pool()
 
 def classify(exc):
     """('auth' | 'unreachable' | 'error', human message) for an exception."""
-    from app.services.ssh_service import TailscaleCheckRequired, TAILSCALE_CHECK_MESSAGE
+    from app.services.ssh_service import (TailscaleCheckRequired, TAILSCALE_CHECK_MESSAGE,
+                                          LoginPaused, PAUSED_MESSAGE)
     if isinstance(exc, TailscaleCheckRequired):
         return 'auth', TAILSCALE_CHECK_MESSAGE
+    if isinstance(exc, LoginPaused):
+        return 'auth', PAUSED_MESSAGE
     if isinstance(exc, paramiko.AuthenticationException):
         return 'auth', 'Authentication failed: check the SSH username and password'
     if isinstance(exc, (socket.timeout, TimeoutError)):
@@ -244,7 +247,10 @@ def collect_one(target):
                 # A pooled connection the node closed: retry once with a new login.
                 if attempt == 1 and kind == 'error' and not isinstance(e, paramiko.AuthenticationException):
                     continue
+                from app.services.ssh_service import TailscaleCheckRequired
                 return {'ok': False, 'metrics': None, 'kind': kind, 'message': message,
+                        'reason': 'tailscale' if isinstance(e, TailscaleCheckRequired) else 'password',
+                        'banner': getattr(e, 'ssh_banner', None),
                         'seconds': round(time.time() - started, 2), 'reconnected': True}
 
 
@@ -256,6 +262,9 @@ class Collector:
         self.next_at = {}           # node_id -> earliest next attempt (epoch)
         self.failures = {}          # node_id -> consecutive failures
         self.last_sample = 0        # epoch of the last history sample of the fleet
+        self.auth_fails = {}        # node_id -> password failures in a row (login policy)
+        self.canary_at = {}         # node_id -> epoch of its last Tailscale canary login
+        self.last_login_recheck = 0  # first check soon after start (banners only)
         self._last_rollup = 0
         self.cycle = {'started': None, 'seconds': None, 'nodes': 0, 'ok': 0,
                       'auth': 0, 'unreachable': 0, 'error': 0, 'skipped': 0}
@@ -287,6 +296,8 @@ class Collector:
                     self.run_cycle()
                     self._roll_up()
                     self._purge_history()
+                    from app.services import login_policy
+                    login_policy.recheck(self)
             except Exception as e:
                 self._app.logger.warning('metrics cycle failed: %s', e)
             interval = int(self._app.config.get('COLLECTOR_INTERVAL', INTERVAL_S))
@@ -294,9 +305,13 @@ class Collector:
             self._wake.clear()
 
     # -- one pass over the fleet
-    def run_cycle(self, node_ids=None, force=False):
+    def run_cycle(self, node_ids=None, force=False, manual=False):
         """Collect due nodes in parallel and store the results. Returns
-        {node_id: result}. Must run inside an app context."""
+        {node_id: result}. Must run inside an app context.
+
+        Nodes whose logins are paused are left out, also when forced, unless
+        manual: one operator action on one node (Test, Fix login) may try
+        once; bulk actions never do."""
         from flask import current_app
         from app import db
         from app.models.node import Node
@@ -305,7 +320,8 @@ class Collector:
         if node_ids:
             q = q.filter(Node.id.in_(node_ids))
         nodes = q.all()
-        due = [n for n in nodes if force or self.next_at.get(n.id, 0) <= now]
+        due = [n for n in nodes if (force or self.next_at.get(n.id, 0) <= now)
+               and (manual or n.login_paused_at is None)]
         targets = [{'id': n.id, 'ip': n.ip_address, 'port': n.ssh_port or 22,
                     'username': n.username, 'password': n.password,
                     'orgui_port': n.orgui_port or 6080} for n in due]
@@ -317,6 +333,8 @@ class Collector:
                 for t, r in zip(targets, pool.map(collect_one, targets)):
                     results[t['id']] = r
         self._store(nodes, results, now)
+        from app.services import login_policy
+        login_policy.apply(nodes, results, self)
         if not node_ids and now - self.last_sample >= HISTORY_EVERY_S:
             # one history sample per node per minute, whatever its state
             from app.services import history
@@ -421,6 +439,10 @@ def run_command(target, command, timeout=60, sudo_password=None, on_output=None,
         command = _SUDO_PRIME + command
         get_pty = False
     out = []
+    if target.get('login_paused'):
+        from app.services.ssh_service import PAUSED_MESSAGE
+        return {'stdout': '', 'exit_code': -1, 'success': False, 'duration': 0,
+                'error': PAUSED_MESSAGE, 'kind': 'auth'}
     try:
         with POOL.lock(target['id']):
             client, _ = POOL.get(target)
@@ -462,4 +484,5 @@ def target_for(node):
     """Connection details for run_command / collect_one (decrypts the password)."""
     return {'id': node.id, 'ip': node.ip_address, 'port': node.ssh_port or 22,
             'username': node.username, 'password': node.password,
-            'orgui_port': node.orgui_port or 6080, 'name': node.name}
+            'orgui_port': node.orgui_port or 6080, 'name': node.name,
+            'login_paused': node.login_paused_at is not None}
