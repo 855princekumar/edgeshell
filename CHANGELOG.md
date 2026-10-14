@@ -2,6 +2,17 @@
 
 All notable changes are documented here. Format loosely follows Keep a Changelog.
 
+## [1.7.2] - 2026-10-14
+
+### Added
+- **Bulk actions on Node Fleet.** Selecting nodes shows a bar with **Edit login** and **Delete**. Edit login sets the SSH username, password and/or port of every selected node (empty fields keep each node's value), clears paused logins and checks each node once in the background with a progress card; the password is never logged. Delete moves the nodes to the Recycle Bin (monitoring and SSH stop, nothing on the nodes changes). Select All and every bulk action use only the nodes shown by the current filters.
+- **Recycle Bin:** Restore all, and Delete all permanently (administrators, type DELETE), which also removes the nodes' monitoring history.
+- **Re-adding deleted nodes by import:** a node whose name is in the Recycle Bin comes back with the imported details (same node, history kept) instead of being skipped as already present.
+
+### Fixed
+- Permanent delete failed on MariaDB for a node with monitoring history (rows still referenced it); the history is now deleted with it.
+- Node names in the delete confirmations are escaped for JavaScript.
+
 ## [1.7.1] - 2026-10-14
 
 ### Added
