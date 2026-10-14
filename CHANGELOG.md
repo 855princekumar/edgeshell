@@ -2,6 +2,11 @@
 
 All notable changes are documented here. Format loosely follows Keep a Changelog.
 
+## [Unreleased]
+
+### Documentation
+- EC2 guide: one canonical address (why a domain added later shows "Not secure" and jumps to the IP while the server is still set to the IP), and how to move from the IP to a domain without downtime (certificate first, then switch; the IP keeps redirecting). Troubleshooting entry added.
+
 ## [1.7.4] - 2026-10-14
 
 ### Documentation
