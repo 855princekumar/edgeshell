@@ -52,6 +52,20 @@ You will be credited in the release notes unless you ask not to be.
   disabling a user revoke sessions immediately. Idle sessions are asked "still
   there?" and signed out.
 - Cookies are HttpOnly, SameSite=Lax, and Secure behind HTTPS.
+- Public API ([docs/API.md](docs/API.md)): password plus 2FA sessions and
+  service keys created only after password plus 2FA again; 256-bit tokens stored
+  as SHA-256 hashes; role intersected with scopes on every route; a browser
+  cookie can only read (no CSRF exposure); strict schema validation that refuses
+  unknown fields; per-credential rate limits; shell commands off unless
+  `API_ALLOW_COMMANDS=true` and checked against the command blocklist; every
+  action audited with the user and the credential. CI fuzzes every parameter
+  with injection payloads and checks no response contains a secret.
+- Data lake: a read-only replica on the internal network keeps all history;
+  privacyIDEA's 2FA data is not replicated. Hot-database purges never delete
+  rows the lake has not got.
+- Static and dependency scanning on every pull request: Bandit (no unreviewed
+  medium or high finding), pip-audit (no dependency with a known
+  vulnerability), CodeQL (Python and JavaScript), gitleaks over the full history.
 - Node login policy (`app/services/login_policy.py`): after
   `LOGIN_PAUSE_AFTER_FAILURES` rejected passwords in a row (default 2), or one
   refusal by Tailscale SSH, EdgeShell stops logging in to that node, so it never
@@ -72,6 +86,27 @@ You will be credited in the release notes unless you ask not to be.
 - `main` is protected: pull requests, required CI checks (including a
   secret scan and end-to-end tests on amd64 and arm64) and secret-scanning push
   protection.
+
+## Accepted risks
+
+- **SSH host keys are trusted on first use** (`paramiko.AutoAddPolicy`): EdgeShell
+  does not pin node host keys. Inside a Tailscale or WireGuard mesh, where every
+  device is authenticated by the mesh, impersonating a node is impractical, but
+  on an untrusted network a man in the middle could see the node password on
+  first contact. Keep nodes on the mesh. Host key pinning is planned.
+
+## Social engineering
+
+- No one at EdgeShell, no administrator and no vendor needs your password, your
+  2FA code or a service key. Treat any request for them, or to approve a sign-in
+  you did not start, as an attack and report it.
+- Two-factor codes and backup codes are single use; a code read out over the
+  phone is still a full sign-in for whoever has the password.
+- Creating a service key needs the password and a fresh 2FA code, so a
+  colleague's unlocked, signed-in browser is not enough to mint one.
+- Secrets pasted into chat, tickets or email are exposed: revoke and replace them.
+- The activity log records sign-ins, key creation and revocation, policy and
+  retention changes, and who cleared the log, so misuse is visible afterwards.
 
 ## Hardening checklist for operators
 

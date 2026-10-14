@@ -157,6 +157,36 @@ All SSH logins go through `ssh_service.connect` (closes failed connections,
 names Tailscale SSH refusals); `tests/test_login_policy.py` fails the build if
 code opens SSH any other way.
 
+## Hot database and data lake
+
+| | Hot database (`mariadb`) | Data lake (`mariadb-lake`) |
+|---|---|---|
+| Role | every write and live read | a live replica that keeps everything |
+| Feeds | the app | the hot database's binary log (row based, `edgeshell` database only) |
+| Reads | nodes, live metrics, sessions | exports, history, events, activity (when caught up) |
+| Retention | raw samples `METRICS_RETENTION_DAYS`, events `EVENT_RETENTION_DAYS`, optional policy for the rest | none: keeps every row |
+
+`app/services/lake.py`: the app writes a heartbeat row on the hot database
+every minute and reads it back from the lake, so replication lag is measured
+end to end with no special privileges. `lake.reader()` hands out a lake session
+when the lag is under 10 minutes, else the hot session. `lake.purge()` deletes
+from a fixed list of history tables only after checking the lake is less than
+3 minutes behind and holds the newest row to be deleted (replication applies
+changes in order), and runs the delete with `sql_log_bin=0` so it never reaches
+the lake. `tools/lake_e2e.py` proves this against two real MariaDB servers in
+CI.
+
+## Public API
+
+`/api/v1` (`app/routes/api.py`, reference in [docs/API.md](API.md)). Each route
+is declared once with its scope, query parameters and JSON schema; the same
+declaration validates requests and generates `/api/v1/openapi.json`. Bearer
+credentials (`app/services/api_auth.py`, table `api_tokens`) are challenges,
+sessions and service keys, stored as SHA-256 hashes. They are resolved before
+the browser-session check, so a token request never needs or creates a
+cookie. Permissions are the role intersected with the scopes; a cookie may only
+read. `node_events` is the append-only event feed the API serves with a cursor.
+
 ## Long-term history and the stats export
 
 | Table | What | Kept |

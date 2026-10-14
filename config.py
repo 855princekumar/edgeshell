@@ -155,6 +155,26 @@ class Config:
     # Dashboards poll every 15-30 s, so the default must sit well above that.
     RATELIMIT_DEFAULT = os.environ.get('RATELIMIT_DEFAULT', '20000 per day;2000 per hour')
     RATELIMIT_STORAGE_URI = os.environ.get('RATELIMIT_STORAGE_URI', 'memory://')
+    RATELIMIT_HEADERS_ENABLED = True          # X-RateLimit-* and Retry-After on responses
+
+    # Public API (/api/v1, docs/API.md). Sessions from password + 2FA end after
+    # API_SESSION_IDLE_MINUTES without use and at API_SESSION_MAX_HOURS. Running
+    # shell commands through the API is off unless API_ALLOW_COMMANDS=true.
+    API_SESSION_IDLE_MINUTES = int(os.environ.get('API_SESSION_IDLE_MINUTES', '60'))
+    API_SESSION_MAX_HOURS = int(os.environ.get('API_SESSION_MAX_HOURS', '12'))
+    API_ALLOW_COMMANDS = _env_bool('API_ALLOW_COMMANDS', False)
+    API_RATE_LIMIT = os.environ.get('API_RATE_LIMIT', '')
+    API_MAX_BODY_BYTES = int(os.environ.get('API_MAX_BODY_BYTES', str(1024 * 1024)))
+    # Per-credential API rate limits by role (API_RATE_LIMIT, when set, applies to all).
+    API_RATE_LIMITS = {'monitor': os.environ.get('API_RATE_LIMIT_MONITOR', '300 per minute'),
+                       'operator': os.environ.get('API_RATE_LIMIT_OPERATOR', '600 per minute'),
+                       'administrator': os.environ.get('API_RATE_LIMIT_ADMIN', '1200 per minute')}
+
+    # Data lake (app/services/lake.py): a live MariaDB replica that keeps
+    # everything; history reads use it, hot-database purges skip it.
+    LAKE_DATABASE_URL = _normalize_db_uri(os.environ.get('LAKE_DATABASE_URL', '')) if os.environ.get(
+        'LAKE_DATABASE_URL') else ''
+    EVENT_RETENTION_DAYS = int(os.environ.get('EVENT_RETENTION_DAYS', '90'))
 
     # Background metrics collector (persistent SSH, parallel, off the request
     # path). Interval in seconds between fleet passes; workers = nodes polled

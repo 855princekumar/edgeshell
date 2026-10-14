@@ -233,11 +233,14 @@ def export_task(task, period, grain, category, owner_id):
     fname = f'edgeshell-stats-{period}-{grain}-{slug}-{stamp}.csv'
     fd, path = tempfile.mkstemp(prefix=f'{owner_id}-', suffix='.csv', dir=EXPORT_DIR)
     rows_out = 0
-    with os.fdopen(fd, 'w', newline='', encoding='utf-8') as f:
+    from app.services import lake
+    reader = lake.reader()                     # the data lake when healthy, else the hot DB
+    task.log(f'Reading from the {"data lake" if reader.source == "lake" else "hot database"}')
+    with reader, os.fdopen(fd, 'w', newline='', encoding='utf-8') as f:
         out = csv.writer(f)
         out.writerow(COLUMNS)
         for i, n in enumerate(nodes, 1):
-            hourly = (MetricsHourly.query.filter(MetricsHourly.node_id == n.id,
+            hourly = (reader.session.query(MetricsHourly).filter(MetricsHourly.node_id == n.id,
                                                  MetricsHourly.hour >= start, MetricsHourly.hour < end)
                       .order_by(MetricsHourly.hour).all())
             groups = {}

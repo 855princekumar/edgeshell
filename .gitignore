@@ -44,3 +44,7 @@ wg*.conf
 
 # Browser UI test output
 ui-report/
+
+# Local coverage data
+.coverage
+coverage.xml

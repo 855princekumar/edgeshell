@@ -8,6 +8,7 @@
 #   curl -fsSLO $base/compose.yaml
 #   curl -fsSLo nginx/entrypoint.sh $base/nginx/entrypoint.sh
 #   curl -fsSLo nginx/certbot.sh $base/nginx/certbot.sh
+#   curl -fsSLO $base/lake-init.sh
 #   curl -fsSLo .env $base/.env.example && chmod 600 .env
 #   for k in SECRET_KEY CREDENTIAL_KEY DB_PASSWORD DB_ROOT_PASSWORD MFA_ADMIN_PASSWORD MFA_PEPPER MFA_DB_PASSWORD MFA_SECRET_KEY; do
 #     sed -i "s|^$k=.*|$k=$(openssl rand -hex 32)|" .env; done
@@ -25,17 +26,21 @@ name: edgeshell
 services:
   # One-shot: the app runs as uid 10001, so give it the host data folders.
   init-data:
-    image: devprincekumar/edgeshell:${EDGESHELL_TAG:-1.7.4}
+    image: devprincekumar/edgeshell:${EDGESHELL_TAG:-1.8.0}
     user: "0:0"
     entrypoint: ["sh", "-c", "mkdir -p /data/instance /data/uploads /data/privacyidea && chown -R 10001:10001 /data/instance /data/uploads && chown -R 65532:65532 /data/privacyidea && chmod 700 /data/privacyidea"]
     volumes:
       - ./data:/data
     restart: "no"
 
+  # The hot database. Its binary log feeds the data lake (mariadb-lake);
+  # only the edgeshell database is logged, so 2FA secrets never leave it.
   mariadb:
     image: mariadb:11.4
     restart: unless-stopped
-    command: ["--character-set-server=utf8mb4", "--collation-server=utf8mb4_unicode_ci"]
+    command: ["--character-set-server=utf8mb4", "--collation-server=utf8mb4_unicode_ci",
+              "--server-id=1", "--log-bin=hot-bin", "--binlog-format=ROW", "--binlog-do-db=edgeshell",
+              "--binlog-expire-logs-seconds=604800"]
     environment:
       MARIADB_DATABASE: edgeshell
       MARIADB_USER: edgeshell
@@ -50,6 +55,48 @@ services:
       timeout: 5s
       retries: 12
       start_period: 30s
+    networks:
+      - backend
+
+  # The data lake: a live, read-only replica of the edgeshell database that
+  # keeps everything (purges on the hot database skip it). Exports and
+  # history queries read from here. Internal network only.
+  mariadb-lake:
+    image: mariadb:11.4
+    restart: unless-stopped
+    command: ["--character-set-server=utf8mb4", "--collation-server=utf8mb4_unicode_ci",
+              "--server-id=2", "--read-only=ON", "--replicate-do-db=edgeshell", "--relay-log=lake-relay"]
+    environment:
+      MARIADB_DATABASE: edgeshell
+      MARIADB_USER: edgeshell
+      MARIADB_PASSWORD: ${DB_PASSWORD:?set DB_PASSWORD in .env}
+      MARIADB_ROOT_PASSWORD: ${DB_ROOT_PASSWORD:?set DB_ROOT_PASSWORD in .env}
+      MARIADB_AUTO_UPGRADE: "1"
+    volumes:
+      - ./data/mariadb-lake:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+    networks:
+      - backend
+
+  # One-shot, idempotent: starts replication into the lake (docker/lake-init.sh).
+  lake-init:
+    image: mariadb:11.4
+    depends_on:
+      mariadb:
+        condition: service_healthy
+      mariadb-lake:
+        condition: service_healthy
+    environment:
+      MARIADB_ROOT_PASSWORD: ${DB_ROOT_PASSWORD:?set DB_ROOT_PASSWORD in .env}
+    entrypoint: ["/bin/sh", "/edgeshell/lake-init.sh"]
+    volumes:
+      - ./lake-init.sh:/edgeshell/lake-init.sh:ro
+    restart: "no"
     networks:
       - backend
 
@@ -117,7 +164,7 @@ services:
       - backend
 
   edgeshell:
-    image: devprincekumar/edgeshell:${EDGESHELL_TAG:-1.7.4}
+    image: devprincekumar/edgeshell:${EDGESHELL_TAG:-1.8.0}
     restart: unless-stopped
     depends_on:
       init-data:
@@ -131,6 +178,7 @@ services:
       SECRET_KEY: ${SECRET_KEY:?set SECRET_KEY in .env}
       CREDENTIAL_KEY: ${CREDENTIAL_KEY:?set CREDENTIAL_KEY in .env}
       DATABASE_URL: mysql+mysqlconnector://edgeshell:${DB_PASSWORD}@mariadb:3306/edgeshell?charset=utf8mb4&collation=utf8mb4_unicode_ci
+      LAKE_DATABASE_URL: mysql+mysqlconnector://edgeshell:${DB_PASSWORD}@mariadb-lake:3306/edgeshell?charset=utf8mb4&collation=utf8mb4_unicode_ci
       BEHIND_PROXY: "true"
       SESSION_COOKIE_SECURE: ${SESSION_COOKIE_SECURE:-true}
       DISPLAY_TZ: ${DISPLAY_TZ:-UTC}
@@ -142,6 +190,13 @@ services:
       METRICS_RETENTION_DAYS: ${METRICS_RETENTION_DAYS:-14}
       LOGIN_PAUSE_AFTER_FAILURES: ${LOGIN_PAUSE_AFTER_FAILURES:-2}
       LOGIN_RECHECK_MINUTES: ${LOGIN_RECHECK_MINUTES:-30}
+      API_ALLOW_COMMANDS: ${API_ALLOW_COMMANDS:-false}
+      API_RATE_LIMIT_MONITOR: ${API_RATE_LIMIT_MONITOR:-300 per minute}
+      API_RATE_LIMIT_OPERATOR: ${API_RATE_LIMIT_OPERATOR:-600 per minute}
+      API_RATE_LIMIT_ADMIN: ${API_RATE_LIMIT_ADMIN:-1200 per minute}
+      API_SESSION_IDLE_MINUTES: ${API_SESSION_IDLE_MINUTES:-60}
+      API_SESSION_MAX_HOURS: ${API_SESSION_MAX_HOURS:-12}
+      EVENT_RETENTION_DAYS: ${EVENT_RETENTION_DAYS:-90}
       # Two-factor authentication (mandatory), checked by privacyIDEA.
       MFA_PROVIDER: privacyidea
       PRIVACYIDEA_URL: http://privacyidea:8080

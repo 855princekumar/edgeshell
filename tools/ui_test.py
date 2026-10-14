@@ -36,8 +36,8 @@ ZOOMS = [('laptop', 1366, 768, z) for z in (0.67, 1.25, 1.5, 2.0)] + \
 PAGES = ['/', '/nodes/', '/monitoring/', '/terminal/', '/files/', '/logs/', '/logs/activity',
          '/users/', '/users/add', '/account/', '/tailscale/', '/settings/', '/issues/',
          '/nodes/add', '/nodes/import']
-TYPES = [('datalogger', 0.86, 'adani-ahmedabad-phase'), ('floc-detector', 0.10, 'floc-detector-unit'),
-         ('bht', 0.02, 'bio-health-tracker'), ('rtu', 0.02, 'reliance-jamnagar-rtu-panel-east-gate')]
+TYPES = [('pi-node', 0.86, 'site-a-pi-node'), ('gateway', 0.10, 'site-b-gateway'),
+         ('mini-pc', 0.02, 'site-c-mini-pc'), ('rtu', 0.02, 'plant-east-gate-sensor-hub-panel')]
 
 LAYOUT_JS = r"""
 () => {
@@ -118,7 +118,7 @@ def seed(app, nodes, ssh):
                 st = 'online' if r < 0.6 else ('auth_failed' if r < 0.93 else 'offline')
                 n = Node(name=f'{prefix}-{k + 1:04d}', ip_address=f'100.{64 + made % 60}.{made % 250}.{k % 250 + 1}',
                          username='pi', node_type=t, environment='production', status=st,
-                         location='adani', tags='datalogger;ts-online;tailscale',
+                         location='site-a', tags='pi-node;ts-online;tailscale',
                          cpu_percent=round(random.uniform(1, 95), 1) if st == 'online' else None,
                          ram_percent=round(random.uniform(10, 92), 1) if st == 'online' else None,
                          disk_percent=round(random.uniform(5, 90), 1) if st == 'online' else None,
@@ -141,7 +141,7 @@ def seed(app, nodes, ssh):
         if ssh:
             host, _, port = ssh.partition(':')
             n = Node(name='emulated-pi-real-ssh', ip_address=host, ssh_port=int(port or 22), username='pi',
-                     node_type='datalogger', status='online', environment='production')
+                     node_type='pi-node', status='online', environment='production')
             n.password = 'raspberry'
             db.session.add(n)
             db.session.flush()
@@ -244,11 +244,11 @@ def run_interactions(pw, base, rep, total, real_id, label, w, h, scale):
     page.wait_for_selector('.cat-card')
     cards = page.locator('.cat-card')
     rep.check(f'{label}: dashboard shows category cards', cards.count() >= 4, cards.count(), page)
-    page.locator('.cat-card', has_text='Floc Detectors').click()
+    page.locator('.cat-card', has_text='Edge Gateways').click()
     page.wait_for_timeout(400)
     scope = page.inner_text('#cat-scope')
-    rep.check(f'{label}: clicking a category scopes the dashboard', 'Floc Detectors' in scope, scope, page)
-    rep.check(f'{label}: the scoped SLA title follows', 'Floc Detectors' in page.inner_text('#sla-title'),
+    rep.check(f'{label}: clicking a category scopes the dashboard', 'Edge Gateways' in scope, scope, page)
+    rep.check(f'{label}: the scoped SLA title follows', 'Edge Gateways' in page.inner_text('#sla-title'),
               page.inner_text('#sla-title'), page)
     issues = page.evaluate(LAYOUT_JS)
     rep.check(f'{label}: scoped dashboard layout', not issues, '; '.join(issues[:4]), page)
@@ -270,7 +270,7 @@ def run_interactions(pw, base, rep, total, real_id, label, w, h, scale):
     rep.check(f'{label}: bulk bar hides with nothing selected', not page.is_visible('#bulkBar'), '', page)
 
     # Select All under a filter selects only what is shown; bulk dialogs fit
-    page.select_option('#catFilter', 'Bio Health Trackers')
+    page.select_option('#catFilter', 'Mini PCs')
     page.check('#selectAll')
     sel = page.evaluate("selectedIds().length")
     want = page.evaluate("[...document.querySelectorAll('.node-card')].filter(c => c.style.display !== 'none').length")
@@ -292,9 +292,9 @@ def run_interactions(pw, base, rep, total, real_id, label, w, h, scale):
     page.click('#esDlgCancel')
     rep.check(f'{label}: cancel deletes nothing', page.locator('.node-card').count() == total, '', page)
     page.click('#bulkClearBtn')
-    page.select_option('#catFilter', 'Floc Detectors')
+    page.select_option('#catFilter', 'Edge Gateways')
     shown = page.evaluate("[...document.querySelectorAll('.node-card')].filter(c => c.style.display !== 'none').length")
-    want = page.evaluate("[...document.querySelectorAll('.node-card')].filter(c => c.dataset.category === 'Floc Detectors').length")
+    want = page.evaluate("[...document.querySelectorAll('.node-card')].filter(c => c.dataset.category === 'Edge Gateways').length")
     rep.check(f'{label}: Category filter', shown == want and shown > 0, f'{shown} shown, {want} expected', page)
     page.select_option('#catFilter', '')
     page.select_option('#statusFilter', 'auth_failed')
@@ -368,6 +368,22 @@ def run_interactions(pw, base, rep, total, real_id, label, w, h, scale):
               page.get_attribute('#expBar', 'style').replace(' ', '').find('width:100%') >= 0,
               page.get_attribute('#expBar', 'style'), page)
     page.click('#expClose')
+
+    # My account, API access: create a service key (password and 2FA again), shown once
+    page.goto(base + '/account/')
+    page.locator('#api summary').click()
+    page.fill('#api input[name=name]', f'ui-test-{label}')
+    page.fill('#api input[name=password]', 'admin123')
+    page.fill('#api input[name=code]', '000000')            # 2FA is off in the test app
+    page.locator('#api button', has_text='Create key').click()
+    page.wait_for_load_state('load')
+    key = page.input_value('#newKey') if page.locator('#newKey').count() else ''
+    rep.check(f'{label}: a new service key is shown once', key.startswith('esk_'), key[:8], page)
+    issues = page.evaluate(LAYOUT_JS)
+    rep.check(f'{label}: API access section fits', not issues, '; '.join(issues[:4]), page)
+    page.goto(base + '/account/')
+    rep.check(f'{label}: the key is not shown again', page.locator('#newKey').count() == 0
+              and f'ui-test-{label}' in page.inner_text('#api'), '', page)
 
     # Monitoring "Auto" stays as the user set it: other pages, sign-out, sign-in
     page.goto(base + '/monitoring/')

@@ -46,7 +46,8 @@ def upload():
     files = request.files.getlist('files') or request.files.getlist('file')
     files = [f for f in files if f and f.filename]
     node_ids = request.form.getlist('node_ids')
-    target_path = request.form.get('target_path', '/tmp/').strip() or '/tmp/'
+    # Bandit B108 reviewed: path on the remote node, not a local temp file
+    target_path = request.form.get('target_path', '/tmp/').strip() or '/tmp/'  # nosec B108
 
     if not files:
         return jsonify({'error': 'No files provided'}), 400

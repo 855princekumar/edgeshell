@@ -55,7 +55,7 @@ services:
       - node-64bit-2
       - node-64bit-3
     healthcheck:
-      test: ["CMD", "curl", "-sf", "http://localhost:5000/api/v1/status"]
+      test: ["CMD", "curl", "-sf", "http://localhost:5000/api/v1/health"]
       interval: 15s
       timeout: 5s
       retries: 5

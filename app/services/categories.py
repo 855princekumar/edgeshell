@@ -1,7 +1,7 @@
 """Device categories for the dashboard and filters.
 
 A category groups nodes by their node type (for example every
-'floc-detector'), has an icon and an SLA target, and gets its own card and
+'gateway'), has an icon and an SLA target, and gets its own card and
 scoped stats on the dashboard. Administrators edit the list on the
 dashboard; it is stored as JSON in the settings table. Nodes whose type is in
 no category appear under "Other".
@@ -15,9 +15,9 @@ SETTING_KEY = 'dashboard_categories'
 ICONS = ('hdd-network', 'droplet-half', 'heart-pulse', 'cpu', 'router', 'thermometer-half',
          'lightning-charge', 'water', 'broadcast', 'camera-video', 'gear', 'box')
 DEFAULT = [
-    {'name': 'Data Loggers', 'types': ['datalogger'], 'icon': 'hdd-network', 'sla_target': 99.0},
-    {'name': 'Floc Detectors', 'types': ['floc-detector'], 'icon': 'droplet-half', 'sla_target': 99.0},
-    {'name': 'Bio Health Trackers', 'types': ['bht'], 'icon': 'heart-pulse', 'sla_target': 99.0},
+    {'name': 'Pi Nodes', 'types': ['pi-node'], 'icon': 'hdd-network', 'sla_target': 99.0},
+    {'name': 'Edge Gateways', 'types': ['gateway'], 'icon': 'router', 'sla_target': 99.0},
+    {'name': 'Mini PCs', 'types': ['mini-pc'], 'icon': 'cpu', 'sla_target': 99.0},
 ]
 MAX_CATEGORIES = 24
 _TYPE_RE = re.compile(r'^[a-z0-9][a-z0-9._ -]{0,31}$')

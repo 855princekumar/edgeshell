@@ -29,7 +29,7 @@ os.environ.setdefault('FLASK_ENV', 'testing')
 
 OUT = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'docs', 'assets', 'screenshots')
 SITES = ['north-plant', 'river-intake', 'east-works', 'lab-campus', 'south-depot', 'hill-reservoir']
-FLEET = [('datalogger', 'logger', 22), ('floc-detector', 'floc', 7), ('bht', 'bht', 4), ('rtu', 'rtu', 2)]
+FLEET = [('pi-node', 'pi', 22), ('gateway', 'gw', 7), ('mini-pc', 'nuc', 4), ('rtu', 'rtu', 2)]
 
 
 def totp(secret, step=None):
@@ -107,13 +107,13 @@ def seed(app, ssh):
         for i, hp in enumerate(ssh):
             host, _, port = hp.partition(':')
             n = Node(name=f'lab-campus-pi-{i + 1:02d}', ip_address=host, ssh_port=int(port or 22), username='pi',
-                     node_type='datalogger', environment='staging', location='lab-campus', status='online',
-                     tags='datalogger;emulated')
+                     node_type='pi-node', environment='staging', location='lab-campus', status='online',
+                     tags='pi-node;emulated')
             n.password = 'raspberry'
             db.session.add(n)
         for k in range(2):
             n = Node(name=f'old-site-logger-{k + 1:02d}', ip_address=f'100.99.0.{k + 2}', username='pi',
-                     node_type='datalogger', is_deleted=True, is_active=False, deleted_at=datetime.utcnow())
+                     node_type='pi-node', is_deleted=True, is_active=False, deleted_at=datetime.utcnow())
             n.password = 'demo'
             db.session.add(n)
         db.session.commit()
@@ -233,7 +233,7 @@ def main():
 
         page.goto(base + '/nodes/')
         page.wait_for_selector('.node-card')
-        page.select_option('#catFilter', 'Data Loggers')
+        page.select_option('#catFilter', 'Pi Nodes')
         shot('nodes.png')
         page.check('#selectAll')
         page.click('#bulkLoginBtn')

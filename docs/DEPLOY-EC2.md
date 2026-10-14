@@ -59,6 +59,7 @@ curl -fsSLO $base/compose.yaml
 curl -fsSLO $base/host-hardening.sh
 curl -fsSLo nginx/entrypoint.sh $base/nginx/entrypoint.sh
 curl -fsSLo nginx/certbot.sh $base/nginx/certbot.sh
+curl -fsSLO $base/lake-init.sh
 curl -fsSLo .env $base/.env.example && chmod 600 .env
 for k in SECRET_KEY CREDENTIAL_KEY DB_PASSWORD DB_ROOT_PASSWORD MFA_ADMIN_PASSWORD MFA_PEPPER MFA_DB_PASSWORD MFA_SECRET_KEY; do
   sed -i "s|^$k=.*|$k=$(openssl rand -hex 32)|" .env; done
@@ -76,7 +77,9 @@ What runs, and what is reachable:
 | `nginx` | Reverse proxy, TLS, security headers, sign-in rate limit | Internet, ports 80 and 443 only |
 | `edgeshell` | The application (non-root) | nginx only |
 | `privacyidea` | Checks every 2FA code (non-root) | EdgeShell only (internal network) |
-| `mariadb` | Database for EdgeShell and privacyIDEA | Internal network, no internet route |
+| `mariadb` | The hot database for EdgeShell and privacyIDEA | Internal network, no internet route |
+| `mariadb-lake` | The data lake: a live read-only replica of EdgeShell's database that keeps everything | Internal network only |
+| `lake-init` | One-shot: starts and checks replication into the lake | Internal network only |
 | `certbot` | Free Let's Encrypt certificates, renewed automatically | Outbound only |
 
 ### A5. First sign-in
@@ -151,6 +154,33 @@ on the right page. Everyone signs in again once on the new address (cookies
 belong to the address they were set on). certbot renews the domain
 certificate from then on. To go back, restore `backups/env-before-domain` and
 run the same `docker compose up -d`.
+
+### A6b. Data lake and hot retention
+
+The stack runs two MariaDB servers. `mariadb` is the hot database the app
+writes. `mariadb-lake` is a live replica of EdgeShell's database (not
+privacyIDEA's, so 2FA secrets stay in one place) that keeps every row: metrics,
+rollups, events, the activity log, accounts and API activity. Exports, history,
+events and activity reads come from the lake when it is caught up.
+
+- `lake-init` sets replication up on the first `docker compose up` (it copies
+  the hot database to the lake, then follows its binary log) and checks it on
+  every later one. Its output: `docker compose logs lake-init`.
+- **Settings, Data lake and hot retention** shows the replication lag and holds
+  the optional **hot retention policy**: off by default; an administrator can
+  keep only the last week, month, quarter, semester or year on the hot
+  database. Older history is then removed from the hot database every 6 hours
+  and stays in the lake.
+- Nothing is deleted unless the lake is replicating, caught up and already holds
+  every row being removed. Deletes run with `sql_log_bin=0`, so the replica
+  never sees them.
+- Disk: the lake grows with history (about 2 to 3 GB a year for 150 nodes).
+  Watch `df -h` and back up `data/mariadb-lake` as well as `data/mariadb`.
+
+Upgrading an existing install to 1.8.0: download `lake-init.sh` (as in A4) and
+the new `compose.yaml`, then `docker compose up -d`. The hot database restarts
+once (about 10 seconds) to turn on its binary log; `lake-init` then copies it to
+the lake and starts replication.
 
 ### A7. Harden the host
 

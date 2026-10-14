@@ -707,12 +707,12 @@ def test_fleet_poll_runs_in_parallel(app, monkeypatch):
 def _fleet(app):
     from app.models.node import Node
     with app.app_context():
-        for name, t, st in (('dl-1', 'datalogger', 'online'), ('dl-2', 'datalogger', 'auth_failed'),
-                            ('floc-1', 'floc-detector', 'online'), ('bht-1', 'bht', 'offline'),
+        for name, t, st in (('pi-1', 'pi-node', 'online'), ('pi-2', 'pi-node', 'auth_failed'),
+                            ('gw-1', 'gateway', 'online'), ('pc-1', 'mini-pc', 'offline'),
                             ('rtu-1', 'rtu', 'online')):
             db.session.add(Node(name=name, ip_address='10.5.0.1', username='pi', node_type=t,
                                 status=st, cpu_percent=10.0 if st == 'online' else None,
-                                tags='datalogger;ts-online;tailscale'))
+                                tags='pi-node;ts-online;tailscale'))
         db.session.commit()
 
 
@@ -721,22 +721,22 @@ def test_default_categories_group_nodes_by_type(app, client):
     _fleet(app)
     d = client.get('/monitoring/fleet-summary').get_json()
     names = [c['name'] for c in d['categories']]
-    assert names == ['Data Loggers', 'Floc Detectors', 'Bio Health Trackers']
+    assert names == ['Pi Nodes', 'Edge Gateways', 'Mini PCs']
     by_type = {n['name']: n['node_type'] for n in d['nodes']}
-    assert by_type['floc-1'] == 'floc-detector' and by_type['bht-1'] == 'bht'
+    assert by_type['gw-1'] == 'gateway' and by_type['pc-1'] == 'mini-pc'
     info = client.get('/monitoring/categories').get_json()
-    assert info['types'] == {'bht': 1, 'datalogger': 2, 'floc-detector': 1, 'rtu': 1}
+    assert info['types'] == {'mini-pc': 1, 'pi-node': 2, 'gateway': 1, 'rtu': 1}
 
 
 def test_admin_edits_categories_and_others_cannot(app, client):
     _login(app, client)
-    new = [{'name': 'Data Loggers', 'types': ['datalogger'], 'icon': 'hdd-network', 'sla_target': 99.5},
+    new = [{'name': 'Pi Nodes', 'types': ['pi-node'], 'icon': 'hdd-network', 'sla_target': 99.5},
            {'name': 'RTUs', 'types': 'rtu', 'icon': 'router', 'sla_target': 95}]
     r = client.post('/monitoring/categories', json={'categories': new}).get_json()
     assert r['success'] and r['categories'][1] == {'name': 'RTUs', 'types': ['rtu'], 'icon': 'router',
                                                   'sla_target': 95.0}
     assert [c['name'] for c in client.get('/monitoring/fleet-summary').get_json()['categories']] == \
-        ['Data Loggers', 'RTUs']
+        ['Pi Nodes', 'RTUs']
     bad = client.post('/monitoring/categories', json={'categories': [
         {'name': 'A', 'types': ['rtu']}, {'name': 'B', 'types': ['rtu']}]})
     assert bad.status_code == 400 and 'both' in bad.get_json()['message']
@@ -752,9 +752,9 @@ def test_node_fleet_category_filter_and_tags(app, client):
     _login(app, client)
     _fleet(app)
     html = client.get('/nodes/').get_data(as_text=True)
-    assert 'id="catFilter"' in html and '<option value="Floc Detectors">' in html
+    assert 'id="catFilter"' in html and '<option value="Edge Gateways">' in html
     assert '<option value="Other">Other</option>' in html            # rtu is in no category
-    assert 'data-category="Bio Health Trackers"' in html
+    assert 'data-category="Mini PCs"' in html
     assert '>ts-online</span>' in html and '>tailscale</span>' in html  # ; separated tags split
     assert 'value="auth_failed">login failed' in html
 

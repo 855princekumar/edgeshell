@@ -236,7 +236,8 @@ def collect_one(target):
             try:
                 client, fresh = POOL.get(target)
                 cmd = METRICS_CMD.replace('__ORGUI_PORT__', str(int(target.get('orgui_port') or 6080)))
-                _, out, _ = client.exec_command(cmd, timeout=COMMAND_TIMEOUT_S)
+                # Bandit B601 reviewed: running commands on nodes is the feature (operators only; command policy and audit log apply)
+                _, out, _ = client.exec_command(cmd, timeout=COMMAND_TIMEOUT_S)  # nosec B601
                 text = out.read().decode('utf-8', 'replace')
                 metrics = parse_metrics(text)
                 return {'ok': True, 'metrics': metrics, 'kind': None, 'message': None,
@@ -295,6 +296,8 @@ class Collector:
                 with self._app.app_context():
                     self.run_cycle()
                     self._roll_up()
+                    from app.services import lake
+                    lake.beat()
                     self._purge_history()
                     from app.services import login_policy
                     login_policy.recheck(self)
@@ -332,7 +335,14 @@ class Collector:
             with ThreadPoolExecutor(max_workers=max(1, min(workers, len(targets)))) as pool:
                 for t, r in zip(targets, pool.map(collect_one, targets)):
                     results[t['id']] = r
+        before = {n.id: n.status for n in nodes}
         self._store(nodes, results, now)
+        from app.models.api import NodeEvent
+        for n in nodes:                     # the event feed (GET /api/v1/events)
+            if n.id in results and before.get(n.id) != n.status:
+                db.session.add(NodeEvent(node_id=n.id, node_name=n.name, kind='status_changed',
+                                         old_value=before.get(n.id), new_value=n.status,
+                                         message=(n.last_error or '')[:250] or None))
         from app.services import login_policy
         login_policy.apply(nodes, results, self)
         if not node_ids and now - self.last_sample >= HISTORY_EVERY_S:
@@ -392,14 +402,22 @@ class Collector:
     def _purge_history(self):
         from flask import current_app
         from app import db
-        from app.models import SystemMetrics
         if time.time() - self._last_purge < 6 * 3600:
             return
         self._last_purge = time.time()
+        from app.services import lake
+        # Raw samples and events leave the hot database after their retention;
+        # with a data lake the purge skips the replica, so the lake keeps them.
         days = int(current_app.config.get('METRICS_RETENTION_DAYS', 14))
-        cutoff = datetime.utcnow() - timedelta(days=days)
-        SystemMetrics.query.filter(SystemMetrics.timestamp < cutoff).delete(synchronize_session=False)
+        lake.purge('system_metrics', 'timestamp', datetime.utcnow() - timedelta(days=days))
+        lake.purge('node_events', 'timestamp', datetime.utcnow() - timedelta(
+            days=int(current_app.config.get('EVENT_RETENTION_DAYS', 90))))
+        from app.models.api import ApiToken
+        # expired API credentials are kept 30 days for the audit view, then removed
+        ApiToken.query.filter(ApiToken.expires_at < datetime.utcnow() - timedelta(days=30)).delete(
+            synchronize_session=False)
         db.session.commit()
+        lake.apply_retention()                  # the optional hot retention policy (Settings)
 
     def status(self):
         return dict(self.cycle, pooled_connections=POOL.size(),
@@ -417,7 +435,7 @@ def start(app):
 # ---------------------------------------------------------------- commands
 
 # sudo inside this one command reads the password from a shell variable that
-# came in on stdin: never on a command line, never echoed, no reliance on
+# came in on stdin: never on a command line, never echoed, not depending on
 # sudo's credential cache (which does not carry across pipes).
 _SUDO_PRIME = ("IFS= read -r __es_pw; "
                "sudo() { printf '%s' \"$__es_pw\" | command sudo -S -p '' \"$@\"; }; ")
@@ -450,7 +468,8 @@ def run_command(target, command, timeout=60, sudo_password=None, on_output=None,
         if get_pty:
             chan.get_pty(term='xterm', width=200, height=50)
         chan.set_combine_stderr(True)
-        chan.exec_command(command)
+        # Bandit B601 reviewed: running commands on nodes is the feature (operators only; command policy and audit log apply)
+        chan.exec_command(command)  # nosec B601
         if uses_sudo:
             chan.sendall((sudo_password + '\n').encode())
         deadline = started + timeout

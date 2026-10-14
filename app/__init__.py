@@ -95,12 +95,14 @@ def create_app(config_name='default'):
             'SIGNUP_ENABLED': app.config.get('SIGNUP_ENABLED', True),
         }
 
+    _register_api(app)
     from app.services.session_service import register_single_session
     register_single_session(app)
 
     # Import models so their tables are registered before create_all.
     from app.models import issue as _issue_models  # noqa: F401
     from app.models import ServiceEvent as _svc  # noqa: F401
+    from app.models import api as _api_models  # noqa: F401
     with app.app_context():
         db.create_all()
         _ensure_schema()
@@ -130,6 +132,64 @@ def _register_time_filters(app):
         return {'DISPLAY_TZ': tz_name, 'TZ_LABEL': tz_label(tz_name)}
 
 
+def _register_api(app):
+    """Bearer authentication, limits, headers and JSON errors for /api/v1.
+    Registered before the browser-session check so an API token never needs
+    (or creates) a browser session."""
+    from flask import g, request
+    from flask_login import AnonymousUserMixin
+    from app.services import api_auth
+
+    def is_api():
+        return request.path.startswith('/api/')
+
+    @app.before_request
+    def _api_auth():
+        if not is_api():
+            return None
+        limit = app.config.get('API_MAX_BODY_BYTES', 1024 * 1024)
+        if request.content_length and request.content_length > limit:
+            return api_auth.api_error(413, 'too_large', f'The body is larger than {limit} bytes.')
+        if request.headers.get('Authorization'):
+            user = api_auth.authenticate_bearer()
+            g._login_user = user if user is not None else (login_manager.anonymous_user or AnonymousUserMixin)()
+        return None
+
+    @app.after_request
+    def _api_headers(resp):
+        if is_api():
+            resp.headers['Cache-Control'] = 'no-store'
+            resp.headers['X-Content-Type-Options'] = 'nosniff'
+            resp.headers['X-Frame-Options'] = 'DENY'
+            resp.headers.setdefault('Content-Security-Policy', "default-src 'none'; frame-ancestors 'none'")
+            if getattr(g, 'api_bearer_present', False):
+                resp.headers.pop('Set-Cookie', None)       # token requests never get a cookie
+        return resp
+
+    def _json_error(code, name, message):
+        def handler(e):
+            if not is_api():
+                return e
+            resp = api_auth.api_error(code, name, message)
+            if code == 429 and getattr(e, 'description', None):
+                resp.headers['Retry-After'] = str(getattr(e, 'retry_after', 60) or 60)
+            return resp
+        return handler
+    for code, name, message in ((400, 'bad_request', 'The request is not valid.'),
+                                (404, 'not_found', 'No such endpoint. See /api/v1/openapi.json.'),
+                                (405, 'method_not_allowed', 'This method is not allowed here.'),
+                                (413, 'too_large', 'The body is too large.'),
+                                (429, 'rate_limited', 'Too many requests. Wait and retry (Retry-After).'),
+                                (500, 'server_error', 'Something went wrong on the server.')):
+        app.register_error_handler(code, _json_error(code, name, message))
+
+    from flask import current_app
+    from app.routes.api import api_bp
+    if not getattr(api_bp, '_edgeshell_limited', False):    # once per process, not per app
+        limiter.limit(api_auth.rate_limit, key_func=api_auth.rate_key)(api_bp)
+        api_bp._edgeshell_limited = True
+
+
 def _ensure_views(app):
     """MariaDB convenience views showing UTC columns in DISPLAY_TZ, so rows
     read naturally in phpMyAdmin. Tables themselves stay UTC."""
@@ -145,15 +205,18 @@ def _ensure_views(app):
     tz = f"{sign}{abs(mins) // 60:02d}:{abs(mins) % 60:02d}"
     views = {
         'v_activity_local': (
-            f"SELECT id, CONVERT_TZ(timestamp,'+00:00','{tz}') AS local_time, "
+            # Bandit B608 reviewed: identifiers come from a fixed allow-list; values are bound parameters
+            f"SELECT id, CONVERT_TZ(timestamp,'+00:00','{tz}') AS local_time, "  # nosec B608
             "user, node, action, status, ip_address, duration, command "
             "FROM activity_logs"),
         'v_service_events_local': (
-            f"SELECT id, CONVERT_TZ(timestamp,'+00:00','{tz}') AS local_time, "
+            # Bandit B608 reviewed: identifiers come from a fixed allow-list; values are bound parameters
+            f"SELECT id, CONVERT_TZ(timestamp,'+00:00','{tz}') AS local_time, "  # nosec B608
             "event, reason, detail, result, exit_code, exit_status, hostname, "
             "pid, version, host_uptime_s, boot_id FROM service_events"),
         'v_user_sessions': (
-            "SELECT s.id, u.username, u.role, u.is_active, u.max_sessions, "
+            # Bandit B608 reviewed: identifiers come from a fixed allow-list; values are bound parameters
+            "SELECT s.id, u.username, u.role, u.is_active, u.max_sessions, "  # nosec B608
             "s.ip AS session_ip, s.agent AS session_agent, "
             f"CONVERT_TZ(s.started_at,'+00:00','{tz}') AS session_started, "
             f"CONVERT_TZ(s.seen_at,'+00:00','{tz}') AS session_last_seen, "

@@ -684,7 +684,7 @@ if (resumeBtn) resumeBtn.addEventListener('click', () => {
     }).catch(e => { resumeBtn.disabled = false; showToast(e.message, 'danger'); });
 });
 
-// Open with a category preselected: /nodes/?category=Floc%20Detectors
+// Open with a category preselected: /nodes/?category=Edge%20Gateways
 document.addEventListener('DOMContentLoaded', () => {
     const want = new URLSearchParams(location.search).get('category');
     const sel = document.getElementById('catFilter');

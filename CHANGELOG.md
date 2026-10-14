@@ -2,6 +2,27 @@
 
 All notable changes are documented here. Format loosely follows Keep a Changelog.
 
+## [1.8.0] - 2026-10-15
+
+### Added
+- **Public API** (`/api/v1`, [docs/API.md](docs/API.md), OpenAPI at `/api/v1/openapi.json` generated from the code). Sign in with password and 2FA (`/auth/login`, `/auth/verify`) for an API session, or create a **service key** for unattended integrations (on My account or `POST /keys`; needs the password and a fresh 2FA code; chosen scopes up to the role, lifetime, optional IP allowlist; shown once, stored as a hash). Every user has their own credentials, and every API action is audited with the user and the credential.
+- **Data points for other systems**: latest metrics per node, time series (raw, hourly, daily), fleet summary by category, and an **event feed** (status changes, paused and resumed logins) read with a cursor, so alerting and automation tools can build thresholds and triggers. Node management, bulk login updates, exports and job progress through the API; shell commands only when `API_ALLOW_COMMANDS=true`.
+- **API protection**: per-credential rate limits by role, sign-in limits and lockout shared with the web app, strict validation (unknown parameters and fields refused, 1 MB body limit), JSON errors, no-store and nosniff headers, no cookies for token requests, browser cookies read-only (no CSRF exposure).
+- **Data lake**: `mariadb-lake`, a live replica of the hot database that keeps every row (2FA data excluded). Exports, history, events and activity read from it when caught up. Raw-metric and event clean-up on the hot database now skips the lake, so all history is kept.
+- **Hot retention policy** (Settings, Data lake and hot retention): off by default; an administrator can keep only the last week, month, quarter, semester or year on the hot database. Nothing is deleted unless the lake is replicating, caught up and holds every row.
+- **Command policy** enforced in the fleet terminal and the API: built-in rules (wiping the root filesystem, writing over disks, mkfs, fork bombs) plus the administrators' blocked commands.
+- **Stricter CI**: Bandit, pip-audit and a no-SQL-from-input check (Security scans), CodeQL (Python and JavaScript), a coverage floor of 74 percent and at least 170 unit tests, the data lake replication test on real MariaDB, and an API step with real 2FA in the sandbox. New pull request checklist with a security section.
+- **Docs**: [docs/API.md](docs/API.md), [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md) (every production issue met so far, with cause and fix), data lake in the EC2 guide and architecture, accepted risks and social engineering in SECURITY.md.
+
+### Changed
+- **Breaking for API clients**: `GET /api/v1/nodes` and `GET /api/v1/activity` return `{"nodes": [...], "pagination": {...}}` and `{"activity": [...], ...}` instead of a bare list. `/api/v1/status` needs sign-in; use `/api/v1/health` for unauthenticated checks.
+- Settings, Security shows the limits the server enforces (read only) instead of fields that were saved but never used.
+- Settings, System Info shows the real version, Python, Flask and database engine (it was hardcoded as 1.0.0 and SQLite).
+- Clearing the activity log is itself recorded.
+
+### Upgrade
+- Download `lake-init.sh` next to `compose.yaml` and the new `compose.yaml`, then `docker compose up -d`. The hot database restarts once to turn on its binary log; `lake-init` copies it to the lake and starts replication.
+
 ## [Unreleased]
 
 ### Documentation
@@ -83,13 +104,13 @@ All notable changes are documented here. Format loosely follows Keep a Changelog
 ## [1.5.0] - 2026-10-13
 
 ### Added
-- **Device categories on the dashboard.** A row of cards, one per category (default: Data Loggers, Floc Detectors, Bio Health Trackers, matched by node type, plus an automatic "Other"), each with online/total, availability against its own SLA target, average CPU and RAM, and login-failed and offline counts. Clicking a card scopes the SLA bar, stat cards, charts and node grid to that category.
+- **Device categories on the dashboard.** A row of cards, one per category (default: Pi Nodes, Edge Gateways, Mini PCs, matched by node type, plus an automatic "Other"), each with online/total, availability against its own SLA target, average CPU and RAM, and login-failed and offline counts. Clicking a card scopes the SLA bar, stat cards, charts and node grid to that category.
 - Administrators edit categories on the dashboard: add, rename, remove and reorder them, choose which node types belong to each, an icon and an SLA target. The editor lists the node types found in the fleet with their counts.
 - Node Fleet has a Category filter (also `/nodes/?category=<name>`), and the status filter has "login failed".
 
 ### Fixed
 - The last-seen time could overflow node cards on Node Fleet; the badge row now wraps.
-- Node tags separated by semicolons (`datalogger;ts-online;tailscale`) showed as one tag; commas and semicolons both separate tags now.
+- Node tags separated by semicolons (`pi-node;ts-online;tailscale`) showed as one tag; commas and semicolons both separate tags now.
 
 ## [1.4.0] - 2026-10-13
 
