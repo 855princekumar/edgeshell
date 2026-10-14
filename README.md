@@ -8,7 +8,7 @@ Monitor, control, and deploy to your whole edge fleet over SSH and Ansible, from
 <!-- Project -->
 [![CI](https://github.com/855princekumar/edgeshell/actions/workflows/ci.yml/badge.svg)](https://github.com/855princekumar/edgeshell/actions/workflows/ci.yml)
 [![Release](https://github.com/855princekumar/edgeshell/actions/workflows/release.yml/badge.svg)](https://github.com/855princekumar/edgeshell/actions/workflows/release.yml)
-[![Version](https://img.shields.io/badge/version-1.2.0-blue)](CHANGELOG.md)
+[![Version](https://img.shields.io/github/v/release/855princekumar/edgeshell?label=version&color=blue)](CHANGELOG.md)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 [![PRs welcome](https://img.shields.io/badge/PRs-welcome-brightgreen)](CONTRIBUTING.md)
 
@@ -91,18 +91,41 @@ device-management tools.
 
 <table>
 <tr>
-<td width="50%"><img src="docs/assets/screenshots/dashboard.png" alt="Fleet health dashboard: availability, average CPU, memory, disk and temperature across the fleet"><br><sub><b>Fleet dashboard</b>: availability, fleet averages, node status</sub></td>
-<td width="50%"><img src="docs/assets/screenshots/terminal.png" alt="Remote terminal broadcasting one command to six nodes running Buster, Bullseye and Bookworm on armv7l and aarch64"><br><sub><b>Remote terminal</b>: one command, six nodes, each with its own OS and architecture</sub></td>
+<td width="50%"><img src="docs/assets/screenshots/dashboard.png" alt="Fleet health dashboard with device category cards, SLA per category and fleet averages"><br><sub><b>Fleet dashboard</b>: device categories with their own SLA target, fleet availability and averages</sub></td>
+<td width="50%"><img src="docs/assets/screenshots/nodes.png" alt="Node Fleet cards with live metrics, category filter and the paused-logins notice"><br><sub><b>Node Fleet</b>: live cards, filters by category, status and architecture; paused logins explained</sub></td>
 </tr>
 <tr>
-<td width="50%"><img src="docs/assets/screenshots/nodes.png" alt="Node fleet cards with CPU, RAM, disk, status and 32/64-bit badges"><br><sub><b>Node fleet</b>: live status, 32/64-bit detection, one-click actions</sub></td>
-<td width="50%"><img src="docs/assets/screenshots/monitoring.png" alt="System monitoring with per-node metrics and Docker and Node-RED status"><br><sub><b>Monitoring</b>: per-node metrics, Docker and Node-RED state</sub></td>
+<td width="50%"><img src="docs/assets/screenshots/node-terminal.png" alt="Interactive SSH terminal window opened from a node card, running commands on a real PTY"><br><sub><b>Node terminal</b>: a real SSH shell on one node in the browser; closing the window ends the session</sub></td>
+<td width="50%"><img src="docs/assets/screenshots/terminal.png" alt="Fleet terminal broadcasting a command to several nodes, skipping an offline node"><br><sub><b>Fleet terminal</b>: one command to many nodes, results stream in; unreachable nodes are skipped</sub></td>
 </tr>
 <tr>
-<td width="50%"><img src="docs/assets/screenshots/users.png" alt="User management with roles and per-user session limits"><br><sub><b>User management</b>: roles and per-user device limits</sub></td>
-<td width="50%" valign="middle"><sub>Captured from the <a href="#validate-before-you-deploy-sandbox-with-pi-fleet-emulator">sandbox</a>: EdgeShell 1.2.0 managing a 6-node <a href="https://github.com/855princekumar/pi-fleet-emulator">Pi Fleet Emulator</a> fleet. Node names and addresses are simulated.</sub></td>
+<td width="50%"><img src="docs/assets/screenshots/monitoring.png" alt="System monitoring with per-node CPU, memory, disk, load, uptime, network, Docker and Node-RED"><br><sub><b>Monitoring</b>: per-node metrics from the background collector; the Auto setting is remembered</sub></td>
+<td width="50%"><img src="docs/assets/screenshots/vpn.png" alt="VPN status page with tailnet peers filtered by status, OS, link and last seen"><br><sub><b>VPN status</b>: live Tailscale peers with status, OS, link and last-seen filters and sorting</sub></td>
+</tr>
+<tr>
+<td width="50%"><img src="docs/assets/screenshots/nodes-bulk-login.png" alt="Bulk login update dialog for 25 selected nodes"><br><sub><b>Bulk login update</b>: new username, password or port for every selected node, checked once each</sub></td>
+<td width="50%"><img src="docs/assets/screenshots/stats-export.png" alt="Stats export dialog with period, category and detail, progress bar complete"><br><sub><b>Stats export</b>: uptime and resource history as CSV, built in the background with a progress bar</sub></td>
+</tr>
+<tr>
+<td width="50%"><img src="docs/assets/screenshots/2fa-setup.png" alt="Two-factor setup page with a QR code and the key for manual entry"><br><sub><b>Two-factor setup</b>: mandatory for every account: scan the QR code or type the key</sub></td>
+<td width="50%"><img src="docs/assets/screenshots/2fa-verify.png" alt="Sign-in step asking for the 6-digit authenticator code"><br><sub><b>Two-factor sign-in</b>: a 6-digit code (or a one-time backup code) after the password</sub></td>
+</tr>
+<tr>
+<td width="50%"><img src="docs/assets/screenshots/2fa-backup-codes.png" alt="One-time backup codes shown once after two-factor setup"><br><sub><b>Backup codes</b>: ten one-time codes, shown once, with copy, download and print</sub></td>
+<td width="50%"><img src="docs/assets/screenshots/account.png" alt="My account page with two-factor status, administrators and signed-in devices"><br><sub><b>My account</b>: 2FA status, new backup codes, administrators, signed-in devices</sub></td>
+</tr>
+<tr>
+<td width="50%"><img src="docs/assets/screenshots/users.png" alt="User management with roles, per-user device limits and requests"><br><sub><b>User management</b>: roles, device limits, sign-up approvals and reset requests</sub></td>
+<td width="50%"><img src="docs/assets/screenshots/recycle-bin.png" alt="Recycle Bin side panel with restore and permanent delete"><br><sub><b>Recycle Bin</b>: deleted nodes keep their details; restore all, or delete for good with a typed DELETE</sub></td>
 </tr>
 </table>
+
+<p align="center"><img src="docs/assets/screenshots/phone-dashboard.png" alt="Dashboard on a phone" width="24%">&nbsp;&nbsp;<img src="docs/assets/screenshots/phone-menu.png" alt="Phone menu" width="24%"><br><sub><b>On a phone</b>: every page adapts from phone to desktop and from 67 to 200 percent zoom (checked on every pull request)</sub></p>
+
+<sub>Captured from a local demo instance with a simulated fleet (all names and
+addresses are made up) and three <a href="https://github.com/855princekumar/pi-fleet-emulator">Pi Fleet Emulator</a>
+nodes for the terminals. Regenerate them with
+<a href="tools/screenshots.py"><code>tools/screenshots.py</code></a>.</sub>
 
 ## The ecosystem
 
@@ -127,41 +150,56 @@ flowchart LR
 ### Fleet operations
 | Capability | What it does |
 |---|---|
-| **Live monitoring** | CPU, memory, disk, load, temperature, network, Docker and Node-RED status per node, with history and sparklines |
-| **Web terminal** | Run commands on any node from the browser, with a persistent working directory per session |
-| **Remote desktop** | One-click [OpenRemoteGUI](https://github.com/855princekumar/OpenRemoteGUI) per node: auto-detect, install if missing, or install fleet-wide |
+| **Fleet dashboard** | Availability (SLA) and fleet averages for CPU, memory, disk, temperature and load, plus a card per **device category** (for example Data Loggers, Floc Detectors, Bio Health Trackers) with its own SLA target. Click a category to scope the whole dashboard to it; administrators edit the categories |
+| **Live monitoring** | A background collector checks every node every 30 seconds over one persistent SSH connection per node (one command reads `/proc`), so pages load instantly from its latest results. Per node: CPU, memory, disk, load, uptime, temperature, network, Docker and Node-RED, with history charts. The **Auto** refresh choice is saved on your account |
+| **Node Fleet** | A card per node with live metrics, status, 32/64-bit badge, category, tags and last seen. Filter by category, environment, status (including "login failed") and architecture, or search |
+| **Node terminal** | A terminal button on each card opens a real interactive SSH shell (xterm.js over a WebSocket, a real PTY on the node): colors, `top`, `nano`, tab completion, Ctrl+C, sudo. Closing the window ends the SSH session; it also closes after 30 minutes without input or when you sign out |
+| **Fleet terminal** | One command to many nodes at once; each node's output streams in as it finishes. Offline and login-failed nodes are skipped with a notice. Working directory kept per session; sudo passwords go over stdin, never on a command line |
+| **Bulk actions** | Select nodes (Select All respects the filters) to **edit their login** (username, password and/or port for all of them, each checked once) or **delete** them to the Recycle Bin |
+| **Recycle Bin** | Deleted nodes keep their details. Restore one or all; importing a node with the same name brings it back with the new details and keeps its history; administrators can delete for good with a typed DELETE |
+| **Fix login** | A node that rejects its login shows why on its card, with a one-click form to correct the username, password or port |
+| **Bulk onboarding** | Import CSV, TXT or JSON (including a Pi Fleet Emulator export) with automatic column detection and a verify step; the SSH check of hundreds of new nodes runs in the background with a progress card |
+| **Stats export** | Uptime, CPU, memory, disk, temperature, load, reboots and network traffic per node for the last 24 hours, week, month, quarter, semester or year; all categories or one; per hour, per day or per node. Built in the background with a progress bar, then downloaded as CSV for reports or a data lake |
+| **Long-term history** | One sample per node per minute in every state (so uptime is measured, not guessed), rolled up hourly and kept for good |
+| **VPN status** | Live Tailscale state of the server and every tailnet peer: status, OS, direct or relayed link, last seen, traffic. Filter by status, OS, link and last seen; sort any column |
+| **Remote desktop** | One-click [OpenRemoteGUI](https://github.com/855princekumar/OpenRemoteGUI) per node, with detection and a guided install: safety checks first (OS, disk, network, desktop session, sudo), then `git clone`, `cd`, `sudo bash install.sh`, with live progress; fleet installs stop at the first failure |
 | **Node-RED access** | Open each node's own Node-RED editor at its real address and port |
 | **File deployment** | Upload files to many nodes at once, with per-node results and history |
-| **Log browser** | Browse, fetch, and download log files from any node |
-| **Fleet setup** | Scan the fleet for Docker, Node-RED, and OpenRemoteGUI; install on every node missing them |
-| **Bulk onboarding** | Import CSV, TXT or JSON (including a Pi Fleet Emulator export) with automatic column detection and a verify step before anything is created |
+| **Log browser** | Browse, fetch and download log files from any node |
+| **Fleet setup** | Scan the fleet for Docker, Node-RED and OpenRemoteGUI; install on every node missing them |
+| **Background jobs** | Long work (imports, installs, exports, login checks) runs in the background; a progress card follows you across pages, with a live step-by-step log |
 | **Architecture detection** | 32-bit (ARMv7) and 64-bit (ARM64) detected automatically, shown as badges and filters |
 
 ### Security and access
 | Capability | What it does |
 |---|---|
+| **Two-factor auth** | Mandatory for every account: authenticator app plus ten one-time backup codes, checked by [privacyIDEA](https://privacyidea.org) in its own isolated container (or the built-in verifier) |
 | **Role-based access** | `monitor` (read-only), `operator` (fleet control), `administrator` (users and platform), enforced on every route |
 | **Hardened login** | Account lockout, per-IP rate limiting, forced password change, and login errors that never reveal which usernames exist |
-| **Two-factor auth** | Mandatory for every account: authenticator app plus one-time backup codes, checked by [privacyIDEA](https://privacyidea.org) in its own isolated container |
 | **Account recovery** | Users request a reset from an admin (which also resets their 2FA); admins use an emailed link or a backup code |
 | **Admin governance** | At most 3 admins; the owner (primary admin) has full control over every account; other admins manage only monitors and operators; nobody can change the owner |
 | **Sign-up approval** | Anyone can request an account; an admin approves it with a role |
 | **Session control** | One device at a time by default, up to 4 per user (set by an admin). Each device is listed by type and can be signed out; idle sessions ask "still there?" and sign out |
+| **Node login policy** | After repeated rejected logins (or one Tailscale SSH browser-check refusal) EdgeShell stops logging in to that node, so it never repeats a rejected password (no guessing, no fail2ban bans on the nodes). The pause survives restarts; nodes resume by themselves when their SSH server changes or the tailnet policy is fixed, or with **Retry paused logins** |
+| **Safe SSH** | Every SSH connection goes through one helper that always closes failed connections and names Tailscale SSH refusals; a CI test fails the build if code opens SSH any other way |
 | **Encrypted credentials** | Node SSH passwords and API keys encrypted at rest (Fernet), with key rotation |
-| **CSRF everywhere** | Every state-changing request and AJAX call is protected |
+| **CSRF everywhere** | Every state-changing request, AJAX call and WebSocket (same-origin check) is protected |
 | **Fail-safe config** | Production refuses to start without its secret keys |
-| **Audit trail** | Activity log of user actions plus every service start, stop, crash, and restart |
+| **Audit trail** | Activity log of user actions (logins, terminals opened and closed, bulk changes, exports, paused and resumed logins) plus every service start, stop, crash and restart |
 
 ### Platform
 | Capability | What it does |
 |---|---|
+| **Docker stack** | One Compose file: EdgeShell, MariaDB, privacyIDEA, and nginx as the only public container, with free automatic HTTPS from Let's Encrypt (also for a bare IP address) |
+| **Host hardening** | Script for fail2ban and a strict SSH policy on the server; [EC2 guide](docs/DEPLOY-EC2.md) for the whole setup |
 | **Multi-arch image** | `devprincekumar/edgeshell` for amd64 and arm64: x86 clouds, AWS Graviton, Ampere Altra, Raspberry Pi 4/5 |
-| **One-command install** | `python3 run.py` sets up MariaDB, Nginx, Let's Encrypt TLS, phpMyAdmin, and systemd on Ubuntu/Debian. Re-run it to update |
-| **Self-healing** | systemd auto-start on boot, crash restart, and a health-check watchdog |
+| **One-command install** | `python3 run.py` sets up MariaDB, Nginx, Let's Encrypt TLS, phpMyAdmin and systemd on Ubuntu/Debian. Re-run it to update |
+| **Self-healing** | systemd auto-start on boot, crash restart and a health-check watchdog |
+| **Works on any screen** | Phone menu, layouts from phone to desktop and from 67 to 200 percent zoom; a browser test checks every page at every size on every pull request |
 | **Sandbox** | EdgeShell plus a 6-node emulated fleet and a full end-to-end suite in one command |
-| **VPN heartbeat** | Mesh status badge for Tailscale today, WireGuard via one setting |
 | **Issue portal** | Built-in support tickets with threaded replies and optional email via [useSend](https://usesend.com) |
 | **Database portability** | SQLite (WAL) for development, MariaDB in production, PostgreSQL supported; one-command export and import |
+| **Quality gates** | Required CI before every merge: lint, secret scan, 115 unit tests on three Python versions, 381 browser checks with 1500 nodes, then image audit and end-to-end tests on amd64 and arm64 |
 
 ## Quick start
 
@@ -668,6 +706,12 @@ Dependabot keeps Python packages, the base image and Actions up to date.
 - [x] Multi-arch image (amd64 + arm64) on Docker Hub and GHCR
 - [x] Sandbox and CI end-to-end suite against Pi Fleet Emulator on amd64 and arm64
 - [x] Mandatory two-factor authentication for all users (privacyIDEA), account recovery, admin governance, sign-up approval
+- [x] Device categories with per-category SLA on the dashboard
+- [x] Interactive SSH terminal per node, streaming fleet terminal
+- [x] Background metrics collector, long-term history and CSV stats export
+- [x] Bulk login update, bulk delete, Recycle Bin
+- [x] Node login policy (no repeated rejected logins, automatic recovery)
+- [x] Browser UI test on every screen size as a required CI gate
 - [ ] WireGuard as a first-class backend (status reading works today)
 - [ ] Shared rate-limit store for multi-worker deployments
 - [x] UI screenshots
@@ -701,6 +745,15 @@ Ideas and feature requests are welcome in
 | **Compromised account** | A password change signs out every other session. An admin password reset, disabling the account, or **Sign out everywhere** ends all of that user's sessions at once |
 | **Forged requests** | CSRF tokens on every state-changing request, plus same-origin redirect checks |
 | **Idle sessions** | After 10 minutes without a click or key press (`IDLE_MINUTES`) the page asks "Are you still there?"; no answer within 5 minutes (`IDLE_WARNING_MINUTES`) signs that session out. The server enforces it too |
+
+### Node protection
+
+| Threat | Protection |
+|---|---|
+| **EdgeShell repeating a rejected password** (looks like guessing to the node, triggers fail2ban or lockouts) | After `LOGIN_PAUSE_AFTER_FAILURES` (2) rejected logins, or one Tailscale SSH browser-check refusal, all automatic and bulk logins to that node stop. The pause is stored, so a restart does not start a new round |
+| **Recovering without guessing** | Every `LOGIN_RECHECK_MINUTES` (30) the SSH banner of each paused node is read without logging in; a changed SSH server gets one attempt. One canary login tests the nodes paused by Tailscale SSH and resumes them all when it works |
+| **Leaked connections** | Failed SSH logins are always closed, so the server cannot run out of file handles |
+| **Terminal misuse** | Node terminals are for operators and administrators only, same-origin WebSocket only, at most 4 per user and 12 per server, closed after 30 minutes idle or at sign-out, and audited |
 
 ### Platform
 
