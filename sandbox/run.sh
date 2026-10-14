@@ -5,7 +5,7 @@
 #
 #   sandbox/run.sh              build EdgeShell from this checkout, test, tear down
 #   sandbox/run.sh --keep       same, but leave everything running afterwards
-#   EDGESHELL_IMAGE=devprincekumar/edgeshell:1.8.0 sandbox/run.sh   test a published image
+#   EDGESHELL_IMAGE=devprincekumar/edgeshell:1.8.1 sandbox/run.sh   test a published image
 #
 # Needs Docker with Compose v2, curl and Python 3. Exit code 0 = all passed.
 set -euo pipefail
@@ -166,7 +166,7 @@ assert requests.get(B + '/fleet/summary', headers=H).json()['fleet']['total'] ==
 assert 'events' in requests.get(B + '/events', headers=H).json()
 assert requests.get(B + '/openapi.json').json()['openapi'].startswith('3.')
 step = fresh_step(step)
-r = requests.post(B + '/keys', headers=H, json={'name': 'sandbox', 'scopes': ['read'], 'expires_in_days': 1,
+r = requests.post(B + '/keys', headers=H, json={'name': 'sandbox', 'purpose': 'automated test integration', 'scopes': ['read'], 'expires_in_days': 1,
                                                 'password': saved['password'], 'code': totp(saved['secret'], step)})
 assert r.status_code == 201, r.text
 K = {'Authorization': 'Bearer ' + r.json()['key']}

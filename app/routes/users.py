@@ -6,7 +6,7 @@ included; other administrators manage monitors and operators only.
 """
 from functools import wraps
 
-from flask import (Blueprint, flash, jsonify, redirect, render_template,
+from flask import (Blueprint, current_app, flash, jsonify, redirect, render_template,
                    request, url_for)
 from flask_login import current_user, login_required
 from sqlalchemy.exc import IntegrityError
@@ -176,11 +176,45 @@ def reject(user_id):
         flash(f'"{user.username}" is not waiting for approval.', 'info')
         return redirect(url_for('users.index'))
     name = user.username
-    db.session.delete(user)
-    db.session.commit()
+    refused = _delete_user_row(user)
+    if refused:
+        flash(refused, 'danger')
+        return redirect(url_for('users.index'))
     log_activity(f'Reject sign-up: {name}', status='warning')
     flash(f'Sign-up request from "{name}" rejected and removed.', 'success')
     return redirect(url_for('users.index'))
+
+
+def _delete_user_row(user):
+    """Remove the account from the hot database; the data lake keeps it
+    (with its sessions, API credentials and history). The username and email
+    are first changed on both databases so they can be used again. Returns
+    an error message, or None."""
+    from app.models.issue import Issue, IssueMessage
+    from app.services import api_auth, lake
+    from app.services.session_service import revoke_sessions
+    from sqlalchemy.exc import IntegrityError
+    if Issue.query.filter_by(reporter_id=user.id).first() or IssueMessage.query.filter_by(author_id=user.id).first():
+        return f'"{user.username}" has support tickets on record, so the account cannot be deleted. Deactivate it instead.'
+    try:
+        lake.require_ready()                    # refuse before changing anything
+    except lake.LakeNotReady as e:
+        return f'Not deleted: the data lake must be caught up first ({e}).'
+    revoke_sessions(user, 'deactivated')
+    api_auth.revoke_all_for(user, 'deleted')
+    uid = user.id
+    user.username = lake.tombstone(user.username, uid)
+    user.email = f'deleted-{uid}~{user.email}'[:120]
+    user.is_active = False
+    db.session.commit()
+    try:
+        lake.hot_only([('DELETE FROM users WHERE id = :i', {'i': uid})])
+    except lake.LakeNotReady as e:
+        return f'The account was disabled but not deleted: the data lake must be caught up first ({e}).'
+    except IntegrityError:
+        db.session.rollback()
+        return 'The account was disabled but not deleted: it gained records meanwhile. Deactivate it instead.'
+    return None
 
 
 # ---------------------------------------------------------------- account actions
@@ -193,13 +227,26 @@ def delete(user_id):
     if deny:
         return deny
     name = user.username
+    from app.services import lake
     from app.services.mfa_service import MFAUnavailable, remove
+    from app.models.issue import Issue, IssueMessage
+    if Issue.query.filter_by(reporter_id=user.id).first() or IssueMessage.query.filter_by(author_id=user.id).first():
+        flash(f'"{name}" has support tickets on record, so the account cannot be deleted. Deactivate it instead.',
+              'danger')
+        return redirect(url_for('users.index'))
+    try:
+        lake.require_ready()                    # nothing (2FA included) is touched on a refusal
+    except lake.LakeNotReady as e:
+        flash(f'Not deleted: the data lake must be caught up first ({e}).', 'danger')
+        return redirect(url_for('users.index'))
     try:
         remove(user)
     except MFAUnavailable:
         pass
-    db.session.delete(user)
-    db.session.commit()
+    refused = _delete_user_row(user)
+    if refused:
+        flash(refused, 'danger')
+        return redirect(url_for('users.index'))
     log_activity(f'Delete User: {name}', status='success')
     flash(f'User "{name}" deleted.', 'success')
     return redirect(url_for('users.index'))
@@ -343,3 +390,103 @@ def set_role(user_id):
     log_activity(f'Set role: {user.username} -> {role}', status='success')
     flash(f'Role for "{user.username}" set to {role}.', 'success')
     return redirect(url_for('users.index'))
+
+
+# ---------------------------------------------------------------- API access (administrators)
+
+@users_bp.route('/api')
+@login_required
+@admin_required
+def api_access():
+    """API policy, per-user API access, every credential, and the usage log."""
+    from datetime import datetime, timedelta
+    from sqlalchemy import func
+    from app.models.api import ApiRequest, ApiToken
+    from app.services import api_auth, lake
+    q_user = (request.args.get('user') or '').strip()[:64]
+    q_status = request.args.get('result') if request.args.get('result') in ('ok', 'refused', 'error') else ''
+    now = datetime.utcnow()
+    creds = (ApiToken.query.filter(ApiToken.kind.in_(('session', 'key')))
+             .order_by(ApiToken.revoked_at.isnot(None), ApiToken.created_at.desc()).limit(300).all())
+    with lake.reader() as r:
+        log = r.session.query(ApiRequest)
+        if q_user:
+            log = log.filter(ApiRequest.username == q_user)
+        if q_status == 'ok':
+            log = log.filter(ApiRequest.status < 400)
+        elif q_status == 'refused':
+            log = log.filter(ApiRequest.status >= 400, ApiRequest.status < 500)
+        elif q_status == 'error':
+            log = log.filter(ApiRequest.status >= 500)
+        log_rows = [x.to_dict() for x in log.order_by(ApiRequest.id.desc()).limit(300).all()]
+        usage = (r.session.query(ApiRequest.username, func.count(ApiRequest.id),
+                                 func.sum(db.case((ApiRequest.status >= 400, 1), else_=0)))
+                 .filter(ApiRequest.timestamp >= now - timedelta(hours=24))
+                 .group_by(ApiRequest.username).order_by(func.count(ApiRequest.id).desc()).limit(50).all())
+        source = r.source
+    return render_template('users/api.html', policy=api_auth.policy(), scopes=api_auth.SCOPES,
+                           users=User.query.order_by(User.username).all(), creds=creds, now=now,
+                           log_rows=log_rows, usage=usage, source=source, q_user=q_user, q_status=q_status,
+                           commands_allowed=bool(current_app.config.get('API_ALLOW_COMMANDS')),
+                           can_manage=accounts.can_manage)
+
+
+@users_bp.route('/api/policy', methods=['POST'])
+@login_required
+@admin_required
+def api_policy():
+    from app.services import api_auth
+    if not current_user.is_owner:
+        flash('Only the owner can change the API policy.', 'danger')
+        return redirect(url_for('users.api_access'))
+    f = request.form
+    scopes = [s for s in f.getlist('scopes') if s in api_auth.SCOPES]
+    api_auth.save_policy(bool(f.get('enabled')), scopes, bool(f.get('keys')))
+    p = api_auth.policy()
+    log_activity('API policy changed', status='warning',
+                 response=f"API {'on' if p['enabled'] else 'off'}; allowed: {', '.join(p['scopes']) or 'nothing'}; "
+                          f"service keys {'allowed' if p['keys'] else 'not allowed'}")
+    flash('API policy saved. It applies to the next request.', 'success')
+    return redirect(url_for('users.api_access'))
+
+
+@users_bp.route('/api/user/<int:user_id>/access', methods=['POST'])
+@login_required
+@admin_required
+def api_user_access(user_id):
+    from app.services import api_auth
+    allow = request.form.get('allow') == '1'
+    # Blocking yourself is fine; lifting a block on yourself is not, or an
+    # administrator could undo the owner's decision about them.
+    user, deny = _target(user_id, allow_self=not allow)
+    if deny:
+        return deny
+    user.api_access = allow
+    if not allow:
+        api_auth.revoke_all_for(user, 'api_blocked')
+    db.session.commit()
+    log_activity(f"API access {'allowed' if allow else 'blocked'}: {user.username}", status='warning' if not allow else 'success',
+                 response='' if allow else 'all API sessions and keys revoked')
+    flash(f"API access {'allowed' if allow else 'blocked'} for {user.username}"
+          + ('' if allow else '; every API session and key of this account was revoked.'), 'success')
+    return redirect(url_for('users.api_access'))
+
+
+@users_bp.route('/api/credential/<int:token_id>/revoke', methods=['POST'])
+@login_required
+@admin_required
+def api_revoke(token_id):
+    from app.models.api import ApiToken
+    from app.services import api_auth
+    row = ApiToken.query.filter(ApiToken.id == token_id, ApiToken.kind.in_(('session', 'key'))).first_or_404()
+    owner = row.user
+    if owner and owner.id != current_user.id and not accounts.can_manage(current_user, owner):
+        flash(PROTECTED, 'danger')
+        return redirect(url_for('users.api_access'))
+    api_auth.revoke(row, 'revoked_by_admin')
+    db.session.commit()
+    log_activity('API credential revoked by an administrator', status='warning',
+                 response=f'{row.kind} {row.prefix}' + (f' "{row.name}"' if row.name else '')
+                 + f' of {owner.username if owner else "?"}')
+    flash('Revoked. It stops working immediately.', 'success')
+    return redirect(url_for('users.api_access'))

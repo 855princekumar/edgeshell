@@ -49,6 +49,8 @@ class User(UserMixin, db.Model):
     # Page settings the user chose (JSON), kept until they change them: across
     # pages, sign-outs and devices. Keys are whitelisted in PREFS.
     ui_prefs = db.Column(db.Text)
+    # An administrator can block a user from the API (all credentials end).
+    api_access = db.Column(db.Boolean, nullable=False, default=True)
     sessions = db.relationship('UserSession', backref='user',
                                cascade='all, delete-orphan', passive_deletes=True)
 

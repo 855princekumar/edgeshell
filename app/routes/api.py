@@ -187,6 +187,9 @@ def auth_login(args, data):
         return bad
     if not user.is_active or user.is_pending():
         return bad
+    blocked = api_auth.refusal(user)
+    if blocked:
+        return blocked
     if mfa_service.mfa_required() and not mfa_service.is_enrolled(user):
         return api_auth.api_error(403, 'mfa_setup_required', 'Set up two-factor authentication in the web '
                                   'app first.')
@@ -211,6 +214,11 @@ def auth_verify(args, data):
     if row is None:
         return bad
     user = row.user
+    blocked = api_auth.refusal(user)
+    if blocked:
+        api_auth.revoke(row, 'blocked')
+        db.session.commit()
+        return blocked
     if _locked(user):
         api_auth.revoke(row, 'locked')
         db.session.commit()
@@ -269,9 +277,10 @@ def auth_whoami(args, data):
 # ------------------------------------------------------------- service keys
 
 KEY_CREATE = {'type': 'object', 'additionalProperties': False,
-              'required': ['name', 'scopes', 'password', 'code'],
+              'required': ['name', 'purpose', 'scopes', 'password', 'code'],
               'properties': {
                   'name': {'type': 'string', 'minLength': 1, 'maxLength': 80, 'pattern': r'^[^<>]+$'},
+                  'purpose': {'type': 'string', 'minLength': 5, 'maxLength': 200, 'pattern': r'^[^<>]+$'},
                   'scopes': {'type': 'array', 'minItems': 1, 'maxItems': 4, 'uniqueItems': True,
                              'items': {'enum': list(api_auth.SCOPES)}},
                   'expires_in_days': {'type': 'integer', 'minimum': 1, 'maximum': 365},
@@ -285,7 +294,7 @@ KEY_CREATE = {'type': 'object', 'additionalProperties': False,
 def keys_list(args, data):
     from app.models.api import ApiToken
     q = ApiToken.query.filter(ApiToken.kind == 'key')
-    if not (args['all'] == 'true' and 'admin' in api_auth.effective_scopes(current_user, getattr(g, 'api_token', None))):
+    if not (args['all'] == 'true' and api_auth.api_admin()):
         q = q.filter(ApiToken.user_id == current_user.id)
     return jsonify({'keys': [k.public() for k in q.order_by(ApiToken.created_at.desc()).limit(500)]})
 
@@ -303,6 +312,8 @@ def keys_create(args, data):
     if row is None or row.kind != 'session':
         return api_auth.api_error(403, 'session_required', 'Create keys from an API session (or the web '
                                   'app), not with another key.')
+    if not api_auth.policy()['keys']:
+        return api_auth.api_error(403, 'keys_disabled', 'Creating service keys is turned off by an administrator.')
     if not current_user.check_password(data['password']):
         _record_failure(current_user, 'password (API key creation)')
         return api_auth.api_error(401, 'invalid_credentials', 'Password or code is not valid.')
@@ -327,9 +338,10 @@ def keys_create(args, data):
     days = data.get('expires_in_days', 90)
     key, plaintext = api_auth.issue(current_user, 'key', scopes=data['scopes'], name=data['name'].strip(),
                                     expires_at=datetime.utcnow() + timedelta(days=days), allowed_ips=ips)
+    key.purpose = data['purpose'].strip()
     db.session.commit()
-    audit('API key created', response=f'{key.prefix} "{key.name}" scopes {key.scopes}, {days} days'
-          + (f', from {ips}' if ips else ''))
+    audit('API key created', response=f'{key.prefix} "{key.name}" for "{key.purpose}", scopes {key.scopes}, '
+          f'{days} days' + (f', from {ips}' if ips else ''))
     return jsonify({'key': plaintext, 'details': key.public(),
                     'notice': 'Store the key now; it is not shown again.'}), 201
 
@@ -339,9 +351,11 @@ def keys_create(args, data):
 def keys_revoke(args, data, key_id):
     from app.models.api import ApiToken
     key = ApiToken.query.filter(ApiToken.id == key_id, ApiToken.kind == 'key').first()
-    is_admin = 'admin' in api_auth.effective_scopes(current_user, getattr(g, 'api_token', None))
-    if key is None or (key.user_id != current_user.id and not is_admin):
+    if key is None or (key.user_id != current_user.id and not api_auth.api_admin()):
         return api_auth.api_error(404, 'not_found', 'No such key.')
+    from app.services import account_service
+    if key.user_id != current_user.id and key.user is not None             and not account_service.can_manage(current_user, key.user):
+        return api_auth.api_error(403, 'forbidden', "Only the owner can revoke another administrator's keys.")
     api_auth.revoke(key, 'revoked')
     db.session.commit()
     audit('API key revoked', response=f'{key.prefix} "{key.name}"')

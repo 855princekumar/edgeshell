@@ -2,6 +2,30 @@
 
 All notable changes are documented here. Format loosely follows Keep a Changelog.
 
+## [1.8.1] - 2026-10-15
+
+### Added
+- **Administration, API Access**: turn the API or parts of it (read, write, control, admin) off, stop new service keys, block any user's API access (every credential of theirs is revoked), see every credential of every user (purpose, permissions, addresses, expiry, last use) with Revoke, and a usage log of every API request (user, credential, endpoint, result, time, address; never bodies or values), read from the data lake.
+- Service keys need a **purpose**, shown to administrators and in the logs.
+- The Docker Hub description is pushed whenever `docker/DOCKERHUB.md` changes on main (as well as with every release), and CI fails if it or the README falls behind `VERSION`.
+- API request log table, kept for good in the data lake (`API_LOG_RETENTION_DAYS`, default 30, on the hot database).
+
+### Changed
+- **Nothing in the app removes data from the data lake**: clearing the activity or node log, permanently deleting a node and deleting or rejecting a user now act on the hot database only (refused while the lake is behind), and the lake keeps the rows. Deleted nodes and users are renamed first so names can be reused without breaking replication.
+- The app's database account on the lake is SELECT only (`lake-init.sh`).
+- Deleting a user with support tickets is refused with a hint to deactivate (it used to fail on MariaDB).
+- Session and expired-credential housekeeping, and sign-out, leave the lake's copy in place; `db-import --wipe` is refused on a database with data while a lake is configured.
+
+### Security
+Fixes from an end-to-end review before release:
+- Only the owner changes the API policy, and an administrator cannot lift an API block on their own account.
+- Revoking another user's service key through the API needs the `admin` part of the API turned on and follows the owner rules (other administrators' keys only by the owner); listing every key needs the same.
+- The API usage log no longer records requests to unknown paths (they bypass rate limits), stores a failed sign-in's username only when the account exists (never a password typed into the field), and is written in its own transaction.
+- A full-length node or user name no longer loses its unique suffix when deleted, which could stop replication when the name was reused.
+- Deletes stay off the lake with `mariadb://` database URLs too, and the unlogged connection is discarded rather than reused if resetting it fails.
+- A delete refused because the lake is behind changes nothing (no rename, no revoked sessions, no 2FA removal).
+- The Docker Hub description action is pinned to a commit.
+
 ## [1.8.0] - 2026-10-15
 
 ### Added

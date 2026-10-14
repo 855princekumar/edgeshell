@@ -66,6 +66,8 @@ a 2FA code on every sign-in is not workable. Create a **service key** instead:
 
 - On **My account, API access, Create a service key** in the web app, or with
   `POST /api/v1/keys` from an API session.
+- Every key needs a **purpose** (what it is used for, 5 to 200 characters). It is
+  shown to administrators and in the logs.
 - Creating a key always needs your **password and a current 2FA code again**, so
   an unattended signed-in browser or a stolen session cannot mint keys, and a
   key can never create another key.
@@ -82,13 +84,28 @@ a 2FA code on every sign-in is not workable. Create a **service key** instead:
 ```bash
 curl -s https://fleet.example.org/api/v1/keys -H 'Authorization: Bearer est_...' \
   -H 'Content-Type: application/json' \
-  -d '{"name": "grafana", "scopes": ["read"], "expires_in_days": 90,
+  -d '{"name": "grafana", "purpose": "fleet dashboards", "scopes": ["read"], "expires_in_days": 90,
        "allowed_ips": "203.0.113.10/32", "password": "<password>", "code": "123456"}'
 ```
 
 Every user (monitor, operator, administrator) creates and uses their own
 credentials, so every API action in the activity log names the person and the
 credential (`[API key 3f9a1c2b7d10 (grafana)]`).
+
+## Administration
+
+Administrators manage the API on **Administration, API Access**:
+
+| Control | Effect |
+|---|---|
+| **API turned on** | Off refuses every API request and sign-in (`403 api_disabled`); `/health` keeps answering. The web app is not affected |
+| **Allowed parts** | Turn `read`, `write`, `control` or `admin` off for everyone (`403 scope_disabled`); credentials stay valid for the parts still on |
+| **Service keys** | Stop users from creating new keys (`403 keys_disabled`); existing keys keep working until revoked |
+| **Per user** | Block a user's API access: their API sign-ins are refused (`403 api_blocked`) and every API session and key they have is revoked at once |
+| **Credentials** | Every session and key of every user: who created it, its purpose, permissions, allowed addresses, expiry, last use and address, with **Revoke** |
+| **Usage log** | Every API request: time, user, credential (kind, prefix, name), method and endpoint, result, time taken, address; failed sign-ins show the username tried. Bodies and query values are never stored. Read from the data lake, which keeps it for good; the hot database keeps `API_LOG_RETENTION_DAYS` (30) |
+
+Every change on this page is in the activity log.
 
 ## Permissions
 

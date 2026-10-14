@@ -25,7 +25,8 @@ class ApiToken(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey('users.id', ondelete='CASCADE'), nullable=False, index=True)
     kind = db.Column(db.String(12), nullable=False, index=True)      # challenge | session | key
-    name = db.Column(db.String(80))                                  # keys: what it is for
+    name = db.Column(db.String(80))                                  # keys: a short label
+    purpose = db.Column(db.String(200))                              # keys: what it is used for (required)
     prefix = db.Column(db.String(16), nullable=False, unique=True, index=True)
     secret_hash = db.Column(db.String(64), nullable=False)
     scopes = db.Column(db.String(64), nullable=False, default='read')  # read,write,control,admin
@@ -46,12 +47,37 @@ class ApiToken(db.Model):
 
     def public(self):
         """Safe description (never the secret or its hash)."""
-        return {'id': self.id, 'kind': self.kind, 'name': self.name, 'prefix': self.prefix,
+        return {'id': self.id, 'kind': self.kind, 'name': self.name, 'purpose': self.purpose, 'prefix': self.prefix,
                 'scopes': sorted(self.scope_set()), 'allowed_ips': self.allowed_ips or None,
                 'created_at': _iso(self.created_at), 'expires_at': _iso(self.expires_at),
                 'last_used_at': _iso(self.last_used_at), 'last_used_ip': self.last_used_ip,
                 'revoked': self.revoked_at is not None, 'revoked_reason': self.revoked_reason,
                 'user': self.user.username if self.user else None}
+
+
+class ApiRequest(db.Model):
+    """One row per API request: who (user and credential), what (method,
+    endpoint, result), from where and how long. Bodies and query values are
+    never stored, so passwords and codes never reach the log."""
+    __tablename__ = 'api_requests'
+
+    id = db.Column(db.Integer, primary_key=True)
+    timestamp = db.Column(db.DateTime, default=datetime.utcnow, index=True)
+    user_id = db.Column(db.Integer, index=True)                     # no FK: the log outlives accounts
+    username = db.Column(db.String(64))
+    token_id = db.Column(db.Integer, index=True)
+    credential = db.Column(db.String(120))                          # e.g. "key 3f9a1c2b7d10 (grafana)"
+    method = db.Column(db.String(8))
+    endpoint = db.Column(db.String(120))                            # the route, e.g. /api/v1/nodes/{node_id}
+    status = db.Column(db.Integer, index=True)
+    duration_ms = db.Column(db.Integer)
+    ip = db.Column(db.String(45))
+    agent = db.Column(db.String(120))
+
+    def to_dict(self):
+        return {'id': self.id, 'timestamp': _iso(self.timestamp), 'user': self.username,
+                'credential': self.credential, 'method': self.method, 'endpoint': self.endpoint,
+                'status': self.status, 'duration_ms': self.duration_ms, 'ip': self.ip, 'agent': self.agent}
 
 
 class NodeEvent(db.Model):

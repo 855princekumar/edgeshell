@@ -156,11 +156,25 @@ Quick index:
 - **Now**: the purge ends the reading transaction first and refreshes the
   session afterwards.
 
+### Deleting a node, deleting a user or clearing logs says the data lake must be caught up
+
+- **Why**: these remove rows from the hot database only, so the lake must
+  already hold them. While the lake is behind or stopped, they are refused
+  rather than lose data. Fix replication (below) and try again.
+
+### Replication stopped with a duplicate key error
+
+- **Prevented since 1.8.1**: a node or user deleted in the app kept its old
+  name in the lake, so creating a new one with the same name would collide
+  there. Deleted rows are now renamed (`name~deleted-<id>`) on both databases
+  before they leave the hot database. If it happened on an older version: stop
+  the lake, move `data/mariadb-lake` aside and `docker compose up -d` to copy
+  it fresh (the hot database is untouched).
+
 ### The data lake is behind or not replicating
 
-- **Check**: Settings, Data lake (lag in seconds), or
-  `docker compose exec mariadb-lake mariadb -uroot -p -e 'SHOW REPLICA STATUS\G'`
-  (`Slave_IO_Running` and `Slave_SQL_Running` must be `Yes`).
+- **Check**: Settings, Data lake (lag in seconds), or `docker compose logs lake-init`
+  on the host (`io=Yes sql=Yes` means replication runs).
 - **Safe by design**: while the lake is behind or stopped, history reads fall
   back to the hot database and **no purge deletes anything**.
 - **Restart replication**: `docker compose up -d lake-init` (idempotent). If the

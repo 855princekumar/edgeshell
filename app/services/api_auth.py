@@ -38,6 +38,57 @@ CHALLENGE_TTL = timedelta(minutes=5)
 CHALLENGE_ATTEMPTS = 3
 
 
+POLICY_KEY = 'api_policy'
+DEFAULT_POLICY = {'enabled': True, 'scopes': ['read', 'write', 'control'], 'keys': True}
+
+
+def policy():
+    """The administrators' API policy (Administration, API Access)."""
+    import json
+    from app.models import Settings
+    row = Settings.query.filter_by(key=POLICY_KEY).first()
+    p = dict(DEFAULT_POLICY)
+    try:
+        if row and row.value:
+            saved = json.loads(row.value)
+            p.update({k: saved[k] for k in DEFAULT_POLICY if k in saved})
+    except ValueError:
+        pass
+    p['scopes'] = [s for s in SCOPES if s in (p.get('scopes') or [])]
+    return p
+
+
+def save_policy(enabled, scopes, keys):
+    import json
+    from app.models import Settings
+    value = json.dumps({'enabled': bool(enabled), 'scopes': [s for s in SCOPES if s in scopes], 'keys': bool(keys)})
+    row = Settings.query.filter_by(key=POLICY_KEY).first()
+    if row:
+        row.value = value
+    else:
+        db.session.add(Settings(key=POLICY_KEY, value=value))
+    db.session.commit()
+
+
+def api_admin():
+    """True when this API request may act on other users' credentials: the
+    credential carries the admin permission and the policy has it turned on."""
+    return ('admin' in effective_scopes(current_user, getattr(g, 'api_token', None))
+            and 'admin' in policy()['scopes'])
+
+
+def refusal(user=None, scope=None):
+    """An error response when the policy or the account blocks this, else None."""
+    p = policy()
+    if not p['enabled']:
+        return api_error(403, 'api_disabled', 'The API is turned off on this server by an administrator.')
+    if user is not None and getattr(user, 'api_access', True) is False:
+        return api_error(403, 'api_blocked', 'API access is blocked for this account by an administrator.')
+    if scope and scope not in p['scopes']:
+        return api_error(403, 'scope_disabled', f'The "{scope}" part of the API is turned off by an administrator.')
+    return None
+
+
 def _hash(secret):
     return hashlib.sha256(secret.encode('utf-8')).hexdigest()
 
@@ -199,6 +250,9 @@ def requires(scope):
                                  'account or credential does not have.')
             if current_user.must_change_password:
                 return api_error(403, 'action_required', 'Set a new password in the web app first.')
+            blocked = refusal(current_user, scope)
+            if blocked:
+                return blocked
             g.api_scope = scope
             return fn(*a, **kw)
         wrapper.api_scope = scope

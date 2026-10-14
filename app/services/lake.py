@@ -20,6 +20,7 @@ Replication health is measured end to end: the app writes a heartbeat row on
 the hot database every minute and reads it back from the lake.
 """
 import time
+from contextlib import contextmanager
 from datetime import datetime, timedelta
 
 from flask import current_app
@@ -34,7 +35,8 @@ PERIODS = {'week': 7, 'month': 30, 'quarter': 91, 'semester': 182, 'year': 365}
 RETENTION_SETTING = 'hot_retention'
 # table, time column: the history tables the hot retention policy may trim
 RETAINED = (('system_metrics', 'timestamp'), ('metrics_hourly', 'hour'), ('activity_logs', 'timestamp'),
-            ('node_events', 'timestamp'), ('node_logs', 'timestamp'), ('service_events', 'timestamp'))
+            ('node_events', 'timestamp'), ('node_logs', 'timestamp'), ('service_events', 'timestamp'),
+            ('api_requests', 'timestamp'))
 
 _engine = None
 _engine_url = None
@@ -121,10 +123,59 @@ def reader():
     return _Reader()
 
 
+def _mysql():
+    # MariaDB URLs (mariadb+...) report 'mariadb', MySQL URLs 'mysql'.
+    return db.engine.dialect.name in ('mysql', 'mariadb')
+
+
+@contextmanager
+def _unlogged():
+    """A connection whose writes stay out of the binary log, so the lake never
+    sees them. sql_log_bin is a session variable and pooled connections are
+    reused: any open transaction is rolled back before it is turned back on,
+    and a connection where that fails is thrown away, never returned to the
+    pool (it would silently keep later writes out of the lake)."""
+    conn = db.engine.connect()
+    try:
+        conn.execute(db.text('SET SESSION sql_log_bin = 0'))
+        try:
+            yield conn
+        finally:
+            try:
+                conn.rollback()
+                conn.execute(db.text('SET SESSION sql_log_bin = 1'))
+                conn.commit()
+            except Exception:
+                conn.invalidate()
+                raise
+    finally:
+        conn.close()
+
+
+def tombstone(name, row_id, width=64):
+    """The name a deleted row keeps in the lake: `name~deleted-<id>`, cut on
+    the name side so the unique suffix always survives a full-width name (a
+    cut suffix could collide on the lake and stop replication). Idempotent."""
+    sfx = f'~deleted-{row_id}'
+    if name.endswith(sfx):
+        return name[:width]
+    return name[:width - len(sfx)] + sfx
+
+
+def require_ready():
+    """Raise LakeNotReady unless the lake can take over rows right now. Call it
+    before changing anything for a delete, so a refusal leaves no trace."""
+    if not configured() or not _mysql():
+        return
+    st = status()
+    if not st['healthy'] or (st['lag_seconds'] or 0) > MAX_PURGE_LAG_S:
+        raise LakeNotReady(st['detail'])
+
+
 def purge(table, column, cutoff, batch=20000):
     """Delete rows older than cutoff from the hot database only. Returns the
     number deleted, or None when it was skipped to protect data."""
-    if table not in {t for t, _ in RETAINED} or column not in {c for _, c in RETAINED}:
+    if (table, column) not in RETAINED:
         raise ValueError('not a retained table')
     # Bandit B608 reviewed: identifiers come from a fixed allow-list; values are bound parameters (names from the fixed list above)
     q = db.text(f'DELETE FROM {table} WHERE {column} < :cutoff')   # nosec B608
@@ -153,26 +204,45 @@ def purge(table, column, cutoff, batch=20000):
         current_app.logger.warning('hot purge of %s skipped: the lake does not hold every row yet', table)
         return None
     total = 0
-    mysql = db.engine.dialect.name == 'mysql'
-    with db.engine.connect() as conn:
-        if mysql:
-            conn.execute(db.text('SET SESSION sql_log_bin = 0'))   # the replica never sees this delete
-        try:
-            while True:
-                limit = f' LIMIT {int(batch)}' if mysql else ''
-                # Bandit B608 reviewed: identifiers come from a fixed allow-list; values are bound parameters
-                n = conn.execute(db.text(f'DELETE FROM {table} WHERE {column} < :cutoff{limit}'),  # nosec B608
-                                 {'cutoff': cutoff}).rowcount
-                conn.commit()
-                total += n
-                if not mysql or n < batch:
-                    break
-        finally:
-            if mysql:
-                conn.execute(db.text('SET SESSION sql_log_bin = 1'))
-                conn.commit()
+    if not _mysql():
+        n = db.session.execute(q, {'cutoff': cutoff}).rowcount
+        db.session.commit()
+        return n
+    with _unlogged() as conn:                   # the replica never sees this delete
+        while True:
+            # Bandit B608 reviewed: identifiers come from a fixed allow-list; values are bound parameters
+            n = conn.execute(db.text(f'DELETE FROM {table} WHERE {column} < :cutoff LIMIT {int(batch)}'),  # nosec B608
+                             {'cutoff': cutoff}).rowcount
+            conn.commit()
+            total += n
+            if n < batch:
+                break
     db.session.expire_all()                     # later reads in this session see the purge
     return total
+
+
+class LakeNotReady(Exception):
+    """A delete was refused because the data lake could not take over the rows."""
+
+
+def hot_only(statements):
+    """Run deletes on the hot database only, so the data lake keeps the rows
+    (app actions such as clearing logs or deleting a node or user never remove
+    anything from the lake). statements: [(sql, params)]. Without a lake they
+    simply run. With a lake they run only while it is caught up, on their own
+    connection with sql_log_bin=0. Raises LakeNotReady otherwise."""
+    if not configured() or not _mysql():
+        for sql, params in statements:
+            db.session.execute(db.text(sql), params)
+        db.session.commit()
+        return
+    require_ready()
+    db.session.commit()
+    with _unlogged() as conn:
+        for sql, params in statements:
+            conn.execute(db.text(sql), params)
+        conn.commit()
+    db.session.expire_all()
 
 
 def retention_policy():

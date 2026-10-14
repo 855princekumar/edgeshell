@@ -147,6 +147,8 @@ def _register_api(app):
     def _api_auth():
         if not is_api():
             return None
+        import time as _t
+        g.api_t0 = _t.time()
         limit = app.config.get('API_MAX_BODY_BYTES', 1024 * 1024)
         if request.content_length and request.content_length > limit:
             return api_auth.api_error(413, 'too_large', f'The body is larger than {limit} bytes.')
@@ -164,7 +166,53 @@ def _register_api(app):
             resp.headers.setdefault('Content-Security-Policy', "default-src 'none'; frame-ancestors 'none'")
             if getattr(g, 'api_bearer_present', False):
                 resp.headers.pop('Set-Cookie', None)       # token requests never get a cookie
+            _log_api_request(resp)
         return resp
+
+    def _log_api_request(resp):
+        """API usage log (Administration, API Access): who, which credential,
+        which endpoint, result, time. Never a body or query value."""
+        import time as _t
+        from flask_login import current_user
+        if not request.path.startswith('/api/v1/') or request.path in ('/api/v1/health', '/api/v1/openapi.json'):
+            return
+        # Unknown paths and methods match no route, so the rate limiter never
+        # sees them: logging them would let anyone fill the log (and the lake,
+        # which keeps it) without limit.
+        if request.url_rule is None or resp.status_code == 405:
+            return
+        try:
+            from app.models.api import ApiRequest
+            from app.models.user import User
+            row = getattr(g, 'api_token', None)
+            user = current_user if current_user.is_authenticated else None
+            username = user.username if user else None
+            if user is None and request.path == '/api/v1/auth/login':
+                # Only a real account name: people type passwords into the
+                # username field, and those must never reach the log.
+                attempted = str((request.get_json(silent=True) or {}).get('username') or '')[:64]
+                if attempted and User.query.filter_by(username=attempted).first() is not None:
+                    username = f'(sign-in as {attempted[:40]})'
+                elif attempted:
+                    username = '(unknown user)'
+            rule = request.url_rule.rule
+            for conv in ('<int:', '<'):
+                rule = rule.replace(conv, '{')
+            rule = rule.replace('>', '}')
+            values = dict(
+                user_id=user.id if user else None, username=username,
+                token_id=row.id if row else None,
+                credential=(f'{row.kind} {row.prefix}' + (f' ({row.name})' if row.name else '')) if row
+                else ('browser session' if user else None),
+                method=request.method, endpoint=rule[:120], status=resp.status_code,
+                duration_ms=int((_t.time() - getattr(g, 'api_t0', _t.time())) * 1000),
+                ip=(request.remote_addr or '')[:45], agent=(request.user_agent.string or '')[:120])
+            # Its own transaction: committing the request's session here would
+            # also commit whatever a failed handler left half done.
+            with db.engine.begin() as conn:
+                conn.execute(ApiRequest.__table__.insert().values(**values))
+        except Exception:
+            app.logger.warning('API usage log write failed', exc_info=True)
 
     def _json_error(code, name, message):
         def handler(e):
@@ -284,6 +332,7 @@ def _ensure_schema():
             # create_all). Old session_* columns on existing DBs are unused.
             'max_sessions': 'INTEGER NOT NULL DEFAULT 1',
             'ui_prefs': 'TEXT',
+            'api_access': 'BOOLEAN NOT NULL DEFAULT 1',
             'approval_status': "VARCHAR(16) NOT NULL DEFAULT 'approved'",
             'is_owner': 'BOOLEAN NOT NULL DEFAULT 0',
             'admin_since': 'DATETIME',
@@ -297,6 +346,9 @@ def _ensure_schema():
         },
         'system_metrics': {
             'status': 'VARCHAR(16)',
+        },
+        'api_tokens': {
+            'purpose': 'VARCHAR(200)',
         },
     }
     for table, cols in wanted.items():

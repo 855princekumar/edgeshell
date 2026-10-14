@@ -153,18 +153,35 @@ def restore(node_id):
 
 
 def _purge_nodes(nodes):
-    """Delete nodes for good, with their history rows (which reference them)."""
-    from app.models import MetricsHourly, SystemMetrics
+    """Delete nodes for good from the hot database, with their history rows.
+    The data lake keeps the node and its history: the name is first changed
+    (on both databases) to `name~deleted-<id>` so a new node may reuse the
+    name, then the rows are deleted on the hot database only."""
+    from app.services import lake
     from app.services.collector import POOL
+    from sqlalchemy.exc import IntegrityError
     ids = [n.id for n in nodes]
     if not ids:
         return 0
-    SystemMetrics.query.filter(SystemMetrics.node_id.in_(ids)).delete(synchronize_session=False)
-    MetricsHourly.query.filter(MetricsHourly.node_id.in_(ids)).delete(synchronize_session=False)
+    lake.require_ready()                        # refuse before changing anything
     for n in nodes:
         POOL.drop(n.id)
-        db.session.delete(n)
+        n.name = lake.tombstone(n.name, n.id)
     db.session.commit()
+    marks = ','.join(f':i{k}' for k in range(len(ids)))
+    params = {f'i{k}': v for k, v in enumerate(ids)}
+    # Bandit B608 reviewed: only placeholder names (:i0, :i1, ...) are formatted in; values are bound
+    try:
+        lake.hot_only([(f'DELETE FROM system_metrics WHERE node_id IN ({marks})', params),  # nosec B608
+                       # Bandit B608 reviewed: only placeholder names (:i0, :i1, ...) are formatted in; values are bound
+                       (f'DELETE FROM metrics_hourly WHERE node_id IN ({marks})', params),  # nosec B608
+                       # Bandit B608 reviewed: only placeholder names (:i0, :i1, ...) are formatted in; values are bound
+                       (f'DELETE FROM nodes WHERE id IN ({marks})', params)])  # nosec B608
+    except IntegrityError:
+        # A poll already under way wrote a sample in between; nothing was
+        # deleted (one transaction) and a retry finishes the job.
+        db.session.rollback()
+        raise lake.LakeNotReady('a node was still being polled; try again in a minute')
     return len(ids)
 
 
@@ -231,7 +248,12 @@ def bulk_purge():
         q = q.filter(Node.id.in_(_ids(data) or [0]))
     nodes = q.all()
     names = [n.name for n in nodes]
-    count = _purge_nodes(nodes)
+    from app.services.lake import LakeNotReady
+    try:
+        count = _purge_nodes(nodes)
+    except LakeNotReady as e:
+        db.session.rollback()
+        return jsonify({'success': False, 'message': f'Not deleted: the data lake must be caught up first ({e}).'}), 409
     log_activity('Bulk purge (permanent)', response=f'{count} node(s): ' + ', '.join(names[:20])
                  + (' ...' if count > 20 else ''), status='warning')
     return jsonify({'success': True, 'count': count, 'message': f'Deleted {count} node(s) permanently.'})
@@ -295,7 +317,13 @@ def bulk_credentials():
 def purge(node_id):
     node = Node.query.get_or_404(node_id)
     name = node.name
-    _purge_nodes([node])
+    from app.services.lake import LakeNotReady
+    try:
+        _purge_nodes([node])
+    except LakeNotReady as e:
+        db.session.rollback()
+        flash(f'Not deleted: the data lake must be caught up first ({e}).', 'danger')
+        return redirect(url_for('nodes.index'))
     log_activity('Purge Node (permanent)', node=name, status='success')
     flash(f'Node "{name}" permanently deleted.', 'warning')
     return redirect(url_for('nodes.index'))

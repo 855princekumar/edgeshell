@@ -78,21 +78,24 @@ def index():
                     save_setting(key, val)
             save_setting('ansible_enabled', 'true' if request.form.get('ansible_enabled') else 'false')
 
-        elif section == 'clear_logs':
-            removed = ActivityLog.query.delete()
-            db.session.commit()
-            # the clearing itself stays on record: who, when, how many
+        elif section in ('clear_logs', 'clear_node_logs'):
+            # Clears the hot database only: the data lake keeps every entry.
+            from app.services import lake
             from app.services.activity_service import log_activity
-            log_activity('Activity log cleared', response=f'{removed} entries removed by {current_user.username}',
-                         status='warning')
-            flash('Activity logs cleared.', 'success')
-            return redirect(url_for('settings.index'))
-
-        elif section == 'clear_node_logs':
-            from app.models import NodeLog
-            NodeLog.query.delete()
-            flash('Node logs cleared.', 'success')
-            db.session.commit()
+            table = 'activity_logs' if section == 'clear_logs' else 'node_logs'
+            # Bandit B608 reviewed: the table name is one of two fixed values chosen in code, never from input
+            removed = db.session.execute(db.text(f'SELECT COUNT(*) FROM {table}')).scalar() or 0  # nosec B608
+            try:
+                # Bandit B608 reviewed: the table name is one of two fixed values chosen in code, never from input
+                lake.hot_only([(f'DELETE FROM {table}', {})])  # nosec B608
+            except lake.LakeNotReady as e:
+                flash(f'Not cleared: the data lake must be caught up first ({e}).', 'danger')
+                return redirect(url_for('settings.index'))
+            log_activity('Activity log cleared' if section == 'clear_logs' else 'Node logs cleared',
+                         response=f'{removed} entries removed from the hot database by {current_user.username}'
+                         + (' (kept in the data lake)' if lake.configured() else ''), status='warning')
+            flash(('Activity' if section == 'clear_logs' else 'Node') + ' logs cleared'
+                  + (' from the hot database; the data lake keeps them.' if lake.configured() else '.'), 'success')
             return redirect(url_for('settings.index'))
 
         db.session.commit()

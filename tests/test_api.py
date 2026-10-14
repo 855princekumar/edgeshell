@@ -156,7 +156,7 @@ def test_password_reset_ends_api_sessions_and_keys(app):
     from app.services.session_service import revoke_sessions
     c = app.test_client()
     tok = login(c, 'op')
-    key = c.post('/api/v1/keys', headers=H(tok), json={'name': 'etl', 'scopes': ['read'],
+    key = c.post('/api/v1/keys', headers=H(tok), json={'name': 'etl', 'purpose': 'automated test integration', 'scopes': ['read'],
                                                        'password': 'Operator-pass-1', 'code': '000000'}).get_json()['key']
     with app.test_request_context():
         revoke_sessions(User.query.filter_by(username='op').first(), 'password_reset')
@@ -179,7 +179,7 @@ def test_tokens_are_stored_only_as_hashes(app):
 def test_keys_need_a_session_and_the_password_and_cannot_exceed_the_role(app):
     c = app.test_client()
     tok = login(c, 'mon')
-    base = {'name': 'grafana', 'scopes': ['read'], 'password': 'Operator-pass-1', 'code': '000000'}
+    base = {'name': 'grafana', 'purpose': 'automated test integration', 'scopes': ['read'], 'password': 'Operator-pass-1', 'code': '000000'}
     assert c.post('/api/v1/keys', headers=H(tok), json=dict(base, password='wrong')).status_code == 401
     assert c.post('/api/v1/keys', headers=H(tok), json=dict(base, scopes=['write'])).status_code == 403
     r = c.post('/api/v1/keys', headers=H(tok), json=base)
@@ -196,13 +196,13 @@ def test_keys_need_a_session_and_the_password_and_cannot_exceed_the_role(app):
 def test_key_ip_allowlist(app):
     c = app.test_client()
     tok = login(c, 'op')
-    key = c.post('/api/v1/keys', headers=H(tok), json={'name': 'x', 'scopes': ['read'], 'allowed_ips': '192.0.2.0/24',
+    key = c.post('/api/v1/keys', headers=H(tok), json={'name': 'x', 'purpose': 'automated test integration', 'scopes': ['read'], 'allowed_ips': '192.0.2.0/24',
                                                        'password': 'Operator-pass-1', 'code': '000000'}).get_json()['key']
     r = c.get('/api/v1/nodes', headers=H(key))
     assert r.status_code == 403 and r.get_json()['error'] == 'ip_not_allowed'
     r = c.get('/api/v1/nodes', headers=H(key), environ_base={'REMOTE_ADDR': '192.0.2.7'})
     assert r.status_code == 200
-    bad = c.post('/api/v1/keys', headers=H(tok), json={'name': 'y', 'scopes': ['read'], 'allowed_ips': 'not-an-ip',
+    bad = c.post('/api/v1/keys', headers=H(tok), json={'name': 'y', 'purpose': 'automated test integration', 'scopes': ['read'], 'allowed_ips': 'not-an-ip',
                                                        'password': 'Operator-pass-1', 'code': '000000'})
     assert bad.status_code == 400
 
@@ -210,7 +210,7 @@ def test_key_ip_allowlist(app):
 def test_a_read_key_cannot_write(app):
     c = app.test_client()
     tok = login(c, 'op')
-    key = c.post('/api/v1/keys', headers=H(tok), json={'name': 'ro', 'scopes': ['read'], 'password': 'Operator-pass-1',
+    key = c.post('/api/v1/keys', headers=H(tok), json={'name': 'ro', 'purpose': 'automated test integration', 'scopes': ['read'], 'password': 'Operator-pass-1',
                                                        'code': '000000'}).get_json()['key']
     with app.app_context():
         nid = Node.query.first().id

@@ -176,6 +176,16 @@ events and activity reads come from the lake when it is caught up.
   never sees them.
 - Disk: the lake grows with history (about 2 to 3 GB a year for 150 nodes).
   Watch `df -h` and back up `data/mariadb-lake` as well as `data/mariadb`.
+- **Nothing in the app deletes from the lake.** Clearing logs and deleting
+  nodes or users remove rows from the hot database only, and are refused while
+  the lake is behind. A deleted node or user keeps its row in the lake under a
+  new name (`name~deleted-<id>`), so the name can be used again.
+- **The app cannot change the lake.** Its account there can only read.
+- **Persistence.** Both databases live in host folders (`data/mariadb`,
+  `data/mariadb-lake`), not in the containers: a crashed container, a new image
+  or a reboot changes nothing (`restart: unless-stopped`). For the loss of the
+  disk itself, take EBS snapshots (AWS Backup or Data Lifecycle Manager, daily)
+  and keep the `backups/` dumps off the instance.
 
 Upgrading an existing install to 1.8.0: download `lake-init.sh` (as in A4) and
 the new `compose.yaml`, then `docker compose up -d`. The hot database restarts
@@ -341,8 +351,9 @@ Generated credentials are printed once and saved to
 | What | URL | Login |
 |---|---|---|
 | EdgeShell | `https://fleet.yourdomain.com` | your users (migrated) |
-| phpMyAdmin | `http://<tailscale-ip>:8080` (from a tailnet device) | 1) basic auth 2) `edgeshell_dba` |
-| MariaDB shell | `sudo mariadb edgeshell` on the instance | unix socket, no password |
+
+Database tools are for the server's operator only; their access details stay
+on the server and are not documented here.
 
 ### B4. Restart audit
 
@@ -375,7 +386,7 @@ and stop. Each also appears on the Activity Log page as user `system`.
 | Symptom | Fix |
 |---|---|
 | Certificate failed | Check the DNS A record and that port 80 is open, then re-run `python3 run.py` |
-| phpMyAdmin bound to 127.0.0.1 | Tailscale was not up during install. Bring it up and re-run, or use `ssh -L 8080:127.0.0.1:8080` |
+| phpMyAdmin bound to 127.0.0.1 | Tailscale was not up during install. Bring it up and re-run `python3 run.py` |
 | Behind Cloudflare proxy | Client IPs appear as Cloudflare's. Use DNS-only (grey cloud) or add `real_ip` config |
 | `Health check` warning at end | `journalctl -u edgeshell -n 100 --no-pager` |
 
