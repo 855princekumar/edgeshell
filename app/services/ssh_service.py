@@ -4,19 +4,42 @@ from datetime import datetime
 from app.utils.timeutil import iso_utc
 
 
-def get_ssh_client(node, timeout=10):
+class TailscaleCheckRequired(paramiko.AuthenticationException):
+    """Port 22 on the node is answered by Tailscale SSH, which ignores the
+    password and refused or held the login (typically an SSH policy with
+    action "check", which waits for a person to approve in a browser)."""
+
+
+TAILSCALE_CHECK_MESSAGE = ('Tailscale SSH on this node asks for a browser check, so the password is '
+                           'not used. Allow this EdgeShell server in the tailnet SSH policy with '
+                           'action "accept", or turn off Tailscale SSH on the node.')
+
+
+def connect(hostname, port, username, password, timeout=10):
+    """Open an SSH client. On any failure the half-open client is closed
+    (otherwise its socket and transport thread stay open until the process
+    runs out of file handles) and the error is raised."""
     client = paramiko.SSHClient()
     client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-    client.connect(
-        hostname=node.ip_address,
-        port=node.ssh_port or 22,
-        username=node.username,
-        password=node.password,
-        timeout=timeout,
-        banner_timeout=timeout,
-        auth_timeout=timeout,
-    )
-    return client
+    try:
+        client.connect(hostname=hostname, port=port, username=username, password=password,
+                       timeout=timeout, banner_timeout=timeout, auth_timeout=timeout,
+                       allow_agent=False, look_for_keys=False)
+        return client
+    except paramiko.AuthenticationException as e:
+        t = client.get_transport()
+        banner = (getattr(t, 'remote_version', '') or '') if t else ''
+        client.close()
+        if 'tailscale' in banner.lower():
+            raise TailscaleCheckRequired(TAILSCALE_CHECK_MESSAGE) from e
+        raise
+    except BaseException:
+        client.close()
+        raise
+
+
+def get_ssh_client(node, timeout=10):
+    return connect(node.ip_address, node.ssh_port or 22, node.username, node.password, timeout)
 
 
 def test_connection(node, timeout=10):
@@ -26,6 +49,8 @@ def test_connection(node, timeout=10):
         out = stdout.read().decode().strip()
         client.close()
         return True, 'Connection successful' if out == 'ok' else f'Connected ({out})'
+    except TailscaleCheckRequired:
+        return False, TAILSCALE_CHECK_MESSAGE
     except paramiko.AuthenticationException:
         return False, 'Authentication failed - check credentials'
     except paramiko.SSHException as e:

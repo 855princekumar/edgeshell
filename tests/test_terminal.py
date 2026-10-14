@@ -201,3 +201,46 @@ def test_shell_origin_check(app):
         assert not _same_origin()
     with app.test_request_context('/ws/nodes/1/shell', headers={'Origin': 'http://10.0.0.5:8080', 'Host': '10.0.0.5'}):
         assert _same_origin()
+
+
+def _fake_ssh(monkeypatch, banner, exc):
+    """paramiko.SSHClient whose connect fails like a node would; records close()."""
+    import paramiko
+    closed = []
+
+    class T:
+        remote_version = banner
+
+    def connect(self, **k):
+        self._transport = T()
+        raise exc
+
+    monkeypatch.setattr(paramiko.SSHClient, 'connect', connect)
+    monkeypatch.setattr(paramiko.SSHClient, 'get_transport', lambda self: getattr(self, '_transport', None))
+    monkeypatch.setattr(paramiko.SSHClient, 'close', lambda self: closed.append(1))
+    return closed
+
+
+@pytest.mark.parametrize('exc', [__import__('paramiko').AuthenticationException('bad'), TimeoutError('slow'),
+                                 ConnectionRefusedError()])
+def test_failed_logins_close_their_connection(monkeypatch, exc):
+    # a half-open client left behind keeps a socket and a thread: hundreds an
+    # hour with a few wrong passwords, until the server runs out of file handles
+    from app.services import ssh_service
+    closed = _fake_ssh(monkeypatch, 'SSH-2.0-OpenSSH_9.2p1', exc)
+    with pytest.raises(type(exc)):
+        ssh_service.connect('10.0.0.1', 22, 'pi', 'pw')
+    assert closed == [1]
+
+
+def test_tailscale_ssh_refusal_is_reported_as_such(monkeypatch):
+    import paramiko
+    from app.services import collector, ssh_service
+    closed = _fake_ssh(monkeypatch, 'SSH-2.0-Tailscale', paramiko.AuthenticationException('Authentication timeout.'))
+    with pytest.raises(ssh_service.TailscaleCheckRequired) as e:
+        ssh_service.connect('100.64.0.9', 22, 'pi', 'pw')
+    assert closed == [1]
+    kind, message = collector.classify(e.value)
+    assert kind == 'auth' and 'Tailscale SSH' in message and 'password' in message
+    r = collector.collect_one({'id': 999, 'ip': '100.64.0.9', 'port': 22, 'username': 'pi', 'password': 'pw'})
+    assert r['kind'] == 'auth' and 'Tailscale SSH' in r['message']
