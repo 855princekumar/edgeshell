@@ -11,8 +11,9 @@ class TailscaleCheckRequired(paramiko.AuthenticationException):
 
 
 TAILSCALE_CHECK_MESSAGE = ('Tailscale SSH on this node asks for a browser check, so the password is '
-                           'not used. Allow this EdgeShell server in the tailnet SSH policy with '
-                           'action "accept", or turn off Tailscale SSH on the node.')
+                           'not used. In the tailnet SSH policy, allow this server with an "accept" '
+                           'rule that no "check" rule also matches, or turn off Tailscale SSH on the '
+                           'node (docs/VPN-NETWORK.md, Tailscale SSH on the nodes).')
 
 
 class LoginPaused(Exception):

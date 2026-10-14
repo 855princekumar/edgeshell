@@ -49,7 +49,7 @@
             <div class="fw-semibold">Automatic logins paused on {{ paused|length }} node(s)</div>
             <div class="text-xs text-muted">
                 EdgeShell stopped logging in after failed logins, so it does not keep sending a password the node rejects.
-                {% if ts_paused %}{{ ts_paused|length }} of them use Tailscale SSH, which asks for a browser check: allow this server in the tailnet SSH policy (action "accept") and they resume by themselves within {{ config.LOGIN_RECHECK_MINUTES }} minutes.{% endif %}
+                {% if ts_paused %}{{ ts_paused|length }} of them use Tailscale SSH, which asks for a browser check: the VPN works, but the tailnet SSH policy needs an "accept" rule for this server that no "check" rule also matches (see the VPN guide, "Tailscale SSH on the nodes"). They resume by themselves within {{ config.LOGIN_RECHECK_MINUTES }} minutes of the fix.{% endif %}
                 Others resume when you fix the login on the card, or when their SSH server changes.
             </div>
         </div>
