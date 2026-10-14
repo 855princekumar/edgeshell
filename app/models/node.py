@@ -36,6 +36,13 @@ class Node(db.Model):
     is_deleted = db.Column(db.Boolean, default=False, index=True)  # recycle bin
     deleted_at = db.Column(db.DateTime)
 
+    # Login policy: after failed logins EdgeShell stops logging in to the node
+    # (no password guessing, no lockouts) until the cause is fixed. See
+    # app/services/login_policy.py.
+    login_paused_at = db.Column(db.DateTime)
+    login_pause_reason = db.Column(db.String(16))     # password | tailscale | unknown
+    ssh_banner = db.Column(db.String(80))             # SSH server banner seen at the pause
+
     # Cached metrics
     cpu_percent = db.Column(db.Float)
     ram_percent = db.Column(db.Float)
@@ -99,6 +106,9 @@ class Node(db.Model):
             'nodered_installed': self.nodered_installed,
             'is_deleted': self.is_deleted,
             'deleted_at': iso_utc(self.deleted_at),
+            'login_paused': self.login_paused_at is not None,
+            'login_paused_at': iso_utc(self.login_paused_at),
+            'login_pause_reason': self.login_pause_reason,
         }
 
     def __repr__(self):

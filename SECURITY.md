@@ -52,11 +52,24 @@ You will be credited in the release notes unless you ask not to be.
   disabling a user revoke sessions immediately. Idle sessions are asked "still
   there?" and signed out.
 - Cookies are HttpOnly, SameSite=Lax, and Secure behind HTTPS.
+- Node login policy (`app/services/login_policy.py`): after
+  `LOGIN_PAUSE_AFTER_FAILURES` rejected passwords in a row (default 2), or one
+  refusal by Tailscale SSH, EdgeShell stops logging in to that node, so it never
+  repeats a rejected password (no guessing, no fail2ban bans or lockouts on the
+  nodes). The pause is stored, survives restarts and is honoured by every SSH
+  path (collector, bulk tests, fleet terminal, node terminal, deploys, scans).
+  Recovery needs no guessing: every `LOGIN_RECHECK_MINUTES` the SSH banner of
+  each paused node is read without logging in (a changed SSH server gets one
+  new attempt), and one canary login tests nodes paused by Tailscale SSH. A
+  person can retry once (Test on the card, Fix login, Retry paused logins).
+  Pauses and resumes are in the activity log. A CI test fails the build if
+  any code opens SSH outside `ssh_service.connect`, which also always closes a
+  failed connection.
 - The container image runs as a non-root user with read-only application code
   and no secrets baked in; releases carry an SBOM and build provenance.
 - `run.py` enables a host firewall (ufw) and audits listening ports; the app,
   MariaDB and phpMyAdmin are never exposed to the internet.
-- `main` is protected: pull requests, eight required CI checks (including a
+- `main` is protected: pull requests, required CI checks (including a
   secret scan and end-to-end tests on amd64 and arm64) and secret-scanning push
   protection.
 

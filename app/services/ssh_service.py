@@ -15,6 +15,15 @@ TAILSCALE_CHECK_MESSAGE = ('Tailscale SSH on this node asks for a browser check,
                            'action "accept", or turn off Tailscale SSH on the node.')
 
 
+class LoginPaused(Exception):
+    """Logins to this node are paused by the login policy."""
+
+
+PAUSED_MESSAGE = ('Logins to this node are paused after failed logins, so EdgeShell does not keep '
+                  'sending a password the node rejects. Fix the login on its card, or use '
+                  '"Retry paused logins".')
+
+
 def connect(hostname, port, username, password, timeout=10):
     """Open an SSH client. On any failure the half-open client is closed
     (otherwise its socket and transport thread stay open until the process
@@ -31,7 +40,10 @@ def connect(hostname, port, username, password, timeout=10):
         banner = (getattr(t, 'remote_version', '') or '') if t else ''
         client.close()
         if 'tailscale' in banner.lower():
-            raise TailscaleCheckRequired(TAILSCALE_CHECK_MESSAGE) from e
+            err = TailscaleCheckRequired(TAILSCALE_CHECK_MESSAGE)
+            err.ssh_banner = banner
+            raise err from e
+        e.ssh_banner = banner
         raise
     except BaseException:
         client.close()
@@ -39,6 +51,8 @@ def connect(hostname, port, username, password, timeout=10):
 
 
 def get_ssh_client(node, timeout=10):
+    if getattr(node, 'login_paused_at', None):
+        raise LoginPaused(PAUSED_MESSAGE)
     return connect(node.ip_address, node.ssh_port or 22, node.username, node.password, timeout)
 
 
@@ -51,6 +65,8 @@ def test_connection(node, timeout=10):
         return True, 'Connection successful' if out == 'ok' else f'Connected ({out})'
     except TailscaleCheckRequired:
         return False, TAILSCALE_CHECK_MESSAGE
+    except LoginPaused:
+        return False, PAUSED_MESSAGE
     except paramiko.AuthenticationException:
         return False, 'Authentication failed - check credentials'
     except paramiko.SSHException as e:

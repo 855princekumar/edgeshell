@@ -76,6 +76,9 @@ def node_shell(ws, node_id):
     if not node or not node.is_active:
         ws.send('\r\n\x1b[31mNode not found.\x1b[0m\r\n')
         return
+    if node.login_paused_at is not None:
+        ws.send('\r\n\x1b[33m' + ssh_service.PAUSED_MESSAGE + '\x1b[0m\r\n')
+        return
     target = collector.target_for(node)
     user_id, username, sid = current_user.id, current_user.username, session.get('sid')
     db.session.remove()

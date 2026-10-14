@@ -212,6 +212,9 @@ def _ensure_schema():
             'nodered_installed': 'BOOLEAN',
             'capabilities_checked_at': 'DATETIME',
             'last_error': 'VARCHAR(256)',
+            'login_paused_at': 'DATETIME',
+            'login_pause_reason': 'VARCHAR(16)',
+            'ssh_banner': 'VARCHAR(80)',
         },
         'users': {
             # Sessions moved to the user_sessions table (created by
@@ -262,6 +265,17 @@ def _one_time_fixes():
         Node.query.update({Node.orgui_installed: None, Node.orgui_checked_at: None},
                           synchronize_session=False)
         db.session.add(Settings(key='fix_orgui_detection_v2', value='done'))
+        db.session.commit()
+    if 'fix_login_pause_v1' not in done:
+        # Nodes already failing to log in are paused at once, so the upgrade
+        # does not start with a round of failed logins across the fleet. The
+        # banner check decides the reason (Tailscale SSH or password) without
+        # logging in.
+        from datetime import datetime
+        Node.query.filter(Node.status == 'auth_failed', Node.login_paused_at.is_(None)).update(
+            {Node.login_paused_at: datetime.utcnow(), Node.login_pause_reason: 'unknown'},
+            synchronize_session=False)
+        db.session.add(Settings(key='fix_login_pause_v1', value='done'))
         db.session.commit()
 
 

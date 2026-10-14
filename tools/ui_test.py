@@ -95,6 +95,7 @@ LAYOUT_JS = r"""
 
 
 def seed(app, nodes, ssh):
+    from datetime import datetime
     from app import db, _seed_defaults
     from app.models.node import Node
     from app.models.user import User
@@ -123,6 +124,9 @@ def seed(app, nodes, ssh):
                          last_error='Authentication failed: check the SSH username and password'
                          if st == 'auth_failed' else None)
                 n.password = 'x'
+                if st == 'auth_failed':           # the login policy paused them
+                    n.login_paused_at = datetime.utcnow()
+                    n.login_pause_reason = 'tailscale' if made % 2 else 'password'
                 db.session.add(n)
                 made += 1
         real_id = None

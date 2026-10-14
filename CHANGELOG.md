@@ -4,6 +4,10 @@ All notable changes are documented here. Format loosely follows Keep a Changelog
 
 ## [1.7.1] - 2026-10-14
 
+### Added
+- **Node login policy.** EdgeShell no longer keeps logging in to a node whose login fails: after 2 rejected passwords in a row (`LOGIN_PAUSE_AFTER_FAILURES`), or one refusal by Tailscale SSH, automatic and bulk logins to that node pause, and the pause survives restarts. Recovery without guessing: every 30 minutes (`LOGIN_RECHECK_MINUTES`) the SSH banner of each paused node is read without logging in, a changed SSH server gets one new attempt, and one canary login tests the nodes paused by Tailscale SSH (when it works, they all resume). Fix login, Test on a card and "Retry paused logins" try once. The Node Fleet page lists paused nodes, cards show a badge, Test All skips them, and every pause and resume is in the activity log. Nodes already failing when 1.7.1 starts are paused at once instead of retried.
+- A CI test that fails the build if any code opens SSH without the guarded helper.
+
 ### Fixed
 - **File handle leak in SSH connections.** A login that failed (wrong password, time-out, refused) left its half-open connection and transport thread behind. With a few dozen nodes failing every 10 minutes the web process ran out of file handles after about three hours, then crashed and restarted, and new connections failed. Every SSH connection now goes through one helper that closes it on any failure.
 - **Tailscale SSH is named as the cause.** When port 22 of a node is answered by Tailscale SSH and the login is refused or held for a browser check (an SSH policy rule with action `check`), the card says so instead of "check the SSH username and password", which no password change can fix. See the EC2 guide's troubleshooting table.

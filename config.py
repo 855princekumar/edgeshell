@@ -161,6 +161,11 @@ class Config:
     # at once.
     COLLECTOR_ENABLED = _env_bool('COLLECTOR_ENABLED', True)
     COLLECTOR_INTERVAL = int(os.environ.get('COLLECTOR_INTERVAL', '30'))
+    # Login policy (app/services/login_policy.py): password failures before
+    # automatic logins to a node pause, and how often paused nodes are
+    # re-checked (banner read without logging in; one Tailscale canary login).
+    LOGIN_PAUSE_AFTER_FAILURES = int(os.environ.get('LOGIN_PAUSE_AFTER_FAILURES', '2'))
+    LOGIN_RECHECK_MINUTES = int(os.environ.get('LOGIN_RECHECK_MINUTES', '30'))
     COLLECTOR_WORKERS = int(os.environ.get('COLLECTOR_WORKERS', '48'))
 
     # Fleet / integrations

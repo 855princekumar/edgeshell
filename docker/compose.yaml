@@ -140,6 +140,8 @@ services:
       LOCKOUT_MINUTES: ${LOCKOUT_MINUTES:-15}
       VPN_BACKEND: ${VPN_BACKEND:-tailscale}
       METRICS_RETENTION_DAYS: ${METRICS_RETENTION_DAYS:-14}
+      LOGIN_PAUSE_AFTER_FAILURES: ${LOGIN_PAUSE_AFTER_FAILURES:-2}
+      LOGIN_RECHECK_MINUTES: ${LOGIN_RECHECK_MINUTES:-30}
       # Two-factor authentication (mandatory), checked by privacyIDEA.
       MFA_PROVIDER: privacyidea
       PRIVACYIDEA_URL: http://privacyidea:8080

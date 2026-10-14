@@ -103,12 +103,21 @@ def add():
 def edit(node_id):
     node = Node.query.get_or_404(node_id)
     if request.method == 'POST':
+        before = (node.ip_address, node.ssh_port, node.username)
         _apply_form(node, request.form)
         pw = request.form.get('password', '')
         if pw:
             node.password = pw
+        changed = bool(pw) or before != (node.ip_address, node.ssh_port, node.username)
+        if changed and node.login_paused_at is not None:
+            from app.services import login_policy
+            login_policy.resume(node)                 # new login details: try them
         node.updated_at = datetime.utcnow()
         db.session.commit()
+        if changed:
+            from app.services.collector import COLLECTOR, POOL
+            POOL.drop(node.id)
+            COLLECTOR.kick([node.id])
         log_activity('Edit Node', node=node.name, status='success')
         flash(f'Node "{node.name}" updated.', 'success')
         return redirect(url_for('nodes.index'))
@@ -173,7 +182,14 @@ def toggle(node_id):
 def test(node_id):
     from app.services.collector import COLLECTOR
     node = Node.query.get_or_404(node_id)
-    r = COLLECTOR.run_cycle(node_ids=[node.id], force=True).get(node.id)
+    # Test on one card is a person's single attempt, allowed for a paused node;
+    # Test All sends bulk=1 and leaves paused nodes alone.
+    bulk = (request.get_json(silent=True) or {}).get('bulk') or request.args.get('bulk')
+    if bulk and node.login_paused_at is not None:
+        from app.services.ssh_service import PAUSED_MESSAGE
+        return jsonify({'success': False, 'message': PAUSED_MESSAGE, 'status': node.status,
+                        'kind': 'auth', 'paused': True})
+    r = COLLECTOR.run_cycle(node_ids=[node.id], force=True, manual=True).get(node.id)
     node = db.session.get(Node, node_id)
     ok = bool(r and r['ok'])
     message = 'Connection successful' if ok else (r['message'] if r else 'Node is inactive')
@@ -191,6 +207,9 @@ def metrics(node_id):
     from app.services.collector import COLLECTOR
     node = Node.query.get_or_404(node_id)
     r = COLLECTOR.run_cycle(node_ids=[node.id], force=True).get(node.id)
+    if r is None and node.login_paused_at is not None:
+        from app.services.ssh_service import PAUSED_MESSAGE
+        return jsonify({'success': False, 'message': PAUSED_MESSAGE, 'kind': 'auth', 'paused': True})
     if r and r['ok']:
         return jsonify({'success': True, 'metrics': r['metrics']})
     return jsonify({'success': False, 'message': (r or {}).get('message') or 'Could not collect metrics',
@@ -214,9 +233,11 @@ def credentials(node_id):
     node.ssh_port = int(port)
     if password:
         node.password = password
+    from app.services import login_policy
+    login_policy.resume(node)                         # new login details: one attempt now
     db.session.commit()
     POOL.drop(node.id)
-    r = COLLECTOR.run_cycle(node_ids=[node.id], force=True).get(node.id) or {}
+    r = COLLECTOR.run_cycle(node_ids=[node.id], force=True, manual=True).get(node.id) or {}
     node = db.session.get(Node, node_id)
     log_activity('Update SSH credentials', node=node.name,
                  response='login ok' if r.get('ok') else r.get('message'),
@@ -436,6 +457,24 @@ def bulk_import_commit():
         msg += ' Their SSH connection is being checked in the background; progress shows at the bottom of the page.'
     flash(msg, 'success')
     return redirect(url_for('nodes.index'))
+
+
+@nodes_bp.route('/logins/resume', methods=['POST'])
+@login_required
+@operator_required
+def logins_resume():
+    """Retry paused logins: once each, now. If they fail again they pause again."""
+    from app.services import login_policy
+    from app.services.collector import COLLECTOR
+    data = request.get_json(silent=True) or {}
+    reason = data.get('reason') if data.get('reason') in login_policy.REASONS else None
+    ids = login_policy.resume_nodes(node_ids=data.get('node_ids') or None, reason=reason)
+    for nid in ids:
+        COLLECTOR.auth_fails[nid] = max(0, int(current_app.config.get('LOGIN_PAUSE_AFTER_FAILURES', 2)) - 1)
+    COLLECTOR.kick(ids)
+    log_activity('Retry paused logins', response=f'{len(ids)} node(s), one attempt each', status='success')
+    return jsonify({'success': True, 'resumed': len(ids),
+                    'message': f'Trying {len(ids)} node(s) once each. Any that fail again pause again.'})
 
 
 @nodes_bp.route('/jobs')

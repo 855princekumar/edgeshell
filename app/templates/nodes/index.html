@@ -39,6 +39,29 @@
     </div>
 </div>
 
+{% set paused = nodes | selectattr('login_paused_at') | list %}
+{% if paused %}
+{% set ts_paused = paused | selectattr('login_pause_reason', 'equalto', 'tailscale') | list %}
+<div class="card mb-4" id="pausedNotice" style="border-left:4px solid #d97706">
+    <div class="card-body" style="padding:12px 18px;display:flex;gap:12px;align-items:center;flex-wrap:wrap">
+        <i class="bi bi-pause-circle" style="font-size:20px;color:#d97706"></i>
+        <div style="flex:1 1 280px;min-width:0">
+            <div class="fw-semibold">Automatic logins paused on {{ paused|length }} node(s)</div>
+            <div class="text-xs text-muted">
+                EdgeShell stopped logging in after failed logins, so it does not keep sending a password the node rejects.
+                {% if ts_paused %}{{ ts_paused|length }} of them use Tailscale SSH, which asks for a browser check: allow this server in the tailnet SSH policy (action "accept") and they resume by themselves within {{ config.LOGIN_RECHECK_MINUTES }} minutes.{% endif %}
+                Others resume when you fix the login on the card, or when their SSH server changes.
+            </div>
+        </div>
+        {% if current_user.can_execute() %}
+        <button type="button" class="btn btn-sm btn-outline" id="resumeLoginsBtn" title="Try each paused node once now; any that fail again pause again">
+            <i class="bi bi-arrow-repeat"></i> Retry paused logins
+        </button>
+        {% endif %}
+    </div>
+</div>
+{% endif %}
+
 <!-- Filter/Search Bar -->
 <div class="card mb-6">
     <div class="card-body" style="padding:14px 18px">
@@ -88,7 +111,7 @@
 {% if nodes %}
 <div class="node-grid" id="nodeGrid">
     {% for node in nodes %}
-    <div class="node-card" data-name="{{ node.name|lower }}" data-env="{{ node.environment|lower }}" data-status="{{ node.status }}" data-arch="{{ node.arch_bits }}" data-category="{{ node.category }}" id="node-{{ node.id }}">
+    <div class="node-card" data-name="{{ node.name|lower }}" data-env="{{ node.environment|lower }}" data-status="{{ node.status }}" data-arch="{{ node.arch_bits }}" data-category="{{ node.category }}" data-paused="{{ '1' if node.login_paused_at else '' }}" id="node-{{ node.id }}">
         <input type="checkbox" class="node-checkbox" value="{{ node.id }}" style="position:absolute;top:14px;right:14px;width:16px;height:16px;accent-color:var(--primary)">
 
         <div class="node-card-header">
@@ -131,6 +154,11 @@
                   {% if node.last_error %}title="{{ node.last_error }}"{% endif %}>
                 {{ 'Login failed' if node.status == 'auth_failed' else (node.status or 'Unknown').capitalize() }}
             </span>
+            {% if node.login_paused_at %}
+            <span class="badge" style="background:#fef3c7;color:#92400e" title="Automatic logins paused: {{ node.last_error or '' }}">
+                <i class="bi bi-pause-fill"></i> {{ 'Tailscale check' if node.login_pause_reason == 'tailscale' else 'logins paused' }}
+            </span>
+            {% endif %}
             {% if current_user.can_execute() %}
             <button type="button" class="btn btn-xs btn-warning es-fix-login" id="fix-{{ node.id }}"
                     {% if node.status != 'auth_failed' %}style="display:none"{% endif %}
@@ -305,11 +333,11 @@
 
 {% block extra_js %}
 <script>
-function testNode(id) {
+function testNode(id, bulk) {
     document.getElementById(`spinner-${id}`).style.display = 'inline-block';
     document.getElementById(`wifiicon-${id}`).style.display = 'none';
 
-    apiPost(`/nodes/${id}/test`, {})
+    apiPost(`/nodes/${id}/test`, bulk ? {bulk: 1} : {})
         .then(r => r.json())
         .then(d => {
             const dot = document.getElementById(`dot-${id}`);
@@ -488,7 +516,23 @@ function installCapability(cap, label) {
 }
 
 document.getElementById('testAllBtn').addEventListener('click', () => {
-    document.querySelectorAll('.node-checkbox').forEach(cb => { testNode(parseInt(cb.value)); });
+    // paused nodes are left alone: Test All must not repeat rejected logins
+    let skipped = 0;
+    document.querySelectorAll('.node-card').forEach(card => {
+        const cb = card.querySelector('.node-checkbox');
+        if (!cb) return;
+        if (card.dataset.paused) { skipped++; return; }
+        testNode(parseInt(cb.value), true);
+    });
+    if (skipped) showToast(`Skipped ${skipped} node(s) with paused logins.`, 'info');
+});
+const resumeBtn = document.getElementById('resumeLoginsBtn');
+if (resumeBtn) resumeBtn.addEventListener('click', () => {
+    resumeBtn.disabled = true;
+    apiPost('/nodes/logins/resume', {}).then(r => r.json()).then(d => {
+        showToast(d.message || 'Retrying', d.success ? 'success' : 'danger');
+        setTimeout(() => location.reload(), 15000);
+    }).catch(e => { resumeBtn.disabled = false; showToast(e.message, 'danger'); });
 });
 
 // Open with a category preselected: /nodes/?category=Floc%20Detectors

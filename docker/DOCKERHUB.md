@@ -139,6 +139,8 @@ edgeshell/
 | `SESSION_HOURS` | no | `8` | Idle session lifetime |
 | `SINGLE_SESSION` | no | `true` | Enforce each user's device limit (1 by default, up to 4 per user) |
 | `MAX_FAILED_LOGINS` / `LOCKOUT_MINUTES` | no | `5` / `15` | Account lockout policy |
+| `LOGIN_PAUSE_AFTER_FAILURES` | no | `2` | Password failures before automatic logins to a node pause |
+| `LOGIN_RECHECK_MINUTES` | no | `30` | How often paused nodes are re-checked (banner only; one canary login for Tailscale SSH) |
 | `METRICS_RETENTION_DAYS` | no | `14` | Per-minute samples kept (hourly rollups for the stats export are kept for good) |
 
 The app refuses to start if any required value is missing.
