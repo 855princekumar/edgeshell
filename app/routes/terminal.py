@@ -71,10 +71,11 @@ def execute():
         return jsonify({'error': 'No command provided'}), 400
     if not node_ids:
         return jsonify({'error': 'No nodes selected'}), 400
-    hard_blocked = [':(){ :|:& };:', 'dd if=/dev/zero of=/dev/sda', 'mkfs.ext4 /dev/sd']
-    for blocked in hard_blocked:
-        if blocked in command:
-            return jsonify({'error': f'Command blocked: {blocked}'}), 400
+    from app.services import command_policy
+    rule = command_policy.blocked(command)
+    if rule:
+        log_activity('Command refused', command=command[:200], response=f'blocked: {rule}', status='warning')
+        return jsonify({'error': f'Command blocked by policy: {rule}'}), 400
 
     nodes = Node.query.filter(Node.id.in_(node_ids), Node.is_active.is_(True)).all()
     if not nodes:

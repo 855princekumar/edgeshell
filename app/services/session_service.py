@@ -214,6 +214,15 @@ def revoke_sessions(user, reason, keep_current=False):
         sid = session.get('sid')
         rows = [s for s in rows if s.token != sid]
     _revoke(rows, reason)
+    # API sessions end with the browser sessions. Service keys also end when
+    # the account may be compromised or is closed (an admin reset, a 2FA
+    # reset, deactivation, "sign out everywhere"); a user's own routine
+    # password change keeps their keys so integrations do not break.
+    from app.services import api_auth
+    kinds = ('session', 'challenge')
+    if reason in ('password_reset', 'mfa_reset', 'deactivated', 'admin_revoked'):
+        kinds = ('session', 'challenge', 'key')
+    api_auth.revoke_all_for(user, reason, kinds=kinds)
     return len(rows)
 
 
@@ -276,6 +285,9 @@ def register_single_session(app):
     def _enforce_sessions():
         if request.endpoint in SESSION_EXEMPT_ENDPOINTS:
             return None
+        from flask import g
+        if getattr(g, 'api_token', None) is not None or getattr(g, 'api_bearer_present', False):
+            return None                      # API bearer credential: checked in api_auth
         if not current_user.is_authenticated:
             return None
         sid = session.get('sid')

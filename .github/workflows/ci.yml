@@ -14,11 +14,14 @@ concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
-# Stage 1 (the gate, all required): lint, secret scan, every unit test on
-# three Python versions, and the browser test of every page on every screen
-# size. Each enforces a minimum count, so a change cannot pass by making tests
-# skip. Stage 2 (image build, then the end-to-end sandbox on amd64 and arm64)
-# starts only when the whole gate is green.
+# Stage 1 (the gate, all required): lint, secret scan, security scans
+# (Bandit, pip-audit), every unit test on three Python versions with a
+# coverage floor, the browser test of every page on every screen size, and the
+# data lake replication test on real MariaDB. Each enforces a minimum, so a
+# change cannot pass by making tests skip. Stage 2 (image build, then the
+# end-to-end sandbox on amd64 and arm64, including the public API with real
+# 2FA) starts only when the whole gate is green. CodeQL runs alongside
+# (.github/workflows/codeql.yml).
 jobs:
   lint:
     name: Lint and static checks
@@ -41,6 +44,23 @@ jobs:
             echo "::error::Em dash found. Project style: use a colon, comma or parentheses instead."
             exit 1
           fi
+      - name: No private product, device or customer names (terms kept in a secret)
+        # The list lives in the repository secret FORBIDDEN_TERMS (one term per
+        # line), never in the repository, so the check itself discloses nothing.
+        env:
+          FORBIDDEN_TERMS: ${{ secrets.FORBIDDEN_TERMS }}
+        run: |
+          if [ -z "$FORBIDDEN_TERMS" ]; then echo "FORBIDDEN_TERMS not set (forks): skipped"; exit 0; fi
+          found=0
+          while IFS= read -r term; do
+            term="$(printf '%s' "$term" | tr -d '\r')"
+            [ -z "$term" ] && continue
+            if git grep -qiIF -e "$term" -- . ':!venv'; then
+              echo "::error::A private term (secret line) appears in: $(git grep -liIF -e "$term" -- . ':!venv' | tr '\n' ' ')"
+              found=1
+            fi
+          done <<< "$FORBIDDEN_TERMS"
+          exit $found
       - name: Compose files are valid
         run: |
           cp .env.example .env
@@ -77,18 +97,76 @@ jobs:
           python-version: ${{ matrix.python }}
           cache: pip
       - run: pip install -r requirements.txt pytest
-      - name: pytest
+      - run: pip install pytest-cov==6.2.1
+      - name: pytest (coverage at least 74 percent)
         env:
           FLASK_ENV: testing
-        run: python -m pytest -q -W ignore --junitxml=pytest.xml
-      - name: Every test ran and passed (at least 110, none skipped)
+        run: python -m pytest -q -W ignore --junitxml=pytest.xml --cov=app --cov-report=term --cov-fail-under=74
+      - name: Every test ran and passed (at least 170, none skipped)
         if: always()
-        run: python tools/test_gate.py pytest.xml --min 110 --max-skipped 0 --label "Unit tests (Python ${{ matrix.python }})"
+        run: python tools/test_gate.py pytest.xml --min 170 --max-skipped 0 --label "Unit tests (Python ${{ matrix.python }})"
       - name: Performance budget (300 nodes, every page and API under 300 ms)
         if: matrix.python == '3.12'
         env:
           FLASK_ENV: testing
         run: python -W ignore tools/perf.py --nodes 300 --runs 10 --budget-ms 300
+
+  security:
+    name: Security scans (Bandit, pip-audit)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install bandit==1.8.6 pip-audit==2.9.0
+      - name: Bandit (no unreviewed medium or high finding)
+        run: bandit -r app -ll -q
+      - name: pip-audit (no dependency with a known vulnerability)
+        run: pip-audit -r requirements.txt --progress-spinner off
+      - name: No SQL built from request input (policy check)
+        run: |
+          if git grep -nE "(text|execute)\(f['\"].*(request\.|args\[|data\[|form\.get)" -- app; then
+            echo "::error::Build SQL with bound parameters, never from request input."; exit 1; fi
+
+  lake:
+    name: Data lake replication (MariaDB hot and lake)
+    runs-on: ubuntu-24.04
+    env:
+      TEST_DATABASE_URL: mysql+mysqlconnector://edgeshell:ci-app-pw@127.0.0.1:3316/edgeshell
+      LAKE_DATABASE_URL: mysql+mysqlconnector://edgeshell:ci-app-pw@127.0.0.1:3317/edgeshell
+      LAKE_ROOT_URL: mysql+mysqlconnector://root:ci-root-pw@127.0.0.1:3317/
+      FLASK_ENV: testing
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -r requirements.txt
+      - name: Hot and lake MariaDB, flags as in docker/compose.yaml
+        run: |
+          docker network create esnet
+          docker run -d --name hot --network esnet --network-alias mariadb -p 3316:3306 \
+            -e MARIADB_ROOT_PASSWORD=ci-root-pw -e MARIADB_DATABASE=edgeshell -e MARIADB_USER=edgeshell \
+            -e MARIADB_PASSWORD=ci-app-pw mariadb:11.4 --server-id=1 --log-bin=hot-bin --binlog-format=ROW \
+            --binlog-do-db=edgeshell
+          docker run -d --name lake --network esnet --network-alias mariadb-lake -p 3317:3306 \
+            -e MARIADB_ROOT_PASSWORD=ci-root-pw -e MARIADB_DATABASE=edgeshell -e MARIADB_USER=edgeshell \
+            -e MARIADB_PASSWORD=ci-app-pw mariadb:11.4 --server-id=2 --read-only=ON \
+            --replicate-do-db=edgeshell --relay-log=lake-relay
+          for c in hot lake; do
+            for i in $(seq 1 60); do docker exec $c healthcheck.sh --connect --innodb_initialized && break; sleep 2; done
+          done
+      - name: EdgeShell schema on the hot database
+        run: python -W ignore tools/lake_e2e.py --schema-only
+      - name: lake-init (first run starts replication)
+        run: docker run --rm --network esnet -e MARIADB_ROOT_PASSWORD=ci-root-pw -v "$PWD/docker/lake-init.sh:/l.sh:ro" mariadb:11.4 sh /l.sh
+      - name: Replication, purges that skip the lake, retention, refusal while stopped
+        run: python -W ignore tools/lake_e2e.py
+      - name: lake-init again (idempotent)
+        run: docker run --rm --network esnet -e MARIADB_ROOT_PASSWORD=ci-root-pw -v "$PWD/docker/lake-init.sh:/l.sh:ro" mariadb:11.4 sh /l.sh | grep "io=Yes sql=Yes"
 
   ui:
     name: Browser UI (1500 nodes, phone to desktop, zoom 67 to 200%)
@@ -119,7 +197,7 @@ jobs:
 
   image:
     name: Image build (amd64 + arm64) and hardening audit
-    needs: [lint, secrets, test, ui]      # stage 2: only after the whole gate passed
+    needs: [lint, secrets, security, test, ui, lake]   # stage 2: only after the whole gate passed
     runs-on: ubuntu-24.04
     permissions:
       contents: read

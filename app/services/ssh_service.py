@@ -30,7 +30,8 @@ def connect(hostname, port, username, password, timeout=10):
     (otherwise its socket and transport thread stay open until the process
     runs out of file handles) and the error is raised."""
     client = paramiko.SSHClient()
-    client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+    # Bandit B507 reviewed: trust on first use inside the WireGuard-authenticated tailnet; see SECURITY.md (accepted risk)
+    client.set_missing_host_key_policy(paramiko.AutoAddPolicy())  # nosec B507
     try:
         client.connect(hostname=hostname, port=port, username=username, password=password,
                        timeout=timeout, banner_timeout=timeout, auth_timeout=timeout,
@@ -60,7 +61,8 @@ def get_ssh_client(node, timeout=10):
 def test_connection(node, timeout=10):
     try:
         client = get_ssh_client(node, timeout=timeout)
-        _, stdout, _ = client.exec_command('echo ok', timeout=5)
+        # Bandit B601 reviewed: running commands on nodes is the feature (operators only; command policy and audit log apply)
+        _, stdout, _ = client.exec_command('echo ok', timeout=5)  # nosec B601
         out = stdout.read().decode().strip()
         client.close()
         return True, 'Connection successful' if out == 'ok' else f'Connected ({out})'
@@ -87,7 +89,8 @@ def execute_command(node, command, timeout=60):
                   timestamp=iso_utc(datetime.utcnow()))
     try:
         client = get_ssh_client(node)
-        _, stdout, stderr = client.exec_command(command, timeout=timeout, get_pty=True)
+        # Bandit B601 reviewed: running commands on nodes is the feature (operators only; command policy and audit log apply)
+        _, stdout, stderr = client.exec_command(command, timeout=timeout, get_pty=True)  # nosec B601
         result['stdout']    = stdout.read().decode('utf-8', errors='replace')
         result['stderr']    = stderr.read().decode('utf-8', errors='replace')
         result['exit_code'] = stdout.channel.recv_exit_status()
@@ -142,7 +145,8 @@ def upload_file(node, local_path, remote_path, timeout=120):
     This bypasses SFTP permission limits for system directories.
     """
     filename   = os.path.basename(local_path)
-    stage_dir  = '/tmp/edgeshell_stage'
+    # Bandit B108 reviewed: path on the remote node, not a local temp file
+    stage_dir  = '/tmp/edgeshell_stage'  # nosec B108
     stage_file = f'{stage_dir}/{filename}'
     final_path = f"{remote_path.rstrip('/')}/{filename}"
 
@@ -150,7 +154,8 @@ def upload_file(node, local_path, remote_path, timeout=120):
         client = get_ssh_client(node, timeout=10)
 
         # Step 1 - ensure staging dir exists
-        _, stdout, _ = client.exec_command(f'mkdir -p {stage_dir}', timeout=5)
+        # Bandit B601 reviewed: running commands on nodes is the feature (operators only; command policy and audit log apply)
+        _, stdout, _ = client.exec_command(f'mkdir -p {stage_dir}', timeout=5)  # nosec B601
         stdout.channel.recv_exit_status()
 
         # Step 2 - SFTP to staging (always /tmp, always writable)
@@ -159,12 +164,14 @@ def upload_file(node, local_path, remote_path, timeout=120):
         sftp.close()
 
         # Step 3 - ensure target dir exists with sudo
-        _, stdout, stderr = client.exec_command(
+        # Bandit B601 reviewed: running commands on nodes is the feature (operators only; command policy and audit log apply)
+        _, stdout, stderr = client.exec_command(  # nosec B601
             f'sudo mkdir -p {remote_path} 2>/dev/null || mkdir -p {remote_path}', timeout=10)
         stdout.channel.recv_exit_status()
 
         # Step 4 - move from staging to target with sudo
-        _, stdout, stderr_ch = client.exec_command(
+        # Bandit B601 reviewed: running commands on nodes is the feature (operators only; command policy and audit log apply)
+        _, stdout, stderr_ch = client.exec_command(  # nosec B601
             f'sudo cp {stage_file} {final_path} && sudo chmod 644 {final_path} && echo OK',
             timeout=30)
         out = stdout.read().decode().strip()
@@ -172,7 +179,8 @@ def upload_file(node, local_path, remote_path, timeout=120):
         rc  = stdout.channel.recv_exit_status()
 
         # Cleanup staging
-        client.exec_command(f'rm -f {stage_file}', timeout=5)
+        # Bandit B601 reviewed: running commands on nodes is the feature (operators only; command policy and audit log apply)
+        client.exec_command(f'rm -f {stage_file}', timeout=5)  # nosec B601
         client.close()
 
         if rc == 0 or 'OK' in out:
@@ -306,7 +314,8 @@ PYEOF"""
 def collect_metrics(node):
     try:
         client = get_ssh_client(node, timeout=10)
-        _, stdout, _ = client.exec_command(_METRICS_SCRIPT, timeout=25)
+        # Bandit B601 reviewed: running commands on nodes is the feature (operators only; command policy and audit log apply)
+        _, stdout, _ = client.exec_command(_METRICS_SCRIPT, timeout=25)  # nosec B601
         output = stdout.read().decode('utf-8', errors='replace').strip()
         client.close()
         for line in reversed(output.splitlines()):

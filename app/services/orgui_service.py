@@ -217,7 +217,8 @@ def install_task(task, node_ids, stop_on_failure=True):
         signal = (state['stdout'] or '').strip().splitlines()[-1:] or ['MISSING']
         page_ok = False
         try:
-            with urllib.request.urlopen(f'http://{n.ip_address}:{port}/', timeout=10) as resp:
+            # Bandit B310 reviewed: always an http:// URL to the node's own address and port
+            with urllib.request.urlopen(f'http://{n.ip_address}:{port}/', timeout=10) as resp:  # nosec B310
                 page_ok = resp.status == 200
         except Exception:
             pass

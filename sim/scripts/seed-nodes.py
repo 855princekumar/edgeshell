@@ -27,7 +27,7 @@ def wait():
     print("Waiting for EdgeShell…")
     for i in range(40):
         try:
-            s, _ = req("GET", "/api/v1/status")
+            s, _ = req("GET", "/api/v1/health")
             if s == 200: print("[OK] EdgeShell ready."); return True
         except: pass
         time.sleep(2); print(f"  {(i+1)*2}s…")

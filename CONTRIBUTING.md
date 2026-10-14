@@ -44,12 +44,14 @@ any change to fleet operations, sessions, the Docker image or the installer.
 
 ## Pull requests
 
-`main` is protected. Every change goes through a pull request, and nine CI
-checks must pass before it can merge. First the gate: lint, secret scan, unit
-tests on Python 3.11 to 3.13 (every test must pass, none may be skipped, at
-least 110 must run) and the browser UI test (1500 nodes, every screen size and
-zoom level, at least 375 checks). Then, only if the gate passed: the image build
-and audit, and the sandbox on amd64 and arm64.
+`main` is protected. Every change goes through a pull request, and every CI
+check must pass before it can merge. First the gate: lint, secret scan,
+security scans (Bandit, pip-audit), unit tests on Python 3.11 to 3.13 (every
+test must pass, none may be skipped, at least 170 must run, coverage at least
+74 percent), the browser UI test (1500 nodes, every screen size and zoom level,
+at least 375 checks) and the data lake replication test on real MariaDB. CodeQL
+runs alongside. Then, only if the gate passed: the image build and audit, and
+the sandbox on amd64 and arm64 (which includes the public API with real 2FA).
 
 Run the same tests before you push (see the README's Development section):
 `python -m pytest -q` and `python tools/ui_test.py --nodes 1500 --ssh 127.0.0.1:2299`.

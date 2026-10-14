@@ -44,12 +44,89 @@ def index():
     enrolled = mfa.is_enrolled(current_user)
     if enrolled:
         left = mfa.backup_codes_left(current_user)
+    from app.models.api import ApiToken
+    from app.services import api_auth
+    api_rows = (ApiToken.query.filter(ApiToken.user_id == current_user.id, ApiToken.kind.in_(('session', 'key')),
+                                      ApiToken.revoked_at.is_(None), ApiToken.expires_at > datetime.utcnow())
+                .order_by(ApiToken.kind, ApiToken.created_at.desc()).all())
     return render_template('account/index.html', devices=devices, current_sid=sid,
                            device_label=device_label, enrolled=enrolled,
                            mfa_on=mfa.mfa_required(), backup_left=left,
                            provider=mfa.provider_name(),
                            admins=accounts.admins(), max_admins=accounts.MAX_ADMINS,
+                           api_rows=api_rows, api_scopes=sorted(api_auth.effective_scopes(current_user),
+                                                                key=api_auth.SCOPES.index),
+                           new_key=session.pop('new_api_key', None),
                            now=datetime.utcnow())
+
+
+@account_bp.route('/api-keys', methods=['POST'])
+@login_required
+@limiter.limit('10 per hour', methods=['POST'])
+def create_api_key():
+    """Create a service key from the web app: password and a 2FA code
+    again, so an unattended signed-in browser cannot be used to mint keys."""
+    from datetime import timedelta
+    from app.models.api import ApiToken
+    from app.routes.auth import _record_failure
+    from app.services import api_auth
+    f = request.form
+    name = (f.get('name') or '').strip()[:80]
+    scopes = [s for s in f.getlist('scopes') if s in api_auth.SCOPES]
+    try:
+        days = max(1, min(365, int(f.get('expires_in_days') or 90)))
+    except ValueError:
+        days = 90
+    if not name or '<' in name or '>' in name or not scopes:
+        flash('Give the key a name and at least one permission.', 'danger')
+        return redirect(url_for('account.index') + '#api')
+    if not current_user.check_password(f.get('password') or ''):
+        _record_failure(current_user, 'password (API key creation)')
+        flash('Password or code is not valid.', 'danger')
+        return redirect(url_for('account.index') + '#api')
+    try:
+        if mfa.mfa_required() and not mfa.verify(current_user, f.get('code') or ''):
+            _record_failure(current_user, '2FA code (API key creation)')
+            flash('Password or code is not valid.', 'danger')
+            return redirect(url_for('account.index') + '#api')
+    except mfa.MFAUnavailable:
+        flash('The two-factor service is not responding. Try again shortly.', 'danger')
+        return redirect(url_for('account.index') + '#api')
+    if not set(scopes) <= api_auth.effective_scopes(current_user):
+        flash('A key cannot have more permission than your role.', 'danger')
+        return redirect(url_for('account.index') + '#api')
+    ips, err = api_auth.parse_ip_list(f.get('allowed_ips'))
+    if err:
+        flash(f'Allowed addresses: {err}.', 'danger')
+        return redirect(url_for('account.index') + '#api')
+    live = ApiToken.query.filter(ApiToken.user_id == current_user.id, ApiToken.kind == 'key',
+                                 ApiToken.revoked_at.is_(None), ApiToken.expires_at > datetime.utcnow()).count()
+    if live >= api_auth.MAX_KEYS_PER_USER:
+        flash(f'At most {api_auth.MAX_KEYS_PER_USER} active keys. Revoke one first.', 'danger')
+        return redirect(url_for('account.index') + '#api')
+    row, plaintext = api_auth.issue(current_user, 'key', scopes=scopes, name=name,
+                                    expires_at=datetime.utcnow() + timedelta(days=days), allowed_ips=ips)
+    db.session.commit()
+    log_activity('API key created', response=f'{row.prefix} "{name}" scopes {row.scopes}, {days} days'
+                 + (f', from {ips}' if ips else ''), status='success')
+    session['new_api_key'] = {'key': plaintext, 'name': name}   # shown once, then dropped
+    return redirect(url_for('account.index') + '#api')
+
+
+@account_bp.route('/api-keys/<int:token_id>/revoke', methods=['POST'])
+@login_required
+def revoke_api_credential(token_id):
+    from app.models.api import ApiToken
+    from app.services import api_auth
+    row = ApiToken.query.filter(ApiToken.id == token_id, ApiToken.user_id == current_user.id,
+                                ApiToken.kind.in_(('session', 'key'))).first()
+    if row:
+        api_auth.revoke(row, 'revoked')
+        db.session.commit()
+        log_activity('API credential revoked', response=f'{row.kind} {row.prefix}' + (f' "{row.name}"' if row.name else ''),
+                     status='success')
+        flash('Revoked. It stops working immediately.', 'success')
+    return redirect(url_for('account.index') + '#api')
 
 
 @account_bp.route('/prefs', methods=['POST'])

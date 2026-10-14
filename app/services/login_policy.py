@@ -105,9 +105,20 @@ def apply(nodes, results, collector):
                            f'{REASONS[reason]} ({count} failed login(s)); no more automatic logins',
                            'warning'))
     if events:
+        _feed(events, by_name={n.name: n for n in nodes})
         db.session.commit()
         for action, name, text, status in events:
             log_activity(action, node=name, response=text, status=status)
+
+
+def _feed(events, by_name):
+    """Add pause and resume events to the API event feed."""
+    from app.models.api import NodeEvent
+    for action, name, text, _ in events:
+        n = by_name.get(name)
+        db.session.add(NodeEvent(node_id=n.id if n else None, node_name=name,
+                                 kind='login_paused' if action == 'Logins paused' else 'login_resumed',
+                                 message=text[:250]))
 
 
 def resume_nodes(node_ids=None, reason=None):
@@ -172,6 +183,9 @@ def recheck(collector, force=False):
             kick += ids
             events.append(('Logins resumed', canary.name,
                            f'Tailscale SSH accepts EdgeShell again; {len(ids)} node(s) resumed', 'success'))
+    if events:
+        _feed(events, by_name={n.name: n for n in paused})
+        db.session.commit()
     for action, name, text, status in events:
         log_activity(action, node=name, response=text, status=status)
     if kick:

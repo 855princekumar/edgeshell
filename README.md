@@ -150,7 +150,7 @@ flowchart LR
 ### Fleet operations
 | Capability | What it does |
 |---|---|
-| **Fleet dashboard** | Availability (SLA) and fleet averages for CPU, memory, disk, temperature and load, plus a card per **device category** (for example Data Loggers, Floc Detectors, Bio Health Trackers) with its own SLA target. Click a category to scope the whole dashboard to it; administrators edit the categories |
+| **Fleet dashboard** | Availability (SLA) and fleet averages for CPU, memory, disk, temperature and load, plus a card per **device category** (for example Pi Nodes, Edge Gateways, Mini PCs) with its own SLA target. Click a category to scope the whole dashboard to it; administrators edit the categories |
 | **Live monitoring** | A background collector checks every node every 30 seconds over one persistent SSH connection per node (one command reads `/proc`), so pages load instantly from its latest results. Per node: CPU, memory, disk, load, uptime, temperature, network, Docker and Node-RED, with history charts. The **Auto** refresh choice is saved on your account |
 | **Node Fleet** | A card per node with live metrics, status, 32/64-bit badge, category, tags and last seen. Filter by category, environment, status (including "login failed") and architecture, or search |
 | **Node terminal** | A terminal button on each card opens a real interactive SSH shell (xterm.js over a WebSocket, a real PTY on the node): colors, `top`, `nano`, tab completion, Ctrl+C, sudo. Closing the window ends the SSH session; it also closes after 30 minutes without input or when you sign out |
@@ -168,6 +168,8 @@ flowchart LR
 | **Log browser** | Browse, fetch and download log files from any node |
 | **Fleet setup** | Scan the fleet for Docker, Node-RED and OpenRemoteGUI; install on every node missing them |
 | **Background jobs** | Long work (imports, installs, exports, login checks) runs in the background; a progress card follows you across pages, with a live step-by-step log |
+| **Public API** | [REST API](docs/API.md) with an OpenAPI document: data points (latest metrics, time series, fleet summary), an event feed with a cursor for alerts and triggers in other systems, node management, exports and (optionally) commands. Sign in with password plus 2FA, or give an integration its own service key with chosen permissions, lifetime and allowed addresses |
+| **Data lake** | A second MariaDB replicates the hot database live and keeps every row for good: metrics, rollups, events, activity and account history. Exports and history queries read from it. An optional hot retention policy (off by default) keeps only the last week, month, quarter, semester or year on the hot database, and never deletes what the lake has not got |
 | **Architecture detection** | 32-bit (ARMv7) and 64-bit (ARM64) detected automatically, shown as badges and filters |
 
 ### Security and access
@@ -199,7 +201,7 @@ flowchart LR
 | **Sandbox** | EdgeShell plus a 6-node emulated fleet and a full end-to-end suite in one command |
 | **Issue portal** | Built-in support tickets with threaded replies and optional email via [useSend](https://usesend.com) |
 | **Database portability** | SQLite (WAL) for development, MariaDB in production, PostgreSQL supported; one-command export and import |
-| **Quality gates** | Required CI before every merge: lint, secret scan, 115 unit tests on three Python versions, 381 browser checks with 1500 nodes, then image audit and end-to-end tests on amd64 and arm64 |
+| **Quality gates** | Required CI before every merge: lint, secret scan, Bandit, pip-audit and CodeQL, 170+ unit tests on three Python versions with a coverage floor, 375+ browser checks with 1500 nodes, a data lake test on real MariaDB, then image audit and end-to-end tests (including the API with real 2FA) on amd64 and arm64 |
 
 ## Quick start
 
@@ -263,6 +265,7 @@ base=https://raw.githubusercontent.com/855princekumar/edgeshell/main/docker
 curl -fsSLO $base/compose.yaml
 curl -fsSLo nginx/entrypoint.sh $base/nginx/entrypoint.sh
 curl -fsSLo nginx/certbot.sh $base/nginx/certbot.sh
+curl -fsSLO $base/lake-init.sh
 curl -fsSLo .env $base/.env.example && chmod 600 .env
 for k in SECRET_KEY CREDENTIAL_KEY DB_PASSWORD DB_ROOT_PASSWORD MFA_ADMIN_PASSWORD MFA_PEPPER MFA_DB_PASSWORD MFA_SECRET_KEY; do
   sed -i "s|^$k=.*|$k=$(openssl rand -hex 32)|" .env; done
@@ -352,7 +355,7 @@ Change [`sandbox/fleet.json`](sandbox/fleet.json) to test any mix, up to 20 node
 
 ```bash
 bash sandbox/run.sh                                                 # build from source, test, tear down
-EDGESHELL_IMAGE=devprincekumar/edgeshell:1.7.4 bash sandbox/run.sh  # test a published image
+EDGESHELL_IMAGE=devprincekumar/edgeshell:1.8.0 bash sandbox/run.sh  # test a published image
 ```
 
 **Your own workflow:** run a change (command, playbook, file rollout) against
@@ -677,7 +680,9 @@ merged until all of them pass.
 |---|---|
 | **Lint** | Python syntax and undefined names (ruff), shell scripts parse, both Compose files valid, no em dashes |
 | **Secret scan** | gitleaks over the full Git history |
-| **Unit tests** | the whole pytest suite on Python 3.11, 3.12 and 3.13, plus the 300-node performance budget; fails unless every test passed, none was skipped and at least 110 ran ([tools/test_gate.py](tools/test_gate.py)) |
+| **Security scans** | Bandit (no unreviewed medium or high finding), pip-audit (no dependency with a known vulnerability), a check that no SQL is built from request input; CodeQL for Python and JavaScript runs alongside |
+| **Data lake replication** | [tools/lake_e2e.py](tools/lake_e2e.py) on two real MariaDB servers: replication, purges that never reach the lake, hot retention, refusal while replication is stopped, catch-up, and `lake-init` run twice |
+| **Unit tests** | the whole pytest suite on Python 3.11, 3.12 and 3.13 (including the API's authentication, permission, injection-fuzzing and no-secrets tests), plus the 300-node performance budget; fails unless every test passed, none was skipped, at least 170 ran ([tools/test_gate.py](tools/test_gate.py)) and coverage is at least 74 percent |
 | **Browser UI** | [tools/ui_test.py](tools/ui_test.py) in Chromium: 1500 nodes, every page on phone, tablet, laptop and desktop sizes and at 67 to 200 percent zoom (nothing outside its card, no sideways scroll, no broken words, no script errors), then the interactions: filters, Select All, bulk actions, dialogs, Recycle Bin, VPN filters, stats export, saved settings, fleet terminal and a real SSH terminal on a Pi Fleet Emulator node; at least 375 checks must run. Failure screenshots are kept as an artifact |
 
 Each job writes its counts to the run's summary page.
@@ -702,7 +707,9 @@ Dependabot keeps Python packages, the base image and Actions up to date.
 |---|---|
 | [Getting started](docs/GETTING-STARTED.md) | Local, Docker, and production setup |
 | [Deploy on EC2](docs/DEPLOY-EC2.md) | Step-by-step AWS guide: Docker stack (nginx, HTTPS, 2FA, fail2ban, Tailscale) or native install |
-| [Architecture](docs/ARCHITECTURE.md) | Components, data model, monitoring contract |
+| [API](docs/API.md) | Sign-in with 2FA, service keys, permissions, rate limits, every endpoint, data points and events for alerts, errors, security, acceptable use |
+| [Troubleshooting log](docs/TROUBLESHOOTING.md) | Every production issue met so far (domain and HTTPS, Tailscale SSH, file handles, data lake, web app, CI) with cause and fix |
+| [Architecture](docs/ARCHITECTURE.md) | Components, data model, monitoring contract, hot database and data lake, API |
 | [Roles and access](docs/RBAC.md) | Roles, enforcement, lockout, sessions |
 | [VPN and network](docs/VPN-NETWORK.md) | Tailscale, WireGuard, container networking |
 | [Database migration](docs/MIGRATION.md) | SQLite to MariaDB or PostgreSQL |
@@ -728,6 +735,9 @@ Dependabot keeps Python packages, the base image and Actions up to date.
 - [x] Bulk login update, bulk delete, Recycle Bin
 - [x] Node login policy (no repeated rejected logins, automatic recovery)
 - [x] Browser UI test on every screen size as a required CI gate
+- [x] Public API with 2FA sessions, service keys, OpenAPI and an event feed
+- [x] Data lake replica with an optional hot retention policy
+- [ ] SSH host key pinning for nodes
 - [ ] WireGuard as a first-class backend (status reading works today)
 - [ ] Shared rate-limit store for multi-worker deployments
 - [x] UI screenshots

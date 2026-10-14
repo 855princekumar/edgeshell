@@ -48,12 +48,27 @@ def index():
                     save_setting(key, val)
 
         elif section == 'security':
-            for key in ['max_login_attempts', 'login_rate_limit', 'blocked_commands']:
-                val = request.form.get(key)
-                if val is not None:
-                    save_setting(key, val)
-            save_setting('require_sudo_confirm', 'true' if request.form.get('require_sudo_confirm') else 'false')
-            save_setting('audit_all_commands', 'true' if request.form.get('audit_all_commands') else 'false')
+            val = request.form.get('blocked_commands')
+            if val is not None:
+                lines = [ln.strip()[:200] for ln in val.splitlines() if ln.strip()][:200]
+                save_setting('blocked_commands', '\n'.join(lines))
+                from app.services.activity_service import log_activity
+                log_activity('Blocked commands changed', response=f'{len(lines)} rule(s)', status='success')
+
+        elif section == 'hot_retention':
+            from app.services import lake
+            from app.services.activity_service import log_activity
+            period = request.form.get('period')
+            if period not in lake.PERIODS:
+                flash('Choose week, month, quarter, semester or year.', 'danger')
+                return redirect(url_for('settings.index') + '#data-lake')
+            enabled = bool(request.form.get('enabled'))
+            lake.save_retention_policy(enabled, period)
+            log_activity('Hot retention policy changed', status='warning' if enabled else 'success',
+                         response=(f'on: keep one {period} on the hot database' if enabled else 'off')
+                         + ('' if lake.configured() else ' (no data lake configured: nothing will be deleted)'))
+            flash('Hot retention ' + (f'on: the hot database keeps one {period}.' if enabled else 'off.'), 'success')
+            return redirect(url_for('settings.index') + '#data-lake')
 
         elif section == 'ansible':
             for key in ['ansible_playbooks_dir', 'ansible_inventory_dir',
@@ -64,9 +79,13 @@ def index():
             save_setting('ansible_enabled', 'true' if request.form.get('ansible_enabled') else 'false')
 
         elif section == 'clear_logs':
-            ActivityLog.query.delete()
-            flash('Activity logs cleared.', 'success')
+            removed = ActivityLog.query.delete()
             db.session.commit()
+            # the clearing itself stays on record: who, when, how many
+            from app.services.activity_service import log_activity
+            log_activity('Activity log cleared', response=f'{removed} entries removed by {current_user.username}',
+                         status='warning')
+            flash('Activity logs cleared.', 'success')
             return redirect(url_for('settings.index'))
 
         elif section == 'clear_node_logs':
@@ -81,8 +100,43 @@ def index():
         return redirect(url_for('settings.index'))
 
     settings_dict = get_all_settings()
+    from flask import current_app
+    from app.services import lake
+    cfg = current_app.config
+    limits = cfg.get('API_RATE_LIMITS') or {}
+    security = {'max_failed': cfg.get('MAX_FAILED_LOGINS', 5), 'lockout_minutes': cfg.get('LOCKOUT_MINUTES', 15),
+                'api_commands': bool(cfg.get('API_ALLOW_COMMANDS')),
+                'api_limits': cfg.get('API_RATE_LIMIT') or ', '.join(f'{r}: {v}' for r, v in limits.items())}
     return render_template('settings/index.html',
                            settings=settings_dict,
+                           security=security, lake=lake.status(), retention=lake.retention_policy(),
+                           system=system_info(),
                            total_users=User.query.count(),
-                           total_nodes=Node.query.count(),
+                           total_nodes=Node.query.filter(Node.is_deleted.isnot(True)).count(),
                            total_logs=ActivityLog.query.count())
+
+
+def system_info():
+    """What this server actually runs (read live, never hardcoded)."""
+    import platform
+    import flask
+    from flask import current_app
+    engine = db.engine
+    names = {'mysql': 'MariaDB / MySQL', 'sqlite': 'SQLite', 'postgresql': 'PostgreSQL'}
+    db_name = names.get(engine.dialect.name, engine.dialect.name)
+    try:
+        if engine.dialect.name == 'sqlite':
+            db_version = db.session.execute(db.text('select sqlite_version()')).scalar()
+        else:
+            db_version = db.session.execute(db.text('select version()')).scalar()
+        if engine.dialect.name == 'mysql' and 'mariadb' in (db_version or '').lower():
+            db_name = 'MariaDB'
+        elif engine.dialect.name == 'mysql':
+            db_name = 'MySQL'
+    except Exception:
+        db_version = None
+    return {'version': current_app.config.get('VERSION', 'dev'),
+            'python': platform.python_version(),
+            'flask': flask.__version__,
+            'database': db_name,
+            'database_version': (db_version or '').split('-')[0] or None}

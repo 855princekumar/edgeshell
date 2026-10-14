@@ -288,7 +288,7 @@ def main():
           bool(job) and job['state'] == 'done' and job['total'] == EXPECTED_NODES, job)
 
     status, _, body = admin.request('GET', '/api/v1/nodes')
-    nodes = json.loads(body) if status == 200 else []
+    nodes = json.loads(body)['nodes'] if status == 200 else []
     check(f'{EXPECTED_NODES} nodes registered', len(nodes) == EXPECTED_NODES, len(nodes))
     offline = [n['name'] for n in nodes if n['status'] != 'online']
     check('every node reachable over SSH after import', not offline, offline)
