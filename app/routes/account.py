@@ -52,6 +52,23 @@ def index():
                            now=datetime.utcnow())
 
 
+@account_bp.route('/prefs', methods=['POST'])
+@login_required
+def save_prefs():
+    """Remember page settings for this account, e.g. {"monitoring_auto_refresh": false}."""
+    from flask import jsonify
+    data = request.get_json(silent=True) or {}
+    if not data or any(k not in User.PREFS for k in data):
+        return jsonify({'success': False, 'message': 'Unknown setting.'}), 400
+    try:
+        for k, v in data.items():
+            current_user.set_pref(k, v)
+    except ValueError:
+        return jsonify({'success': False, 'message': 'Invalid value.'}), 400
+    db.session.commit()
+    return jsonify({'success': True})
+
+
 @account_bp.route('/sessions/<int:session_id>/close', methods=['POST'])
 @login_required
 def close(session_id):

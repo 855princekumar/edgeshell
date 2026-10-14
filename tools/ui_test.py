@@ -94,6 +94,9 @@ LAYOUT_JS = r"""
 """
 
 
+_APP = None          # the app under test, for checks that read the database
+
+
 def seed(app, nodes, ssh):
     from datetime import datetime
     from app import db, _seed_defaults
@@ -129,6 +132,11 @@ def seed(app, nodes, ssh):
                     n.login_pause_reason = 'tailscale' if made % 2 else 'password'
                 db.session.add(n)
                 made += 1
+        for k in range(3):                       # the Recycle Bin, emptied by the test
+            n = Node(name=f'binned-node-{k}', ip_address='10.250.0.1', username='pi', is_deleted=True,
+                     is_active=False, deleted_at=datetime.utcnow())
+            n.password = 'x'
+            db.session.add(n)
         real_id = None
         if ssh:
             host, _, port = ssh.partition(':')
@@ -361,6 +369,61 @@ def run_interactions(pw, base, rep, total, real_id, label, w, h, scale):
               page.get_attribute('#expBar', 'style'), page)
     page.click('#expClose')
 
+    # Monitoring "Auto" stays as the user set it: other pages, sign-out, sign-in
+    page.goto(base + '/monitoring/')
+    page.wait_for_selector('#autoRefreshToggle')
+    def saved_auto():
+        from app.models.user import User
+        with _APP.app_context():
+            return User.query.filter_by(username='admin').first().get_pref('monitoring_auto_refresh')
+
+    def click_and_wait(want):
+        page.click('#autoRefreshToggle')
+        t0 = time.time()
+        while time.time() - t0 < 30:          # the page is busy loading 1500 cards
+            if saved_auto() is want:
+                print(f'    Auto saved as {want} after {time.time() - t0:.1f} s')
+                return True
+            page.wait_for_timeout(200)
+        return False
+    if page.is_checked('#autoRefreshToggle'):
+        rep.check(f'{label}: switching Auto off is saved', click_and_wait(False), '', page)
+    page.goto(base + '/nodes/')
+    page.goto(base + '/monitoring/')
+    rep.check(f'{label}: Auto refresh stays off on return', not page.is_checked('#autoRefreshToggle'), '', page)
+    page.goto(base + '/logout')
+    login(page, base)
+    page.goto(base + '/monitoring/')
+    rep.check(f'{label}: Auto refresh stays off after signing in again', not page.is_checked('#autoRefreshToggle'),
+              '', page)
+    rep.check(f'{label}: switching Auto on is saved', click_and_wait(True), '', page)
+    page.goto(base + '/monitoring/')
+    rep.check(f'{label}: Auto refresh back on when switched on', page.is_checked('#autoRefreshToggle'), '', page)
+
+    # Recycle Bin: "Delete all permanently" opened from the side panel must
+    # accept typing (the panel used to keep the keyboard focus)
+    page.goto(base + '/nodes/')
+    page.click('button[data-bs-target="#recycleBin"]')
+    if page.locator('#binPurgeAll').count():
+        page.wait_for_selector('#recycleBin.show #binPurgeAll')
+        page.click('#binPurgeAll')
+        page.wait_for_selector('#bpConfirm')
+        page.click('#bpConfirm')
+        page.keyboard.type('DELETE')                          # real key presses
+        typed = page.input_value('#bpConfirm')
+        rep.check(f'{label}: Recycle Bin purge accepts typing', typed == 'DELETE', repr(typed), page)
+        issues = page.evaluate(LAYOUT_JS)
+        rep.check(f'{label}: purge dialog fits', not issues, '; '.join(issues[:4]), page)
+        page.click('#esDlgOk')
+        page.wait_for_load_state('load')
+        page.wait_for_timeout(1500)
+        from app.models.node import Node
+        with _APP.app_context():
+            left = Node.query.filter(Node.is_deleted.is_(True)).count()
+        rep.check(f'{label}: purge empties the Recycle Bin', left == 0, f'{left} left', page)
+    else:
+        page.keyboard.press('Escape')
+
     page.goto(base + '/terminal/')
     page.wait_for_selector('#nodeList')
     page.evaluate("""() => { const off = document.querySelector('.node-item[data-status=offline] .node-chk');
@@ -418,6 +481,8 @@ def main():
 
     from app import create_app
     app = create_app('testing')
+    global _APP
+    _APP = app
     app.config['IDLE_MINUTES'] = 0
     total, real_id = seed(app, args.nodes, args.ssh)
     threading.Thread(target=lambda: app.run(port=args.port, threaded=True, use_reloader=False),

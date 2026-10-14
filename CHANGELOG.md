@@ -2,6 +2,13 @@
 
 All notable changes are documented here. Format loosely follows Keep a Changelog.
 
+## [1.7.3] - 2026-10-14
+
+### Fixed
+- **Recycle Bin: "Delete all permanently" accepted no typing.** The open side panel kept the keyboard focus inside itself, so DELETE could not be typed in the confirmation. Dialogs now close the panel first and put the cursor in their first field. The browser UI test types DELETE with real key presses and empties the bin.
+- **Monitoring polled every node live, one request per node, every 15 seconds.** An older second `pollAll` on the page replaced the fast one, so each refresh opened an SSH collection on every node from every open Monitoring tab (and, before 1.7.1, retried failing logins that often). With a large fleet the browser ran out of connections and dropped other requests. The page now reads the background collector's latest results in one request, as designed; a test fails the build if a page defines a function twice.
+- **Monitoring "Auto" refresh is remembered.** Switching it off used to last only until the page was left. The choice is now saved on the account and kept until changed: across pages, sign-outs, sign-ins and devices (each user has their own), also when switched while the page is still loading.
+
 ## [1.7.2] - 2026-10-14
 
 ### Added

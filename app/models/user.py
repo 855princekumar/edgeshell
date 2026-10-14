@@ -46,8 +46,35 @@ class User(UserMixin, db.Model):
 
     # Live sessions this account may hold at once (1-4, set by an admin).
     max_sessions = db.Column(db.Integer, nullable=False, default=MIN_SESSIONS)
+    # Page settings the user chose (JSON), kept until they change them: across
+    # pages, sign-outs and devices. Keys are whitelisted in PREFS.
+    ui_prefs = db.Column(db.Text)
     sessions = db.relationship('UserSession', backref='user',
                                cascade='all, delete-orphan', passive_deletes=True)
+
+    # key -> (type, default)
+    PREFS = {'monitoring_auto_refresh': (bool, True)}
+
+    def get_pref(self, key):
+        import json
+        kind, default = self.PREFS[key]
+        try:
+            value = json.loads(self.ui_prefs or '{}').get(key, default)
+        except ValueError:
+            value = default
+        return value if isinstance(value, kind) else default
+
+    def set_pref(self, key, value):
+        import json
+        kind, _ = self.PREFS[key]
+        if not isinstance(value, kind):
+            raise ValueError(key)
+        try:
+            prefs = json.loads(self.ui_prefs or '{}')
+        except ValueError:
+            prefs = {}
+        prefs[key] = value
+        self.ui_prefs = json.dumps(prefs)
 
     def set_password(self, password):
         self.password_hash = bcrypt.generate_password_hash(password).decode('utf-8')

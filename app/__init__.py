@@ -220,6 +220,7 @@ def _ensure_schema():
             # Sessions moved to the user_sessions table (created by
             # create_all). Old session_* columns on existing DBs are unused.
             'max_sessions': 'INTEGER NOT NULL DEFAULT 1',
+            'ui_prefs': 'TEXT',
             'approval_status': "VARCHAR(16) NOT NULL DEFAULT 'approved'",
             'is_owner': 'BOOLEAN NOT NULL DEFAULT 0',
             'admin_since': 'DATETIME',

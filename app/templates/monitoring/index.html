@@ -14,7 +14,8 @@
       <i class="bi bi-arrow-clockwise me-1"></i>Refresh All
     </button>
     <div class="form-check form-switch mb-0 ms-2">
-      <input class="form-check-input" type="checkbox" id="autoRefreshToggle" checked>
+      <input class="form-check-input" type="checkbox" id="autoRefreshToggle" {{ 'checked' if current_user.get_pref('monitoring_auto_refresh') }}
+             title="Refresh every 15 seconds. Your choice is kept until you change it, also after signing out.">
       <label class="form-check-label small text-muted" for="autoRefreshToggle">Auto</label>
     </div>
   </div>
@@ -356,14 +357,6 @@ function showNodeError(id, msg, kind) {
   }
 }
 
-function pollAll() {
-  if (!nodeIds.length) return;
-  document.getElementById('last-refresh').textContent = 'Refreshing…';
-  Promise.allSettled(nodeIds.map(id => pollNode(id))).then(() => {
-    document.getElementById('last-refresh').textContent = 'Last: ' + new Date().toLocaleTimeString();
-  });
-}
-
 function updateSummary() {
   let online=0, offline=0, highCpu=0, highMem=0, docker=0, nodered=0;
   nodeIds.forEach(id => {
@@ -435,13 +428,26 @@ function renderHistory(history) {
 
 // Auto-refresh
 const toggle = document.getElementById('autoRefreshToggle');
-function startAuto() { autoTimer = setInterval(pollAll, 15000); }
-function stopAuto() { clearInterval(autoTimer); }
-toggle.addEventListener('change', () => toggle.checked ? startAuto() : stopAuto());
+function startAuto() { stopAuto(); autoTimer = setInterval(pollAll, 15000); }
+function stopAuto() { clearInterval(autoTimer); autoTimer = null; }
+let savedAuto = {{ current_user.get_pref('monitoring_auto_refresh')|tojson }};
+function saveAuto() {
+  // kept on the account: stays as set across pages, sign-outs and devices;
+  // keepalive lets the save finish even if the user leaves the page right away
+  const want = toggle.checked;
+  if (want === savedAuto) return;
+  fetch('/account/prefs', {method: 'POST', credentials: 'same-origin', keepalive: true,
+                           headers: {'Content-Type': 'application/json'},
+                           body: JSON.stringify({monitoring_auto_refresh: want})})
+    .then(r => { if (!r.ok) throw new Error(); savedAuto = want; })
+    .catch(() => showToast('Could not save the Auto setting; it applies to this page only.', 'warning'));
+}
+toggle.addEventListener('change', () => { toggle.checked ? startAuto() : stopAuto(); saveAuto(); });
+saveAuto();      // a click made while this large page was still loading
 
 document.addEventListener('DOMContentLoaded', () => {
   pollAll();
-  startAuto();
+  if (toggle.checked) startAuto();
 });
 </script>
 {% endblock %}
