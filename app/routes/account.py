@@ -44,20 +44,31 @@ def index():
     enrolled = mfa.is_enrolled(current_user)
     if enrolled:
         left = mfa.backup_codes_left(current_user)
-    from app.models.api import ApiToken
-    from app.services import api_auth
-    api_rows = (ApiToken.query.filter(ApiToken.user_id == current_user.id, ApiToken.kind.in_(('session', 'key')),
-                                      ApiToken.revoked_at.is_(None), ApiToken.expires_at > datetime.utcnow())
-                .order_by(ApiToken.kind, ApiToken.created_at.desc()).all())
     return render_template('account/index.html', devices=devices, current_sid=sid,
                            device_label=device_label, enrolled=enrolled,
                            mfa_on=mfa.mfa_required(), backup_left=left,
                            provider=mfa.provider_name(),
                            admins=accounts.admins(), max_admins=accounts.MAX_ADMINS,
-                           api_rows=api_rows, api_scopes=sorted(api_auth.effective_scopes(current_user),
-                                                                key=api_auth.SCOPES.index),
-                           new_key=session.pop('new_api_key', None),
                            now=datetime.utcnow())
+
+
+@account_bp.route('/api')
+@login_required
+def api():
+    """API: your own sessions and service keys, what you may do, how to start.
+    In the sidebar for every role (Intelligence, API)."""
+    from app.models.api import ApiToken
+    from app.services import api_auth
+    api_rows = (ApiToken.query.filter(ApiToken.user_id == current_user.id, ApiToken.kind.in_(('session', 'key')),
+                                      ApiToken.revoked_at.is_(None), ApiToken.expires_at > datetime.utcnow())
+                .order_by(ApiToken.kind, ApiToken.created_at.desc()).all())
+    p = api_auth.policy()
+    mine = sorted(api_auth.effective_scopes(current_user), key=api_auth.SCOPES.index)
+    blocked = getattr(current_user, 'api_access', True) is False
+    return render_template('account/api.html', api_rows=api_rows, api_scopes=mine,
+                           usable=[s for s in mine if s in p['scopes']], policy=p, blocked=blocked,
+                           base_url=(current_app.config.get('PUBLIC_URL') or request.host_url).rstrip('/') + '/api/v1',
+                           new_key=session.pop('new_api_key', None))
 
 
 @account_bp.route('/api-keys', methods=['POST'])
@@ -77,38 +88,38 @@ def create_api_key():
     blocked = api_auth.refusal(current_user)
     if blocked or not api_auth.policy()['keys']:
         flash('Creating service keys is turned off for this account or this server by an administrator.', 'danger')
-        return redirect(url_for('account.index') + '#api')
+        return redirect(url_for('account.api'))
     try:
         days = max(1, min(365, int(f.get('expires_in_days') or 90)))
     except ValueError:
         days = 90
     if not name or '<' in name or '>' in name or not scopes or len(purpose) < 5 or '<' in purpose or '>' in purpose:
         flash('Give the key a name, a purpose (what it is used for) and at least one permission.', 'danger')
-        return redirect(url_for('account.index') + '#api')
+        return redirect(url_for('account.api'))
     if not current_user.check_password(f.get('password') or ''):
         _record_failure(current_user, 'password (API key creation)')
         flash('Password or code is not valid.', 'danger')
-        return redirect(url_for('account.index') + '#api')
+        return redirect(url_for('account.api'))
     try:
         if mfa.mfa_required() and not mfa.verify(current_user, f.get('code') or ''):
             _record_failure(current_user, '2FA code (API key creation)')
             flash('Password or code is not valid.', 'danger')
-            return redirect(url_for('account.index') + '#api')
+            return redirect(url_for('account.api'))
     except mfa.MFAUnavailable:
         flash('The two-factor service is not responding. Try again shortly.', 'danger')
-        return redirect(url_for('account.index') + '#api')
+        return redirect(url_for('account.api'))
     if not set(scopes) <= api_auth.effective_scopes(current_user):
         flash('A key cannot have more permission than your role.', 'danger')
-        return redirect(url_for('account.index') + '#api')
+        return redirect(url_for('account.api'))
     ips, err = api_auth.parse_ip_list(f.get('allowed_ips'))
     if err:
         flash(f'Allowed addresses: {err}.', 'danger')
-        return redirect(url_for('account.index') + '#api')
+        return redirect(url_for('account.api'))
     live = ApiToken.query.filter(ApiToken.user_id == current_user.id, ApiToken.kind == 'key',
                                  ApiToken.revoked_at.is_(None), ApiToken.expires_at > datetime.utcnow()).count()
     if live >= api_auth.MAX_KEYS_PER_USER:
         flash(f'At most {api_auth.MAX_KEYS_PER_USER} active keys. Revoke one first.', 'danger')
-        return redirect(url_for('account.index') + '#api')
+        return redirect(url_for('account.api'))
     row, plaintext = api_auth.issue(current_user, 'key', scopes=scopes, name=name,
                                     expires_at=datetime.utcnow() + timedelta(days=days), allowed_ips=ips)
     row.purpose = purpose
@@ -116,7 +127,7 @@ def create_api_key():
     log_activity('API key created', response=f'{row.prefix} "{name}" for "{purpose}", scopes {row.scopes}, {days} days'
                  + (f', from {ips}' if ips else ''), status='success')
     session['new_api_key'] = {'key': plaintext, 'name': name}   # shown once, then dropped
-    return redirect(url_for('account.index') + '#api')
+    return redirect(url_for('account.api'))
 
 
 @account_bp.route('/api-keys/<int:token_id>/revoke', methods=['POST'])
@@ -132,7 +143,7 @@ def revoke_api_credential(token_id):
         log_activity('API credential revoked', response=f'{row.kind} {row.prefix}' + (f' "{row.name}"' if row.name else ''),
                      status='success')
         flash('Revoked. It stops working immediately.', 'success')
-    return redirect(url_for('account.index') + '#api')
+    return redirect(url_for('account.api'))
 
 
 @account_bp.route('/prefs', methods=['POST'])

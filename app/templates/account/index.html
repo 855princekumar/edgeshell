@@ -123,77 +123,12 @@
     </div>
   </div>
 
-  <div class="col-12" id="api">
-    <div class="card">
-      <div class="card-body">
-        <h6 class="fw-bold mb-1"><i class="bi bi-plug me-1"></i>API access</h6>
-        <p class="small text-muted mb-3">Connect other systems through the <a href="{{ url_for('api.openapi') }}">EdgeShell API</a>
-          (guide: docs/API.md). Programs that a person runs sign in with password and 2FA and get a session token.
-          For unattended integrations, create a <b>service key</b> here. Never share a key in chat, email or a
-          ticket, and never give it to anyone who asks for it, even someone claiming to be from IT: EdgeShell staff
-          never need it. Revoke a key the moment you think it was exposed.</p>
-        {% if new_key %}
-        <div class="alert alert-warning small" id="newKeyBox">
-          <b>Your new key "{{ new_key.name }}". Copy it now; it is not shown again.</b>
-          <div class="d-flex gap-2 mt-2 flex-wrap">
-            <input class="form-control form-control-sm font-monospace" id="newKey" value="{{ new_key.key }}" readonly style="flex:1 1 280px">
-            <button type="button" class="btn btn-sm btn-outline-secondary" onclick="navigator.clipboard.writeText(document.getElementById('newKey').value); this.textContent='Copied'">Copy</button>
-          </div>
-        </div>
-        {% endif %}
-        <div class="table-responsive mb-3">
-          <table class="table table-sm align-middle mb-0">
-            <thead class="table-light"><tr><th>Credential</th><th>Permissions</th><th>Expires</th><th>Last used</th><th></th></tr></thead>
-            <tbody>
-            {% for t in api_rows %}
-              <tr>
-                <td class="small">{{ 'Service key' if t.kind == 'key' else 'API session' }}
-                  {% if t.name %}<b class="text-nowrap">{{ t.name }}</b>{% endif %} <span class="text-muted font-monospace text-nowrap">{{ t.prefix }}</span>
-                  {% if t.allowed_ips %}<div class="text-muted">from {{ t.allowed_ips }}</div>{% endif %}</td>
-                <td class="small">{{ t.scopes.replace(',', ', ') }}</td>
-                <td class="small">{{ t.expires_at|localtime('%d %b %Y %H:%M') }}</td>
-                <td class="small">{% if t.last_used_at %}{{ t.last_used_at|localtime('%d %b %H:%M') }} <span class="text-muted">{{ t.last_used_ip or '' }}</span>{% else %}<span class="text-muted">never</span>{% endif %}</td>
-                <td class="text-end">
-                  <form method="POST" action="{{ url_for('account.revoke_api_credential', token_id=t.id) }}" class="d-inline">
-                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                    <button class="btn btn-outline-danger btn-sm">Revoke</button>
-                  </form>
-                </td>
-              </tr>
-            {% else %}
-              <tr><td colspan="5" class="small text-muted">No API sessions or keys.</td></tr>
-            {% endfor %}
-            </tbody>
-          </table>
-        </div>
-        <details>
-          <summary class="small fw-semibold" style="cursor:pointer">Create a service key</summary>
-          <form method="POST" action="{{ url_for('account.create_api_key') }}" class="mt-3" autocomplete="off">
-            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-            <div class="row g-2">
-              <div class="col-12 col-md-6"><label class="small fw-semibold">What it is for
-                <input class="form-control form-control-sm mt-1" name="name" maxlength="80" required placeholder="e.g. Grafana, ERP sync"></label></div>
-              <div class="col-12"><label class="small fw-semibold">Purpose (shown to administrators and in the logs)
-                <input class="form-control form-control-sm mt-1" name="purpose" minlength="5" maxlength="200" required placeholder="e.g. hourly sync of node status into the ERP"></label></div>
-              <div class="col-6 col-md-3"><label class="small fw-semibold">Valid for (days)
-                <input class="form-control form-control-sm mt-1" name="expires_in_days" type="number" min="1" max="365" value="90"></label></div>
-              <div class="col-6 col-md-3"><label class="small fw-semibold">Only from (optional)
-                <input class="form-control form-control-sm mt-1" name="allowed_ips" maxlength="500" placeholder="203.0.113.0/24"></label></div>
-              <div class="col-12 small">
-                <span class="fw-semibold me-2">Permissions:</span>
-                {% for s in api_scopes %}
-                <label class="me-3"><input type="checkbox" name="scopes" value="{{ s }}" {{ 'checked' if s == 'read' }}> {{ s }}</label>
-                {% endfor %}
-                <span class="text-muted">read: data and events; write: change nodes, exports; control: run commands</span>
-              </div>
-              <div class="col-6 col-md-3"><input class="form-control form-control-sm" name="password" type="password" required placeholder="Your password" autocomplete="current-password"></div>
-              <div class="col-6 col-md-3"><input class="form-control form-control-sm" name="code" inputmode="numeric" required placeholder="2FA code"></div>
-              <div class="col-12 col-md-3"><button class="btn btn-primary btn-sm">Create key</button></div>
-            </div>
-          </form>
-        </details>
-      </div>
-    </div>
+  <div class="col-12">
+    <div class="card"><div class="card-body d-flex align-items-center gap-3 flex-wrap">
+      <i class="bi bi-code-slash fs-4 text-muted"></i>
+      <div class="flex-grow-1"><b>API access</b><div class="small text-muted">Your API sessions and service keys have their own page.</div></div>
+      <a href="{{ url_for('account.api') }}" class="btn btn-outline btn-sm">Open API</a>
+    </div></div>
   </div>
 </div>
 {% endblock %}

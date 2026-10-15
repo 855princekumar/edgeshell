@@ -53,7 +53,7 @@ curl -s https://fleet.example.org/api/v1/nodes -H 'Authorization: Bearer est_...
 | Session absolute lifetime | `API_SESSION_MAX_HOURS` (default 12) |
 | Sessions per user | 5 (the oldest ends when a sixth starts) |
 | Wrong passwords and codes | count toward the same account lockout as the web app (`MAX_FAILED_LOGINS`) |
-| End a session | `POST /auth/logout`, revoke it on **My account, API access**, or any password reset, 2FA reset, deactivation or "sign out everywhere" |
+| End a session | `POST /auth/logout`, revoke it on the **API** page (sidebar, Intelligence), or any password reset, 2FA reset, deactivation or "sign out everywhere" |
 | Who am I | `GET /auth/whoami` |
 
 Every failure answers the same way (`invalid_credentials`), so the API does not
@@ -64,7 +64,7 @@ reveal which usernames exist.
 For integrations that run on their own (an ERP sync, Grafana, a data pipeline),
 a 2FA code on every sign-in is not workable. Create a **service key** instead:
 
-- On **My account, API access, Create a service key** in the web app, or with
+- On the **API** page (sidebar, Intelligence, for every role), **Create a service key**, or with
   `POST /api/v1/keys` from an API session.
 - Every key needs a **purpose** (what it is used for, 5 to 200 characters). It is
   shown to administrators and in the logs.

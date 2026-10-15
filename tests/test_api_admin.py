@@ -268,3 +268,15 @@ def test_the_activity_log_is_for_administrators_only(app, name):
     assert 'secret audit entry' in adm.get('/logs/activity').get_data(as_text=True)
     page = adm.get('/', follow_redirects=True).get_data(as_text=True)
     assert 'Activity Log' in page and 'Recent Activity' in page
+
+
+@pytest.mark.parametrize('name', ['op', 'mon', 'admin'])
+def test_every_role_reaches_the_api_page_from_the_sidebar(app, name):
+    c = app.test_client()
+    c.post('/login', data={'username': name, 'password': 'admin123' if name == 'admin' else 'Operator-pass-1'})
+    home = c.get('/', follow_redirects=True).get_data(as_text=True)
+    assert 'href="/account/api"' in home
+    page = c.get('/account/api').get_data(as_text=True)
+    assert 'Your access' in page and 'Create a service key' in page and '/api/v1' in page
+    assert ('href="/users/api"' in page) == (name == 'admin')          # administration link for admins only
+    assert 'Create a service key' not in c.get('/account/').get_data(as_text=True)
