@@ -210,7 +210,9 @@ def start_app():
 
     from app import create_app
     application = create_app(os.getenv("FLASK_ENV", "development"))
-    application.run(host=host, port=port, debug=debug, use_reloader=debug)
+    # The Werkzeug debugger runs arbitrary code for whoever reaches it, so it is
+    # never turned on here; `debug` only enables the auto-reloader.
+    application.run(host=host, port=port, debug=False, use_reloader=debug)
 
 
 # ── Production: systemd hooks ─────────────────────────────────────────────────

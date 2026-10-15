@@ -89,7 +89,7 @@ def index():
                 # Bandit B608 reviewed: the table name is one of two fixed values chosen in code, never from input
                 lake.hot_only([(f'DELETE FROM {table}', {})])  # nosec B608
             except lake.LakeNotReady as e:
-                flash(f'Not cleared: the data lake must be caught up first ({e}).', 'danger')
+                flash(f'Not cleared: the data lake must be caught up first ({lake.refusal_detail()}).', 'danger')
                 return redirect(url_for('settings.index'))
             log_activity('Activity log cleared' if section == 'clear_logs' else 'Node logs cleared',
                          response=f'{removed} entries removed from the hot database by {current_user.username}'

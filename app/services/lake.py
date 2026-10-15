@@ -221,6 +221,14 @@ def purge(table, column, cutoff, batch=20000):
     return total
 
 
+def refusal_detail():
+    """Why a delete is refused right now, from the lake status itself."""
+    try:
+        return status().get('detail') or 'replication is not healthy'
+    except Exception:
+        return 'replication is not healthy'
+
+
 class LakeNotReady(Exception):
     """A delete was refused because the data lake could not take over the rows."""
 

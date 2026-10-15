@@ -72,14 +72,11 @@ def test_connection(node, timeout=10):
         return False, PAUSED_MESSAGE
     except paramiko.AuthenticationException:
         return False, 'Authentication failed - check credentials'
-    except paramiko.SSHException as e:
-        return False, f'SSH error: {e}'
     except socket.timeout:
         return False, f'Timed out after {timeout}s'
-    except socket.error as e:
-        return False, f'Network error: {e}'
     except Exception as e:
-        return False, f'Error: {e}'
+        from app.services.errors import describe
+        return False, describe(e, f'connection test to {node.name}')
 
 
 def execute_command(node, command, timeout=60):
@@ -97,7 +94,8 @@ def execute_command(node, command, timeout=60):
         result['success']   = result['exit_code'] == 0
         client.close()
     except Exception as e:
-        result['stderr']  = str(e)
+        from app.services.errors import describe
+        result['stderr']  = describe(e, f'command on {node.name}')
         result['success'] = False
     result['duration'] = round(time.time() - start, 3)
     return result
@@ -149,13 +147,18 @@ def upload_file(node, local_path, remote_path, timeout=120):
     stage_dir  = '/tmp/edgeshell_stage'  # nosec B108
     stage_file = f'{stage_dir}/{filename}'
     final_path = f"{remote_path.rstrip('/')}/{filename}"
+    if not remote_path.startswith('/') or any(ord(ch) < 32 for ch in remote_path + filename):
+        return False, 'The target must be an absolute path'
+    # Every path below is shell-quoted: a crafted file or folder name can never
+    # add a command (it would bypass the command policy and the audit log).
+    q_stage, q_dir, q_final = shlex.quote(stage_file), shlex.quote(remote_path), shlex.quote(final_path)
 
     try:
         client = get_ssh_client(node, timeout=10)
 
         # Step 1 - ensure staging dir exists
         # Bandit B601 reviewed: running commands on nodes is the feature (operators only; command policy and audit log apply)
-        _, stdout, _ = client.exec_command(f'mkdir -p {stage_dir}', timeout=5)  # nosec B601
+        _, stdout, _ = client.exec_command(f'mkdir -p {shlex.quote(stage_dir)}', timeout=5)  # nosec B601
         stdout.channel.recv_exit_status()
 
         # Step 2 - SFTP to staging (always /tmp, always writable)
@@ -166,13 +169,13 @@ def upload_file(node, local_path, remote_path, timeout=120):
         # Step 3 - ensure target dir exists with sudo
         # Bandit B601 reviewed: running commands on nodes is the feature (operators only; command policy and audit log apply)
         _, stdout, stderr = client.exec_command(  # nosec B601
-            f'sudo mkdir -p {remote_path} 2>/dev/null || mkdir -p {remote_path}', timeout=10)
+            f'sudo -n mkdir -p -- {q_dir} 2>/dev/null || mkdir -p -- {q_dir}', timeout=10)
         stdout.channel.recv_exit_status()
 
         # Step 4 - move from staging to target with sudo
         # Bandit B601 reviewed: running commands on nodes is the feature (operators only; command policy and audit log apply)
         _, stdout, stderr_ch = client.exec_command(  # nosec B601
-            f'sudo cp {stage_file} {final_path} && sudo chmod 644 {final_path} && echo OK',
+            f'sudo -n cp -- {q_stage} {q_final} && sudo -n chmod 644 -- {q_final} && echo OK',
             timeout=30)
         out = stdout.read().decode().strip()
         err = stderr_ch.read().decode().strip()
@@ -180,7 +183,7 @@ def upload_file(node, local_path, remote_path, timeout=120):
 
         # Cleanup staging
         # Bandit B601 reviewed: running commands on nodes is the feature (operators only; command policy and audit log apply)
-        client.exec_command(f'rm -f {stage_file}', timeout=5)  # nosec B601
+        client.exec_command(f'rm -f -- {q_stage}', timeout=5)  # nosec B601
         client.close()
 
         if rc == 0 or 'OK' in out:
@@ -188,7 +191,8 @@ def upload_file(node, local_path, remote_path, timeout=120):
         return False, err or f'Deploy failed (exit {rc})'
 
     except Exception as e:
-        return False, str(e)
+        from app.services.errors import describe
+        return False, describe(e, f'file deploy to {node.name}')
 
 
 # Full heartbeat metrics script

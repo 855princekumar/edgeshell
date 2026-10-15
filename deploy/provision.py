@@ -73,16 +73,30 @@ def step(msg):
 
 
 def ok(msg):
+    msg = _redact(msg)
     print(f"  {C['g']}✔{C['x']}  {msg}")
 
 
 def warn(msg):
+    msg = _redact(msg)
     print(f"  {C['y']}⚠{C['x']}  {msg}")
     STEPS.append(('warn', msg))
 
 
+# Every generated password is registered here, and messages printed to the
+# console pass through _redact, so a failing command never echoes a secret.
+_SECRET_VALUES = set()
+
+
+def _redact(text):
+    for v in sorted(_SECRET_VALUES, key=len, reverse=True):
+        if v:
+            text = text.replace(v, '***')
+    return text
+
+
 def die(msg):
-    print(f"  {C['r']}✘{C['x']}  {msg}")
+    print(f"  {C['r']}✘{C['x']}  {_redact(msg)}")
     sys.exit(1)
 
 
@@ -103,11 +117,17 @@ def systemctl(*args, check=True):
 
 
 def write(path, content, mode=0o644, owner=None):
+    """Write atomically, creating the file with its final permissions, so a
+    secret file (0o600 / 0o640, passed by its caller) is never readable by
+    others even for a moment."""
     os.makedirs(os.path.dirname(path), exist_ok=True)
     tmp = path + '.tmp'
-    with open(tmp, 'w', newline='\n') as f:
+    if os.path.exists(tmp):
+        os.remove(tmp)
+    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL, mode)
+    with os.fdopen(fd, 'w', newline='\n') as f:
         f.write(content)
-    os.chmod(tmp, mode)
+    os.chmod(tmp, mode)                     # the umask may have narrowed it
     if owner:
         shutil.chown(tmp, *owner)
     os.replace(tmp, path)
@@ -330,6 +350,7 @@ def load_secrets():
         changed = True
     if changed:
         write(SECRETS, ''.join(f'{k}={v}\n' for k, v in sorted(s.items())), 0o600, ('root', 'root'))
+    _SECRET_VALUES.update(v for k, v in s.items() if k.endswith('_PASS'))
     return s
 
 

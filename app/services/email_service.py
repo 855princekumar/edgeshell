@@ -96,12 +96,14 @@ def send_email(to, subject, html, text=None):
             return True, 'sent'
         return False, f'{r.status_code}: {r.text[:200]}'
     except Exception as e:
-        return False, str(e)
+        from app.services.errors import describe
+        return False, describe(e, 'useSend request')
 
 
 def _strip_html(html):
     import re
-    return re.sub(r'<[^>]+>', '', html or '')
+    # [^<>] cannot overlap the next tag, so matching stays linear on any input.
+    return re.sub(r'<[^<>]*>', '', (html or '')[:200000])
 
 
 # ---------------------------------------------------------------- SMTP

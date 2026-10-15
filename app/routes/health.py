@@ -1,6 +1,6 @@
 """Unauthenticated health endpoint for the watchdog and load balancers."""
 import os
-from flask import Blueprint, jsonify, redirect, url_for
+from flask import Blueprint, jsonify, redirect, url_for, current_app
 from sqlalchemy import text
 from app import db
 
@@ -20,8 +20,9 @@ def healthz():
     try:
         db.session.execute(text('SELECT 1'))
         checks['db'] = 'ok'
-    except Exception as e:
-        checks['db'] = f'error: {e}'
+    except Exception:
+        checks['db'] = 'error'                  # details stay in the server log (public endpoint)
+        current_app.logger.warning('health check: database not reachable', exc_info=True)
         code = 503
     try:
         st = os.statvfs('/')

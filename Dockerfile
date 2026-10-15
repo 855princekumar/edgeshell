@@ -19,7 +19,10 @@ RUN apt-get update \
 RUN python -m venv /opt/venv
 ENV PATH=/opt/venv/bin:$PATH
 COPY requirements.txt /tmp/requirements.txt
-RUN pip install --upgrade pip setuptools wheel \
+# Changes every week in CI, so cached dependency layers never get old.
+ARG DEPS_REFRESH=none
+RUN echo "dependency refresh: ${DEPS_REFRESH}" \
+ && pip install --upgrade pip setuptools wheel \
  && pip install -r /tmp/requirements.txt
 
 # ── Runtime ──────────────────────────────────────────────────────────────
@@ -55,6 +58,9 @@ ENV PYTHONUNBUFFERED=1 \
 RUN apt-get update \
  && apt-get install -y --no-install-recommends openssh-client sshpass curl ca-certificates tini \
  && rm -rf /var/lib/apt/lists/* \
+ && python -m pip uninstall -y pip setuptools wheel >/dev/null 2>&1 || true \
+ && rm -rf /usr/local/lib/python*/site-packages/pip* /usr/local/lib/python*/site-packages/setuptools* /usr/local/bin/pip* \
+ && true \
  && useradd --system --uid 10001 --create-home --home-dir /home/edgeshell \
             --shell /usr/sbin/nologin edgeshell
 

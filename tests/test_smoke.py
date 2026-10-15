@@ -432,6 +432,33 @@ def test_log_pages_render(app, client):
     assert client.get('/logs/activity').status_code == 200
 
 
+def _inline_scripts(html):
+    """The bodies of inline <script> elements (no src), via the HTML parser."""
+    from html.parser import HTMLParser
+
+    class Scripts(HTMLParser):
+        def __init__(self):
+            super().__init__(convert_charrefs=False)
+            self.out, self._buf = [], None
+
+        def handle_starttag(self, tag, attrs):
+            if tag == 'script' and not dict(attrs).get('src'):
+                self._buf = []
+
+        def handle_data(self, data):
+            if self._buf is not None:
+                self._buf.append(data)
+
+        def handle_endtag(self, tag):
+            if tag == 'script' and self._buf is not None:
+                self.out.append(''.join(self._buf))
+                self._buf = None
+
+    p = Scripts()
+    p.feed(html)
+    return p.out
+
+
 def test_page_scripts_parse(app, client):
     """Every inline script on the main pages must be valid JavaScript. A
     stray quote once broke the shared script on every page (CSRF header,
@@ -456,7 +483,7 @@ def test_page_scripts_parse(app, client):
         for page in pages:
             r = client.get(page)
             assert r.status_code == 200, (page, r.status_code)
-            for i, js in enumerate(re.findall(r'<script>(.*?)</script>', r.get_data(as_text=True), re.S)):
+            for i, js in enumerate(_inline_scripts(r.get_data(as_text=True))):
                 f = Path(tmp) / f'{page.strip("/").replace("/", "_") or "root"}_{i}.js'
                 f.write_text(js, encoding='utf-8')
                 res = subprocess.run([node, '--check', str(f)], capture_output=True, text=True)
@@ -508,7 +535,7 @@ def test_no_page_defines_a_function_twice(app, client):
 
     for page in pages:
         html = client.get(page).get_data(as_text=True)
-        names = [f for js in re.findall(r'<script>(.*?)</script>', html, re.S) for f in top_level_functions(js)]
+        names = [f for js in _inline_scripts(html) for f in top_level_functions(js)]
         twice = [n for n, c in collections.Counter(names).items() if c > 1]
         assert not twice, f'{page} defines {twice} more than once'
 

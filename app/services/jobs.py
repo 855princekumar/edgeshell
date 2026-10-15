@@ -13,6 +13,8 @@ from concurrent.futures import ThreadPoolExecutor
 
 from flask import current_app
 
+from app.services.errors import describe
+
 KEEP_FINISHED_S = 3600
 _JOBS = {}
 _LOCK = threading.Lock()
@@ -103,7 +105,7 @@ def run_task(kind, title, owner_id, total, fn, summary=None):
         except Exception as e:
             app.logger.exception('%s failed', kind)
             job['state'] = 'error'
-            job['message'] = str(e)[:300]
+            job['message'] = describe(e, f'{kind} job')
         finally:
             job['finished'] = time.time()
 
@@ -158,7 +160,7 @@ def run_batches(kind, title, owner_id, items, work, batch=48, summary=None):
             job['message'] = summary(job) if summary else ''
         except Exception as e:
             job['state'] = 'error'
-            job['message'] = str(e)[:300]
+            job['message'] = describe(e, f'{kind} job')
         finally:
             job['finished'] = time.time()
 
@@ -199,7 +201,7 @@ def run_each(kind, title, owner_id, items, work, workers=16, summary=None):
             job['message'] = summary(job) if summary else ''
         except Exception as e:
             job['state'] = 'error'
-            job['message'] = str(e)[:300]
+            job['message'] = describe(e, f'{kind} job')
         finally:
             job['finished'] = time.time()
 

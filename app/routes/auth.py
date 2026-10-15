@@ -13,6 +13,7 @@ step 2 has passed.
 import hashlib
 import re
 import time
+from urllib.parse import urlparse
 from datetime import datetime, timedelta
 
 from flask import (Blueprint, current_app, flash, jsonify, redirect,
@@ -57,9 +58,14 @@ def _burn_password_check(password):
 
 
 def _safe_next(next_page):
-    if next_page and next_page.startswith('/') and not next_page.startswith('//'):
-        return next_page
-    return None
+    """Only a path on this site: no scheme, no host, no backslash tricks."""
+    if not next_page:
+        return None
+    target = next_page.replace('\\', '')
+    parts = urlparse(target)
+    if parts.scheme or parts.netloc or not target.startswith('/') or target.startswith('//'):
+        return None
+    return target
 
 
 def _locked(user):

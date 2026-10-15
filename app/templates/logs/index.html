@@ -206,7 +206,7 @@ function browseLogs() {
     document.getElementById('browseStatus').textContent = '';
     if (!data.success && !data.output) {
       document.getElementById('fileList').innerHTML =
-        `<div class="text-danger small px-2 py-2"><i class="bi bi-exclamation-circle me-1"></i>${data.error || 'Browse failed'}</div>`;
+        `<div class="text-danger small px-2 py-2"><i class="bi bi-exclamation-circle me-1"></i>${esc(data.error || 'Browse failed')}</div>`;
       return;
     }
     renderFileList(data.output || '', path, nodeId);
@@ -214,7 +214,7 @@ function browseLogs() {
   .catch(err => {
     document.getElementById('browseStatus').textContent = '';
     document.getElementById('fileList').innerHTML =
-      `<div class="text-danger small px-2 py-2">Network error: ${err.message}</div>`;
+      `<div class="text-danger small px-2 py-2">Network error: ${esc(err.message)}</div>`;
   });
 }
 
@@ -240,21 +240,19 @@ function renderFileList(lsOutput, basePath, nodeId) {
 
     if (isDir) {
       // Click to browse into directory
-      html += `<div class="d-flex align-items-center gap-2 px-2 py-1 rounded" style="cursor:pointer"
-                   onmouseover="this.style.background='#f3f4f6'" onmouseout="this.style.background=''"
-                   onclick="document.getElementById('logPath').value='${fpath}/'; browseLogs()">
+      html += `<div class="d-flex align-items-center gap-2 px-2 py-1 rounded log-entry" style="cursor:pointer"
+                   data-kind="dir" data-path="${esc(fpath + '/')}" data-hover="#f3f4f6">
         <i class="bi ${icon}" style="font-size:.85rem;flex-shrink:0"></i>
         <span class="small font-monospace text-truncate flex-grow-1">${esc(filename)}/</span>
       </div>`;
     } else {
       // Click to view file
-      html += `<div class="d-flex align-items-center gap-2 px-2 py-1 rounded" style="cursor:pointer"
-                   onmouseover="this.style.background='#eff6ff'" onmouseout="this.style.background=''"
-                   onclick="fetchLog(${nodeId}, '${esc(fpath)}')">
+      html += `<div class="d-flex align-items-center gap-2 px-2 py-1 rounded log-entry" style="cursor:pointer"
+                   data-kind="file" data-node="${Number(nodeId)}" data-path="${esc(fpath)}" data-hover="#eff6ff">
         <i class="bi ${icon}" style="font-size:.85rem;flex-shrink:0"></i>
         <div class="flex-grow-1 min-w-0">
           <div class="small font-monospace text-truncate">${esc(filename)}</div>
-          ${size ? `<div class="text-muted" style="font-size:.65rem">${size}</div>` : ''}
+          ${size ? `<div class="text-muted" style="font-size:.65rem">${esc(size)}</div>` : ''}
         </div>
         <i class="bi bi-eye text-muted" style="font-size:.75rem;flex-shrink:0"></i>
       </div>`;
@@ -264,6 +262,29 @@ function renderFileList(lsOutput, basePath, nodeId) {
   document.getElementById('fileList').innerHTML = html ||
     '<div class="text-muted small px-2 py-2">No files found.</div>';
 }
+
+// One listener for every entry: values come from data attributes, so a crafted
+// name on a node can never become script.
+(function () {
+  const list = document.getElementById('fileList');
+  if (!list) return;
+  list.addEventListener('click', e => {
+    const el = e.target.closest('.log-entry');
+    if (!el) return;
+    if (el.dataset.kind === 'dir') {
+      document.getElementById('logPath').value = el.dataset.path;
+      browseLogs();
+    } else {
+      fetchLog(Number(el.dataset.node), el.dataset.path);
+    }
+  });
+  list.addEventListener('mouseover', e => {
+    const el = e.target.closest('.log-entry'); if (el) el.style.background = el.dataset.hover;
+  });
+  list.addEventListener('mouseout', e => {
+    const el = e.target.closest('.log-entry'); if (el) el.style.background = '';
+  });
+})();
 
 // ── Fetch & display log ──────────────────────────────────────
 function fetchLog(nodeId, filePath) {
@@ -450,7 +471,8 @@ function showLogArea() {
   document.getElementById('logArea').style.display  = 'flex';
 }
 function esc(s) {
-  return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/'/g,'&#39;');
+  return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+    .replace(/"/g,'&quot;').replace(/'/g,'&#39;');
 }
 </script>
 {% endblock %}

@@ -248,12 +248,13 @@ def bulk_purge():
         q = q.filter(Node.id.in_(_ids(data) or [0]))
     nodes = q.all()
     names = [n.name for n in nodes]
+    from app.services import lake
     from app.services.lake import LakeNotReady
     try:
         count = _purge_nodes(nodes)
     except LakeNotReady as e:
         db.session.rollback()
-        return jsonify({'success': False, 'message': f'Not deleted: the data lake must be caught up first ({e}).'}), 409
+        return jsonify({'success': False, 'message': f'Not deleted: the data lake must be caught up first ({lake.refusal_detail()}).'}), 409
     log_activity('Bulk purge (permanent)', response=f'{count} node(s): ' + ', '.join(names[:20])
                  + (' ...' if count > 20 else ''), status='warning')
     return jsonify({'success': True, 'count': count, 'message': f'Deleted {count} node(s) permanently.'})
@@ -317,12 +318,13 @@ def bulk_credentials():
 def purge(node_id):
     node = Node.query.get_or_404(node_id)
     name = node.name
+    from app.services import lake
     from app.services.lake import LakeNotReady
     try:
         _purge_nodes([node])
     except LakeNotReady as e:
         db.session.rollback()
-        flash(f'Not deleted: the data lake must be caught up first ({e}).', 'danger')
+        flash(f'Not deleted: the data lake must be caught up first ({lake.refusal_detail()}).', 'danger')
         return redirect(url_for('nodes.index'))
     log_activity('Purge Node (permanent)', node=name, status='success')
     flash(f'Node "{name}" permanently deleted.', 'warning')

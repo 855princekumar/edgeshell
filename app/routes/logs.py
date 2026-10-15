@@ -1,4 +1,4 @@
-import os, tempfile
+import os, shlex, tempfile
 from flask import Blueprint, render_template, request, jsonify, send_file, abort
 from flask_login import login_required, current_user
 from app import db
@@ -13,6 +13,19 @@ from functools import wraps
 from app.services.rbac import admin_required
 
 logs_bp = Blueprint('logs', __name__, url_prefix='/logs')
+
+
+def _node_path(value, default=None):
+    """A path on a node, safe to put in a shell command: absolute, at most
+    1024 characters, no control characters, and shell-quoted. Every caller
+    runs it through this, so a crafted path can never add a command (these
+    routes run `sudo` on the node and are open to every signed-in role).
+    Returns (quoted, plain) or (None, None)."""
+    value = default if value in (None, '') else value
+    if not isinstance(value, str) or not value.startswith('/') or len(value) > 1024 \
+            or any(ord(ch) < 32 or ord(ch) == 127 for ch in value):
+        return None, None
+    return shlex.quote(value), value
 
 
 def operator_required(f):
@@ -61,10 +74,11 @@ def browse():
     """List files/dirs on a node path via SSH."""
     data     = request.get_json() or {}
     node_id  = data.get('node_id')
-    log_path = data.get('log_path', '/var/log/')
     node     = Node.query.get_or_404(node_id)
-    # Use sudo ls if admin
-    cmd = f'sudo ls -lah {log_path} 2>/dev/null || ls -lah {log_path} 2>&1'
+    path, _ = _node_path(data.get('log_path'), '/var/log/')
+    if not path:
+        return jsonify({'success': False, 'error': 'Enter an absolute path such as /var/log/'}), 400
+    cmd = f'sudo -n ls -lah -- {path} 2>/dev/null || ls -lah -- {path} 2>&1'
     result = execute_command(node, cmd, timeout=10)
     return jsonify({'success': result['success'], 'output': result['stdout'],
                     'error': result['stderr'], 'node': node.name})
@@ -76,12 +90,15 @@ def fetch():
     """Fetch (tail) a log file from a node."""
     data      = request.get_json() or {}
     node_id   = data.get('node_id')
-    file_path = data.get('file_path', '')
-    lines     = int(data.get('lines', 200))
+    try:
+        lines = max(1, min(int(data.get('lines', 200)), 10000))
+    except (TypeError, ValueError):
+        lines = 200
     node      = Node.query.get_or_404(node_id)
-    if not file_path:
-        return jsonify({'error': 'No file path'}), 400
-    cmd    = f'sudo tail -n {lines} {file_path} 2>/dev/null || tail -n {lines} {file_path} 2>&1'
+    path, file_path = _node_path(data.get('file_path'))
+    if not path:
+        return jsonify({'error': 'Enter an absolute file path'}), 400
+    cmd    = f'sudo -n tail -n {lines} -- {path} 2>/dev/null || tail -n {lines} -- {path} 2>&1'
     result = execute_command(node, cmd, timeout=15)
     log_activity('Log Fetch', node=node.name, command=file_path, status='success' if result['success'] else 'failure')
     return jsonify({'success': result['success'], 'content': result['stdout'],
@@ -95,22 +112,24 @@ def download():
     """Download a log file from a node via SFTP to local, then serve it."""
     data      = request.get_json() or {}
     node_id   = data.get('node_id')
-    file_path = data.get('file_path', '')
     node      = Node.query.get_or_404(node_id)
-    if not file_path:
-        return jsonify({'error': 'No file path'}), 400
+    path, file_path = _node_path(data.get('file_path'))
+    if not path:
+        return jsonify({'error': 'Enter an absolute file path'}), 400
 
+    from werkzeug.utils import secure_filename
     try:
         client = get_ssh_client(node, timeout=10)
         sftp   = client.open_sftp()
-        filename = os.path.basename(file_path)
-        # Write to a temp file
-        tmp = tempfile.NamedTemporaryFile(delete=False, suffix='_' + filename)
+        filename = secure_filename(os.path.basename(file_path)) or 'log.txt'
+        # A local temp file with a fixed name pattern (nothing from the request in its path)
+        tmp = tempfile.NamedTemporaryFile(delete=False, prefix='edgeshell-log-', suffix='.txt')
         try:
             sftp.get(file_path, tmp.name)
         except Exception:
             # If SFTP get fails (permission), try cat via SSH + write
-            _, stdout, _ = client.exec_command(f'sudo cat {file_path} 2>/dev/null', timeout=30)
+            # Bandit B601 reviewed: the path is validated and shell-quoted by _node_path
+            _, stdout, _ = client.exec_command(f'sudo -n cat -- {path} 2>/dev/null', timeout=30)  # nosec B601
             tmp.write(stdout.read())
         tmp.close()
         sftp.close()
@@ -118,7 +137,8 @@ def download():
         log_activity('Log Download', node=node.name, command=file_path, status='success')
         return send_file(tmp.name, as_attachment=True, download_name=filename)
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        from app.services.errors import describe
+        return jsonify({'error': describe(e, 'log download')}), 500
 
 
 @logs_bp.route('/mkdir', methods=['POST'])
@@ -128,11 +148,11 @@ def mkdir():
     """Create directory on node with sudo."""
     data     = request.get_json() or {}
     node_id  = data.get('node_id')
-    dir_path = data.get('dir_path', '').strip()
     node     = Node.query.get_or_404(node_id)
-    if not dir_path:
-        return jsonify({'error': 'No directory path'}), 400
-    cmd    = f'sudo mkdir -p {dir_path} && sudo chmod 755 {dir_path} && echo "Created: {dir_path}"'
+    path, dir_path = _node_path((data.get('dir_path') or '').strip())
+    if not path:
+        return jsonify({'error': 'Enter an absolute directory path'}), 400
+    cmd    = f'sudo -n mkdir -p -- {path} && sudo -n chmod 755 -- {path} && echo Created'
     result = execute_command(node, cmd, timeout=10)
     log_activity('Create Directory', node=node.name, command=dir_path,
                  status='success' if result['success'] else 'failure')
