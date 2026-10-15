@@ -10,6 +10,7 @@ from app.services.activity_service import log_activity
 from datetime import datetime
 from sqlalchemy import desc
 from functools import wraps
+from app.services.rbac import admin_required
 
 logs_bp = Blueprint('logs', __name__, url_prefix='/logs')
 
@@ -32,7 +33,10 @@ def index():
 
 @logs_bp.route('/activity')
 @login_required
+@admin_required
 def activity():
+    """The audit trail: administrators only (operators and monitors neither
+    see it nor reach it, ADR 0004)."""
     page          = request.args.get('page', 1, type=int)
     status_filter = request.args.get('status', '')
     node_filter   = request.args.get('node', '')

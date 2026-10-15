@@ -131,7 +131,8 @@
   </div>
 </div>
 
-<!-- Activity + Errors -->
+<!-- Activity + Errors (administrators only: the audit trail) -->
+{% if current_user.is_admin() %}
 <div class="row g-3">
   <div class="col-12 col-lg-7">
     <div class="card border-0 shadow-sm">
@@ -174,6 +175,7 @@
     </div>
   </div>
 </div>
+{% endif %}
 
 <!-- Node Detail Modal -->
 <div class="modal fade" id="nodeModal" tabindex="-1">

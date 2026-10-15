@@ -563,9 +563,11 @@
             <a href="{{ url_for('logs.index') }}" class="nav-item {% if 'logs.' in request.endpoint %}active{% endif %}">
                 <i class="bi bi-journal-text"></i> Log Viewer
             </a>
+            {% if current_user.is_admin() %}
             <a href="{{ url_for('logs.activity') }}" class="nav-item {% if request.endpoint == 'logs.activity' %}active{% endif %}">
                 <i class="bi bi-clock-history"></i> Activity Log
             </a>
+            {% endif %}
         </div>
 
         {% if current_user.is_admin() %}

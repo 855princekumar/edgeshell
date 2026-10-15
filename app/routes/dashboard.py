@@ -21,8 +21,11 @@ def index():
     failed = sum(1 for n in nodes if n.status == 'failed')
     healthy = sum(1 for n in nodes if n.status == 'online')
 
-    recent_activities = ActivityLog.query.order_by(desc(ActivityLog.timestamp)).limit(10).all()
-    recent_errors = ActivityLog.query.filter_by(status='failure').order_by(desc(ActivityLog.timestamp)).limit(5).all()
+    # The activity log is the audit trail: administrators only.
+    recent_activities = recent_errors = []
+    if current_user.is_admin():
+        recent_activities = ActivityLog.query.order_by(desc(ActivityLog.timestamp)).limit(10).all()
+        recent_errors = ActivityLog.query.filter_by(status='failure').order_by(desc(ActivityLog.timestamp)).limit(5).all()
 
     return render_template('dashboard/index.html',
                            total=total, online=online, offline=offline,

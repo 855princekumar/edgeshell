@@ -2,6 +2,12 @@
 
 All notable changes are documented here. Format loosely follows Keep a Changelog.
 
+## [Unreleased]
+
+### Changed
+- **The activity log is for administrators only**: the page, its sidebar link, the dashboard's Recent Activity and Recent Errors panels, and `GET /api/v1/activity` (403) are no longer available to operators and monitors. Node logs in the Log Viewer are unchanged.
+- The login page's username field no longer suggests an account name.
+
 ## [1.8.1] - 2026-10-15
 
 ### Added

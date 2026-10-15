@@ -566,9 +566,12 @@ def events(args, data):
                         'next_since_id': rows[-1].id if rows else args['since_id']})
 
 
-@endpoint('GET', '/activity', 'Activity log (audit trail)', 'read', params=PAGE, tag='Data points')
+@endpoint('GET', '/activity', 'Activity log (audit trail, administrators only)', 'read', params=PAGE,
+          tag='Data points', description='Administrators only; other roles get 403.')
 def activity(args, data):
     from app.models import ActivityLog
+    if not current_user.is_admin():
+        return api_auth.api_error(403, 'forbidden', 'The activity log is for administrators only.')
     from app.services import lake
     with lake.reader() as r:
         items, page = page_of(r.session.query(ActivityLog).order_by(ActivityLog.id.desc()), args)
