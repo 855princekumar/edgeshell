@@ -61,6 +61,7 @@ def create_app(config_name='default'):
 
     from app.routes.auth import auth_bp
     from app.routes.dashboard import dashboard_bp
+    from app.routes.sensehive_gate import sensehive_bp
     from app.routes.nodes import nodes_bp
     from app.routes.terminal import terminal_bp
     from app.routes.files import files_bp
@@ -76,7 +77,7 @@ def create_app(config_name='default'):
     from app.routes.account import account_bp
     from app.routes import shell as _shell  # noqa: F401  (registers the WebSocket route)
 
-    for bp in (auth_bp, dashboard_bp, nodes_bp, terminal_bp, files_bp, logs_bp,
+    for bp in (auth_bp, sensehive_bp, dashboard_bp, nodes_bp, terminal_bp, files_bp, logs_bp,
                settings_bp, users_bp, api_bp, tailscale_bp, monitoring_bp,
                vpn_bp, health_bp, issues_bp, account_bp):
         app.register_blueprint(bp)

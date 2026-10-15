@@ -29,9 +29,10 @@ flowchart LR
 3. [Install the agent on nodes](#install-the-agent-on-nodes)
 4. [Change settings on every node (hot reload)](#change-settings-on-every-node-hot-reload)
 5. [How uptime is counted](#how-uptime-is-counted)
-6. [Security on a public broker](#security-on-a-public-broker)
-7. [Roles](#roles)
-8. [Operate and troubleshoot](#operate-and-troubleshoot)
+6. [Opening SenseHive](#opening-sensehive)
+7. [Security on a public broker](#security-on-a-public-broker)
+8. [Roles](#roles)
+9. [Operate and troubleshoot](#operate-and-troubleshoot)
 
 ## What you see
 
@@ -66,9 +67,9 @@ docker compose up -d
   (8883), `HEARTBEAT_TLS` (true) as the defaults for new installs.
 
 SenseHive keeps its data in `./data/sensehive` (kept across restarts and
-upgrades). Open it once from the sidebar and **change its own password**
-(default `admin` / `admin123`); only EdgeShell administrators can reach it at
-all (nginx asks EdgeShell first).
+upgrades). Set `SENSEHIVE_ADMIN_PASSWORD` in `.env` before the first start, or
+open SenseHive once from the sidebar and change its password (`admin` /
+`admin123`). See [Opening SenseHive](#opening-sensehive).
 
 ## Install the agent on nodes
 
@@ -102,6 +103,30 @@ agent (atomically). Each agent:
 
 `config.yaml` holds no secrets. A node's keys (`agent.env`) are never part of a
 push.
+
+## Opening SenseHive
+
+SenseHive lives at `https://<your domain>/sensehive/` and is for administrators
+only. nginx asks EdgeShell about every request before SenseHive sees it:
+
+| How you arrive | What happens |
+|---|---|
+| **SenseHive** button in the EdgeShell sidebar | Opens in a new tab straight away: the button posts this page's CSRF token, and EdgeShell gives the browser a SenseHive pass |
+| Typed, bookmarked or linked `/sensehive/` | EdgeShell asks for your **2FA code** first (or your sign-in when you are not signed in); wrong codes count toward the account lockout |
+| Not an administrator | Sent back to EdgeShell; SenseHive is never reached |
+| A bot or scanner | Sent to EdgeShell's sign-in; SenseHive's login page is never shown to it |
+
+Then SenseHive asks for its **own** login.
+
+- **The pass:** a signed cookie, HttpOnly, SameSite=Strict, only for `/sensehive/`, valid for 4 hours. It is bound to your EdgeShell session: copied to another browser it is useless, and it dies when you sign out.
+- **Cookies stay apart:** nginx passes only SenseHive's cookie to SenseHive, never EdgeShell's session or pass, and SenseHive's own cookie is limited to `/sensehive/`.
+- **SenseHive's own sign-in:**
+  - salted, slow password hashes;
+  - lockout after 5 failures per user and per address (15 minutes);
+  - a new session at each sign-in;
+  - cross-site requests refused;
+  - nginx rate limits its form posts.
+- **First password:** set `SENSEHIVE_ADMIN_PASSWORD` in `.env` before the first start, or change `admin123` at the first sign-in.
 
 ## How uptime is counted
 

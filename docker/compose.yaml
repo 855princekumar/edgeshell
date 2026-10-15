@@ -245,10 +245,17 @@ services:
   # administrators open it at /sensehive/ through nginx, after EdgeShell checks
   # they are signed in as an administrator. Change its own login on first use.
   sensehive:
-    image: devprincekumar/sense-hive:${SENSEHIVE_TAG:-1.2.0}
+    image: devprincekumar/sense-hive:${SENSEHIVE_TAG:-1.3.0}
     restart: unless-stopped
     environment:
       DB_PATH: /app/data/iot_dashboard.db
+      # Behind nginx: real client address for its sign-in lockout; cookies on
+      # /sensehive/ only, SameSite=Strict, Secure with HTTPS.
+      SENSEHIVE_TRUST_PROXY: "true"
+      SENSEHIVE_COOKIE_PATH: /sensehive/
+      SENSEHIVE_COOKIE_SAMESITE: Strict
+      SENSEHIVE_COOKIE_SECURE: ${SESSION_COOKIE_SECURE:-false}
+      SENSEHIVE_ADMIN_PASSWORD: ${SENSEHIVE_ADMIN_PASSWORD:-}
       HEARTBEAT_MASTER_KEY: ${HEARTBEAT_MASTER_KEY:-}
       HEARTBEAT_API_TOKEN: ${SENSEHIVE_API_TOKEN:-}
       HEARTBEAT_BROKER: ${HEARTBEAT_BROKER:-broker.hivemq.com}

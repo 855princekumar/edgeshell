@@ -75,7 +75,7 @@ curl -sf -X POST -H 'Content-Type: application/json' --data @fleet.json \
 docker exec "$SPAWNER" pfe validate --wait 240
 
 step "End-to-end suite"
-EDGESHELL_URL=http://127.0.0.1:5050 PFE_URL=http://127.0.0.1:7070 "$PY" e2e.py
+EDGESHELL_URL=http://127.0.0.1:5050 PFE_URL=http://127.0.0.1:7070 NGINX_URL=http://127.0.0.1:5051 "$PY" e2e.py
 
 step "Ansible inside the image (ansible-core + sshpass + sudo, per-host results)"
 docker exec -i "$ES" python - <<'PY'

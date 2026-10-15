@@ -29,6 +29,7 @@ import uuid
 
 BASE = os.environ.get('EDGESHELL_URL', 'http://127.0.0.1:5050').rstrip('/')
 PFE = os.environ.get('PFE_URL', 'http://127.0.0.1:7070').rstrip('/')
+NGINX = os.environ.get('NGINX_URL', 'http://127.0.0.1:5051').rstrip('/')
 NODE_PASSWORD = os.environ.get('PFE_NODE_PASSWORD', 'raspberry')
 ADMIN_PASSWORD_FILE = os.environ.get('ADMIN_PASSWORD_FILE', '')
 EXPECTED_NODES = int(os.environ.get('EXPECTED_NODES', '6'))
@@ -408,6 +409,55 @@ def main():
     row = hb_state(hb_node['name'], 'offline', seconds=120)
     check('agent killed: the broker delivers its signed last will (node card: LWT offline)',
           bool(row and row.get('heartbeat_lwt_at')), row)
+
+    # ── SenseHive gate (through the production nginx) ──────────────────────
+    section('SenseHive gate: administrators, a 2FA code or the admin panel, isolated cookies')
+    anon = Client('E2E-anon')
+    st, h, _ = anon.request('GET', NGINX + '/sensehive/')
+    check('anonymous: /sensehive/ never reaches SenseHive (sent to the unlock step)',
+          st == 302 and h.get('Location', '').endswith('/tools/sensehive/unlock'), (st, h.get('Location')))
+    st, h, _ = anon.request('GET', NGINX + '/tools/sensehive/unlock')
+    check('anonymous: the unlock step asks for the EdgeShell sign-in first',
+          st == 302 and '/login' in h.get('Location', ''), (st, h.get('Location')))
+    st, h, _ = anon.request('GET', NGINX + '/internal/admin-check')
+    check('the internal admin check is not reachable from outside', st == 404, st)
+
+    st, h, _ = admin.request('GET', NGINX + '/sensehive/')
+    check('signed-in admin without a pass: sent to the 2FA step',
+          st == 302 and h.get('Location', '').endswith('/tools/sensehive/unlock'), (st, h.get('Location')))
+    st, _, body = admin.get(NGINX + '/tools/sensehive/unlock')
+    check('the unlock step asks for a two-factor code', st == 200 and 'Two-factor code' in body, st)
+    st, _, body = admin.post_form(NGINX + '/tools/sensehive/unlock', {'code': '000000'})
+    check('a wrong code does not open SenseHive', st == 200 and 'not valid' in body, st)
+    st, h, _ = admin.post_form(NGINX + '/tools/sensehive/unlock', {'code': fresh_totp(admin.secret)})
+    cookie = h.get('Set-Cookie', '') if h else ''
+    check('a valid code opens SenseHive', st == 302 and h.get('Location', '').endswith('/sensehive/'), (st, h.get('Location')))
+    check('the SenseHive pass is HttpOnly, SameSite=Strict, only for /sensehive/',
+          'es_sensehive=' in cookie and 'HttpOnly' in cookie and 'SameSite=Strict' in cookie
+          and 'Path=/sensehive/' in cookie, cookie[:160])
+    st, _, body = admin.request('GET', NGINX + '/sensehive/login')
+    check("SenseHive's own login page appears", st == 200 and 'sensehive' in body.lower(), st)
+
+    for c in list(admin.jar):                      # back to no pass: the admin panel route
+        if c.name == 'es_sensehive':
+            admin.jar.clear(c.domain, c.path, c.name)
+    st, _, _ = admin.request('POST', NGINX + '/tools/sensehive/launch',
+                             data=b'', headers={'Content-Type': 'application/x-www-form-urlencoded', 'X-CSRFToken': ''})
+    check('the admin-panel button without its CSRF token is refused', st in (400, 403), st)
+    admin.get('/nodes/')
+    st, h, _ = admin.post_form(NGINX + '/tools/sensehive/launch', {})
+    check('the admin-panel button opens SenseHive without a code',
+          st == 302 and h.get('Location', '').endswith('/sensehive/') and 'es_sensehive=' in h.get('Set-Cookie', ''),
+          (st, h.get('Location')))
+
+    statuses = []
+    bot = Client('E2E-bot')
+    for _ in range(8):
+        st, _, _ = admin.request('POST', NGINX + '/sensehive/api/login', json_body={'username': 'admin', 'password': 'guess'})
+        statuses.append(st)
+    check('repeated SenseHive password guesses are cut off (429)', 429 in statuses, statuses)
+    st, _, _ = bot.request('POST', NGINX + '/sensehive/api/login', json_body={'username': 'admin', 'password': 'x'})
+    check('a client without an EdgeShell admin session cannot even try', st == 302, st)
 
     # ── Login and session security ─────────────────────────────────────────
     section('Two-factor checks')
