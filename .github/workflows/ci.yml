@@ -61,6 +61,10 @@ jobs:
             fi
           done <<< "$FORBIDDEN_TERMS"
           exit $found
+      - name: In-app API guide matches docs/API.md
+        run: |
+          pip install markdown==3.7
+          python tools/build_api_guide.py --check
       - name: Docker Hub page and README name the current version
         # docker/DOCKERHUB.md is the Docker Hub description (pushed on every
         # release and on every change to main), so it must not fall behind.
