@@ -187,7 +187,7 @@ flowchart LR
 | **Encrypted credentials** | Node SSH passwords and API keys encrypted at rest (Fernet), with key rotation |
 | **CSRF everywhere** | Every state-changing request, AJAX call and WebSocket (same-origin check) is protected |
 | **Fail-safe config** | Production refuses to start without its secret keys |
-| **Audit trail** | Activity log of user actions (logins, terminals opened and closed, bulk changes, exports, paused and resumed logins) plus every service start, stop, crash and restart |
+| **Audit trail** | Administrators only: activity log of user actions (logins, terminals opened and closed, bulk changes, exports, paused and resumed logins) plus every service start, stop, crash and restart |
 
 ### Platform
 | Capability | What it does |
@@ -564,9 +564,9 @@ sequenceDiagram
 
 | Role | Can do |
 |---|---|
-| `monitor` | View dashboards, monitoring, and logs. Strictly read-only |
+| `monitor` | View dashboards, monitoring, and node logs. Strictly read-only |
 | `operator` | Everything a monitor can, plus node management, terminal, remote desktop, file deploy, bulk import |
-| `administrator` | Everything an operator can, plus users, VPN, email, and platform settings |
+| `administrator` | Everything an operator can, plus users, VPN, email, platform settings, and the activity log (audit trail, administrators only) |
 
 Details: [docs/RBAC.md](docs/RBAC.md).
 

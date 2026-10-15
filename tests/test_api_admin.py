@@ -247,3 +247,24 @@ def test_api_admins_cannot_revoke_the_owners_keys(app):
     r = c.delete(f"/api/v1/keys/{okey['details']['id']}", headers=H(tok))
     assert r.status_code == 403
     assert c.get('/api/v1/nodes', headers=H(okey['key'])).status_code == 200
+
+
+@pytest.mark.parametrize('name', ['op', 'mon'])
+def test_the_activity_log_is_for_administrators_only(app, name):
+    from app.models import ActivityLog
+    with app.app_context():
+        db.session.add(ActivityLog(action='secret audit entry', status='failure'))
+        db.session.commit()
+    c = app.test_client()
+    c.post('/login', data={'username': name, 'password': 'Operator-pass-1'})
+    r = c.get('/logs/activity')
+    assert r.status_code == 302 and 'secret audit entry' not in r.get_data(as_text=True)
+    dash = c.get('/', follow_redirects=True).get_data(as_text=True)
+    assert 'Activity Log' not in dash and 'secret audit entry' not in dash and 'Recent Activity' not in dash
+    tok, _ = api_login(app.test_client(), name)
+    r = app.test_client().get('/api/v1/activity', headers=H(tok))
+    assert r.status_code == 403
+    adm = admin(app)
+    assert 'secret audit entry' in adm.get('/logs/activity').get_data(as_text=True)
+    page = adm.get('/', follow_redirects=True).get_data(as_text=True)
+    assert 'Activity Log' in page and 'Recent Activity' in page

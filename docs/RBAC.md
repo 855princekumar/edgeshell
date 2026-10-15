@@ -9,9 +9,14 @@ not interfere. Roles decide what each person may do, enforced centrally in
 
 | Role | Rank | Can do |
 |---|---|---|
-| monitor | 0 | View dashboards, monitoring, logs |
+| monitor | 0 | View dashboards, monitoring, node logs |
 | operator | 1 | Everything monitor can, plus node CRUD, terminal, remote desktop, file deploy, bulk import, OpenRemoteGUI |
-| administrator | 2 | Everything operator can, plus user management, VPN config, platform settings |
+| administrator | 2 | Everything operator can, plus user management, VPN config, platform settings, and the activity log (audit trail) |
+
+The activity log is the audit trail, so only administrators see it: the page, its
+sidebar link, the Recent Activity and Recent Errors panels on the dashboard, and
+`GET /api/v1/activity` (403 for other roles). Operators and monitors still read
+node logs in the Log Viewer.
 
 ![RBAC matrix](assets/rbac-matrix.svg)
 

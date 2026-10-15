@@ -113,7 +113,7 @@ What a credential may do is its user's role **and** its scopes:
 
 | Scope | Role needed | Allows |
 |---|---|---|
-| `read` | monitor or higher | nodes, categories, metrics, history, events, activity log, jobs, own keys |
+| `read` | monitor or higher | nodes, categories, metrics, history, events, jobs, own keys; the activity log for administrators only |
 | `write` | operator or higher | add, change, delete nodes; bulk login updates; exports |
 | `control` | operator or higher | run shell commands on nodes (also needs `API_ALLOW_COMMANDS=true` on the server) |
 | `admin` | administrator | every user's keys |
@@ -190,7 +190,7 @@ Node responses never contain the SSH password.
 | `GET /metrics/latest` | read | One current data point per node (filters as `/nodes`, plus `node_ids`) |
 | `GET /metrics/history` | read | Time series of one node: `node_id`, `from`, `to` (ISO 8601 UTC), `interval` = `raw`, `hour` or `day`; at most 10000 points |
 | `GET /events` | read | Status changes and paused or resumed logins, oldest first, with a cursor (`since_id`) |
-| `GET /activity` | read | The audit trail, newest first, paginated |
+| `GET /activity` | read | The audit trail, newest first, paginated. Administrators only (403 for other roles) |
 
 History, events and the activity log are served from the **data lake** when one
 is configured and caught up (`"source": "lake"` in the response), else from the
