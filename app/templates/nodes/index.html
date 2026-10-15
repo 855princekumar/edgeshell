@@ -698,14 +698,18 @@ document.getElementById('fleetSetup') && document.getElementById('fleetSetup')
 
 function installCapability(cap, label) {
     const btn = document.querySelector(`.cap-install[data-cap="${cap}"]`);
-    const n = btn.dataset.missing || 0;
-    if (!confirm(`Install ${label} on ${n} node(s) that are missing it?\nThis runs over SSH and can take a few minutes per node.`)) return;
+    // Nodes ticked on Node Fleet: install only on those (a test group first),
+    // otherwise on every node that is missing it.
+    const picked = (typeof selectedIds === 'function') ? selectedIds() : [];
+    const n = picked.length || btn.dataset.missing || 0;
+    const where = picked.length ? `the ${picked.length} selected node(s)` : `${n} node(s) that are missing it`;
+    if (!confirm(`Install ${label} on ${where}?\nThis runs over SSH and can take a few minutes per node.`)) return;
     btn.disabled = true;
     showToast(`Installing ${label} on ${n} node(s)...`, 'info');
     fetch('/nodes/capabilities/install', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ capability: cap })
+        body: JSON.stringify(picked.length ? { capability: cap, node_ids: picked } : { capability: cap })
     }).then(r => r.json()).then(d => {
         if (d.job_id) {                      // long fleet jobs run in the background with live progress
             esJobWindow(d.job_id);
