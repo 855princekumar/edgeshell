@@ -711,6 +711,7 @@ Dependabot keeps Python packages, the base image and Actions up to date.
 | [Troubleshooting log](docs/TROUBLESHOOTING.md) | Every production issue met so far (domain and HTTPS, Tailscale SSH, file handles, data lake, web app, CI) with cause and fix |
 | [Architecture](docs/ARCHITECTURE.md) | Components, data model, monitoring contract, hot database and data lake, API |
 | [Roles and access](docs/RBAC.md) | Roles, enforcement, lockout, sessions |
+| [Email](docs/EMAIL.md) | Verification, password resets and ticket mail; free providers (Resend, Brevo, useSend, Gmail) step by step |
 | [VPN and network](docs/VPN-NETWORK.md) | Tailscale, WireGuard, container networking |
 | [Database migration](docs/MIGRATION.md) | SQLite to MariaDB or PostgreSQL |
 | [Issue portal](docs/ISSUES.md) | Support tickets and useSend email |

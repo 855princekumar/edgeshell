@@ -232,6 +232,9 @@ never change the VPN.
 
 ### A9. Email: verification and password reset (optional, free)
 
+Full guide with free providers (Resend, Brevo, useSend, Gmail, SES), DNS
+steps, testing and troubleshooting: [EMAIL.md](EMAIL.md). In short:
+
 Any SMTP server works; no paid API is needed. With Gmail: turn on 2-step
 verification, create an app password, and add to `.env`:
 

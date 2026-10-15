@@ -59,7 +59,7 @@ authenticator app and save the 10 backup codes), your personal email (where
 password reset links go) and a new password.
 
 **Email (optional):** set `PUBLIC_URL` and the `SMTP_*` values in `.env` (any
-SMTP server: Gmail app password, AWS SES, Brevo...). Every user then confirms
+SMTP server; free options such as Resend, Brevo, useSend or Gmail are explained in [docs/EMAIL.md](https://github.com/855princekumar/edgeshell/blob/main/docs/EMAIL.md)). Every user then confirms
 their email with a link, anyone can reset their password by email (2FA stays
 on), and ticket notifications are mailed. Without them, administrators recover
 with a backup code, and other users ask an administrator.

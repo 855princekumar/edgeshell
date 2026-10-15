@@ -7,6 +7,8 @@ All notable changes are documented here. Format loosely follows Keep a Changelog
 ### Added
 - **Activity log: filter by user** (administrators): a user list on the Activity Log (everyone who appears in it, including deleted accounts and `system`), a click on any username shows only that user's entries, and `GET /api/v1/activity?user=<username>`. Indexed, so it stays quick on a long log.
 
+- **Email guide** ([docs/EMAIL.md](docs/EMAIL.md)): what EdgeShell sends, free providers compared (Resend, Brevo, useSend, Gmail, Amazon SES), DNS and key setup for each, putting the secret on the server without it appearing anywhere, testing before users depend on it, troubleshooting, and keeping credentials safe.
+
 ### Fixed
 - Startup schema upgrades also run with `mariadb://` database URLs (they were skipped; `mysql://` URLs, as in the Docker stack, were not affected).
 
