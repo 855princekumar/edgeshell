@@ -566,7 +566,8 @@ def events(args, data):
                         'next_since_id': rows[-1].id if rows else args['since_id']})
 
 
-@endpoint('GET', '/activity', 'Activity log (audit trail, administrators only)', 'read', params=PAGE,
+@endpoint('GET', '/activity', 'Activity log (audit trail, administrators only)', 'read',
+          params=PAGE + [Param('user', 'string', 'Only this user\'s entries (exact username)', max_length=64)],
           tag='Data points', description='Administrators only; other roles get 403.')
 def activity(args, data):
     from app.models import ActivityLog
@@ -574,7 +575,10 @@ def activity(args, data):
         return api_auth.api_error(403, 'forbidden', 'The activity log is for administrators only.')
     from app.services import lake
     with lake.reader() as r:
-        items, page = page_of(r.session.query(ActivityLog).order_by(ActivityLog.id.desc()), args)
+        q = r.session.query(ActivityLog)
+        if args.get('user'):
+            q = q.filter(ActivityLog.user == args['user'])
+        items, page = page_of(q.order_by(ActivityLog.id.desc()), args)
         return jsonify({'activity': [a.to_dict() for a in items], 'pagination': page, 'source': r.source})
 
 

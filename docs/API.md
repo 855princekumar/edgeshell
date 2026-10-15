@@ -190,7 +190,7 @@ Node responses never contain the SSH password.
 | `GET /metrics/latest` | read | One current data point per node (filters as `/nodes`, plus `node_ids`) |
 | `GET /metrics/history` | read | Time series of one node: `node_id`, `from`, `to` (ISO 8601 UTC), `interval` = `raw`, `hour` or `day`; at most 10000 points |
 | `GET /events` | read | Status changes and paused or resumed logins, oldest first, with a cursor (`since_id`) |
-| `GET /activity` | read | The audit trail, newest first, paginated. Administrators only (403 for other roles) |
+| `GET /activity` | read | The audit trail, newest first, paginated; `?user=<username>` for one user. Administrators only (403 for other roles) |
 
 History, events and the activity log are served from the **data lake** when one
 is configured and caught up (`"source": "lake"` in the response), else from the

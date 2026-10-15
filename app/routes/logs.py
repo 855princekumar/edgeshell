@@ -40,13 +40,19 @@ def activity():
     page          = request.args.get('page', 1, type=int)
     status_filter = request.args.get('status', '')
     node_filter   = request.args.get('node', '')
+    user_filter   = request.args.get('user', '')[:64]
     query = ActivityLog.query
     if status_filter: query = query.filter_by(status=status_filter)
     if node_filter:   query = query.filter_by(node=node_filter)
+    if user_filter:   query = query.filter_by(user=user_filter)
     logs  = query.order_by(desc(ActivityLog.timestamp)).paginate(page=page, per_page=50, error_out=False)
     nodes = Node.query.all()
-    return render_template('logs/activity.html', logs=logs, nodes=nodes,
-                           status_filter=status_filter, node_filter=node_filter)
+    # Everyone who appears in the log, including deleted accounts and 'system'
+    # (the log keeps the name used at the time). Served by the user index.
+    users = [u for (u,) in db.session.query(ActivityLog.user).filter(ActivityLog.user.isnot(None))
+             .distinct().order_by(ActivityLog.user).limit(1000)]
+    return render_template('logs/activity.html', logs=logs, nodes=nodes, users=users,
+                           status_filter=status_filter, node_filter=node_filter, user_filter=user_filter)
 
 
 @logs_bp.route('/browse', methods=['POST'])

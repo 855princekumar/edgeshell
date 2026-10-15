@@ -4,7 +4,7 @@
 <div class="page-header">
     <div>
         <div class="page-title">Activity Log</div>
-        <div class="page-subtitle">Complete audit trail of all fleet interactions</div>
+        <div class="page-subtitle">{% if user_filter %}Everything <b>{{ user_filter }}</b> did{% if logs.total %}: {{ logs.total }} entries{% endif %}{% else %}Complete audit trail of all fleet interactions{% endif %}</div>
     </div>
 </div>
 
@@ -17,6 +17,12 @@
                 <option {% if status_filter == 'success' %}selected{% endif %}>success</option>
                 <option {% if status_filter == 'failure' %}selected{% endif %}>failure</option>
                 <option {% if status_filter == 'warning' %}selected{% endif %}>warning</option>
+            </select>
+            <select name="user" class="form-control form-select" style="max-width:200px" aria-label="User">
+                <option value="">All Users</option>
+                {% for u in users %}
+                <option value="{{ u }}" {% if user_filter == u %}selected{% endif %}>{{ u }}</option>
+                {% endfor %}
             </select>
             <select name="node" class="form-control form-select" style="max-width:180px">
                 <option value="">All Nodes</option>
@@ -50,7 +56,7 @@
                 {% for log in logs.items %}
                 <tr>
                     <td class="mono text-xs">{{ log.timestamp|localtime('%Y-%m-%d %H:%M:%S') }}</td>
-                    <td class="fw-600 text-sm">{{ log.user or 'n/a' }}</td>
+                    <td class="fw-600 text-sm">{% if log.user %}<a href="{{ url_for('logs.activity', user=log.user) }}" title="Only {{ log.user }}'s activity">{{ log.user }}</a>{% else %}n/a{% endif %}</td>
                     <td class="text-sm">{{ log.node or 'n/a' }}</td>
                     <td class="fw-600 text-sm">{{ log.action }}</td>
                     <td class="mono text-xs" style="max-width:240px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap">
@@ -76,12 +82,12 @@
         <div class="text-sm text-muted">Page {{ logs.page }} of {{ logs.pages }} · {{ logs.total }} entries</div>
         <div class="flex gap-2">
             {% if logs.has_prev %}
-            <a href="{{ url_for('logs.activity', page=logs.prev_num, status=status_filter, node=node_filter) }}" class="btn btn-outline btn-sm">
+            <a href="{{ url_for('logs.activity', page=logs.prev_num, status=status_filter, node=node_filter, user=user_filter) }}" class="btn btn-outline btn-sm">
                 <i class="bi bi-chevron-left"></i> Prev
             </a>
             {% endif %}
             {% if logs.has_next %}
-            <a href="{{ url_for('logs.activity', page=logs.next_num, status=status_filter, node=node_filter) }}" class="btn btn-primary btn-sm">
+            <a href="{{ url_for('logs.activity', page=logs.next_num, status=status_filter, node=node_filter, user=user_filter) }}" class="btn btn-primary btn-sm">
                 Next <i class="bi bi-chevron-right"></i>
             </a>
             {% endif %}
