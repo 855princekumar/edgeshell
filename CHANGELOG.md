@@ -2,7 +2,7 @@
 
 All notable changes are documented here. Format loosely follows Keep a Changelog.
 
-## [Unreleased]
+## [1.8.2] - 2026-10-15
 
 ### Added
 - **Verified email for every account** when outgoing mail is set up: after 2FA at the first sign-in, a link is sent to the address and the app opens once it is confirmed. A new address is used only after its link is opened (older links stop working). Accounts from before confirm their address at the next sign-in. Without mail, nothing changes.
@@ -67,8 +67,6 @@ Fixes from an end-to-end review before release:
 
 ### Upgrade
 - Download `lake-init.sh` next to `compose.yaml` and the new `compose.yaml`, then `docker compose up -d`. The hot database restarts once to turn on its binary log; `lake-init` copies it to the lake and starts replication.
-
-## [Unreleased]
 
 ### Documentation
 - EC2 guide: one canonical address (why a domain added later shows "Not secure" and jumps to the IP while the server is still set to the IP), and how to move from the IP to a domain without downtime (certificate first, then switch; the IP keeps redirecting). Troubleshooting entry added.

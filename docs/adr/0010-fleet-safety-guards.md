@@ -1,7 +1,7 @@
 # 0010. Fleet safety guards: the control plane must not take the fleet down
 
 ## Status
-Accepted (1.7.1 to 1.8.1).
+Accepted (1.7.1 to 1.8.2).
 
 ## Context
 EdgeShell reaches every node with SSH and can run commands on all of them at
