@@ -23,7 +23,11 @@ COPY requirements.txt /tmp/requirements.txt
 ARG DEPS_REFRESH=none
 RUN echo "dependency refresh: ${DEPS_REFRESH}" \
  && pip install --upgrade pip setuptools wheel \
- && pip install -r /tmp/requirements.txt
+ && pip install -r /tmp/requirements.txt \
+ && pip uninstall -y pip wheel
+# pip is removed here, in the build stage, so no layer of the final image ever
+# contains it: nothing uses it at run time, and it bundles its own copies of
+# urllib3, msgpack and setuptools that scanners report.
 
 # ── Runtime ──────────────────────────────────────────────────────────────
 FROM python:${PYTHON_VERSION}-slim-bookworm

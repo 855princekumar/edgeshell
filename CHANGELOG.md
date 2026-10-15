@@ -2,6 +2,11 @@
 
 All notable changes are documented here. Format loosely follows Keep a Changelog.
 
+## [Unreleased]
+
+### Security
+- The runtime image has no pip: nothing uses it at run time, and it bundled its own older copies of urllib3, msgpack and setuptools that scanners reported (the app's own packages were already current). CI checks that it stays out.
+
 ## [1.8.4] - 2026-10-15
 
 ### Security

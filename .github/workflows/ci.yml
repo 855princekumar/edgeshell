@@ -253,6 +253,8 @@ jobs:
         run: |
           set -e
           test "$(docker run --rm --entrypoint id edgeshell:audit -u)" = 10001
+          # No package installer in the runtime image (nothing may pip install at run time)
+          ! docker run --rm --entrypoint python edgeshell:audit -c "import pip" 2>/dev/null
           docker run --rm --entrypoint sh edgeshell:audit -c '
             set -e
             test ! -e /app/.env
