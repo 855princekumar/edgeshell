@@ -2,6 +2,19 @@
 
 All notable changes are documented here. Format loosely follows Keep a Changelog.
 
+## [1.9.1] - 2026-10-16
+
+### Fixed
+- **Fleet Setup no longer fails with "Unexpected token '<'" on large fleets.** The scan checked every node over SSH inside one request and ran past the proxy timeout, which returned an HTML error page.
+  - Fleet Setup now opens instantly from the stored results.
+  - Each item (Docker, Node-RED, OpenRemoteGUI, heartbeat agent) has its own **Check**, a background job (16 nodes at a time) with progress on its card.
+- The heartbeat agent card in Fleet Setup now shows its count; it stayed empty before.
+
+### Added
+- **Install on selected** in the bulk-action bar (administrators): tick nodes, pick Heartbeat agent, OpenRemoteGUI, Node-RED or Docker, and the install starts at once in the background (8 at a time, live progress); no fleet scan needed.
+- **Heartbeat** button on Node Fleet (operators and administrators): fresh heartbeat state from SenseHive in about a second, no SSH.
+- Every capability install runs as a background job, so a page never waits for the fleet.
+
 ## [1.9.0] - 2026-10-16
 
 ### Added

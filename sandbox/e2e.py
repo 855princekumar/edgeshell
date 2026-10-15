@@ -323,8 +323,16 @@ def main():
             and isinstance((v.get('metrics') or {}).get('cpu_percent'), (int, float))
             and isinstance((v.get('metrics') or {}).get('mem_percent'), (int, float))]
     check('metrics collected from every node', len(good) == EXPECTED_NODES, f'{len(good)}/{len(res)}')
-    status, r = admin.post_json('/nodes/capabilities/scan', {})
-    rows = r.get('nodes', [])
+    status, r = admin.post_json('/nodes/capabilities/scan', {'capabilities': ['nodered']})
+    check('a capability check runs as a background job', bool(r.get('job_id')), r)
+    t0 = time.time()
+    while r.get('job_id') and time.time() - t0 < 180:
+        st, _, b = admin.request('GET', f"/nodes/jobs/{r['job_id']}")
+        if st == 200 and json.loads(b).get('state') in ('done', 'error'):
+            break
+        time.sleep(2)
+    st, _, b = admin.request('GET', '/nodes/capabilities/summary')
+    rows = json.loads(b).get('nodes', []) if st == 200 else []
     check('Node-RED detected on every node', rows and all(x.get('nodered') for x in rows),
           [(x['name'], x.get('nodered')) for x in rows])
 

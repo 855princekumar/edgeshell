@@ -21,6 +21,10 @@
             <i class="bi bi-display"></i> Check OpenRemoteGUI
             <span class="node-tag" id="orguiCount" style="display:none"></span>
         </button>
+        <button class="btn btn-outline" id="hbRefreshBtn" onclick="refreshHeartbeat()" title="Heartbeat state from SenseHive now (no SSH)">
+            <i class="bi bi-heart-pulse"></i> Heartbeat
+            <span class="node-tag" id="hbCount" style="display:none"></span>
+        </button>
         {% endif %}
         {% if current_user.is_admin() %}
         <button class="btn btn-outline" type="button" data-bs-toggle="offcanvas" data-bs-target="#fleetSetup" onclick="scanCapabilities()">
@@ -70,6 +74,17 @@
         <span class="fw-semibold" id="bulkCount">0 selected</span>
         <span class="text-xs text-muted" id="bulkHint">only nodes shown by the filters</span>
         <div style="display:flex;gap:8px;flex-wrap:wrap;margin-left:auto">
+            {% if current_user.is_admin() %}
+            <span style="display:flex;gap:4px;align-items:center">
+                <select class="form-select form-select-sm" id="bulkInstallSel" style="width:auto" aria-label="What to install">
+                    <option value="heartbeat">Heartbeat agent</option>
+                    <option value="orgui">OpenRemoteGUI</option>
+                    <option value="nodered">Node-RED</option>
+                    <option value="docker">Docker</option>
+                </select>
+                <button type="button" class="btn btn-sm btn-primary" id="bulkInstallBtn"><i class="bi bi-cloud-download"></i> Install on selected</button>
+            </span>
+            {% endif %}
             <button type="button" class="btn btn-sm btn-outline" id="bulkLoginBtn"><i class="bi bi-key"></i> Edit login</button>
             <button type="button" class="btn btn-sm btn-danger" id="bulkDeleteBtn"><i class="bi bi-trash"></i> Delete</button>
             <button type="button" class="btn btn-sm btn-outline" id="bulkClearBtn">Clear</button>
@@ -325,13 +340,14 @@
   <div class="offcanvas-header border-bottom">
     <h5 class="offcanvas-title"><i class="bi bi-boxes me-2"></i>Fleet Setup</h5>
     <div class="flex gap-2" style="margin-left:auto">
-      <button class="btn btn-outline btn-xs" onclick="scanCapabilities()"><i class="bi bi-arrow-repeat"></i> Rescan</button>
+      <button class="btn btn-outline btn-xs" onclick="checkCapability(null)" title="Check everything on every online node (background)"><i class="bi bi-arrow-repeat"></i> Check all</button>
       <button type="button" class="btn-close" data-bs-dismiss="offcanvas"></button>
     </div>
   </div>
   <div class="offcanvas-body">
     <p class="text-muted text-sm">Which nodes have Docker, Node-RED, OpenRemoteGUI and the MQTT heartbeat agent. Install on the ones that are missing, in one click. Unreachable nodes are reported, not skipped silently.</p>
-    <div id="capLoading" class="text-center text-muted py-4"><div class="spinner-border spinner-border-sm"></div> Scanning fleet...</div>
+    <div id="capLoading" class="text-center text-muted py-4"><div class="spinner-border spinner-border-sm"></div> Loading...</div>
+    <div class="text-xs text-muted" id="capChecked" style="margin-bottom:8px"></div>
     <div id="capBody" style="display:none">
       {% for cap, label, icon in [('docker','Docker','bi-box-seam'),('nodered','Node-RED','bi-diagram-3'),('orgui','OpenRemoteGUI','bi-display'),('heartbeat','Heartbeat agent','bi-heart-pulse')] %}
       <div class="card mb-3" data-cap="{{ cap }}">
@@ -341,7 +357,11 @@
             <div class="text-sm"><span class="cap-count" data-cap="{{ cap }}">0/0</span></div>
           </div>
           <div class="cap-missing text-xs text-muted" data-cap="{{ cap }}" style="margin-top:6px"></div>
+          <div class="cap-progress text-xs" data-cap="{{ cap }}" style="margin-top:6px;display:none"></div>
           <div class="flex gap-2" style="margin-top:10px">
+            <button class="btn btn-outline btn-xs cap-check" data-cap="{{ cap }}" onclick="checkCapability('{{ cap }}')">
+              <i class="bi bi-search"></i> Check
+            </button>
             <button class="btn btn-primary btn-xs cap-install" data-cap="{{ cap }}" onclick="installCapability('{{ cap }}','{{ label }}')" disabled>
               <i class="bi bi-cloud-download"></i> Install on missing
             </button>
@@ -431,6 +451,36 @@ function namesOf(ids) {
 function postJSON(url, body) {
     return apiPost(url, body).then(r => r.json().then(d => ({ok: r.ok && d.success !== false, d: d})));
 }
+// Install on the ticked nodes right away: no fleet scan (administrators).
+function bulkInstall() {
+    const ids = selectedIds();
+    const sel = document.getElementById('bulkInstallSel');
+    const label = sel.options[sel.selectedIndex].text;
+    if (!ids.length) { showToast('Select nodes first.', 'warning'); return; }
+    if (!confirm(`Install ${label} on the ${ids.length} selected node(s)?\nIt runs in the background, 8 nodes at a time, with live progress.`)) return;
+    fetch('/nodes/capabilities/install', {method: 'POST', headers: {'Content-Type': 'application/json'},
+                                          body: JSON.stringify({capability: sel.value, node_ids: ids})})
+        .then(r => r.json()).then(d => {
+            if (d.job_id) esJobWindow(d.job_id);
+            else showToast(d.message || 'Could not start the install.', d.success ? 'info' : 'danger');
+        }).catch(e => showToast('Install error: ' + e.message, 'danger'));
+}
+
+// Heartbeat state from SenseHive, now (no SSH: about a second).
+function refreshHeartbeat() {
+    const btn = document.getElementById('hbRefreshBtn');
+    btn.disabled = true;
+    fetch('/nodes/heartbeat/refresh', {method: 'POST'}).then(r => r.json()).then(d => {
+        btn.disabled = false;
+        if (!d.success) { showToast(d.message || 'Heartbeat refresh failed.', 'warning'); return; }
+        const c = d.counts, tag = document.getElementById('hbCount');
+        tag.textContent = `${c.online}/${d.total}`;
+        tag.style.display = '';
+        showToast(`Heartbeat: ${c.online} online, ${c.offline} LWT offline, ${c.silent} silent, ${c.no_agent} without the agent`, 'info');
+        setTimeout(() => location.reload(), 1200);         // cards show the new badges
+    }).catch(e => { btn.disabled = false; showToast('Heartbeat refresh error: ' + e.message, 'danger'); });
+}
+
 function bulkDelete() {
     const ids = selectedIds(); if (!ids.length) return;
     const d = esDialog('Delete ' + ids.length + ' node(s)?',
@@ -477,6 +527,7 @@ function bulkLogin() {
 document.addEventListener('DOMContentLoaded', () => {
     const on = (id, fn) => { const b = document.getElementById(id); if (b) b.addEventListener('click', fn); };
     on('bulkDeleteBtn', bulkDelete);
+    on('bulkInstallBtn', bulkInstall);
     on('bulkLoginBtn', bulkLogin);
     on('bulkClearBtn', () => { document.getElementById('selectAll').checked = false; selectVisibleNodes(false); });
     on('binRestoreAll', () => {
@@ -643,30 +694,57 @@ function installFleetOrgui() {
 }
 
 // ── Fleet Setup: capability scan + install ───────────────────────────────────
-function scanCapabilities() {
-    document.getElementById('capLoading').style.display = '';
-    document.getElementById('capBody').style.display = 'none';
-    fetch('/nodes/capabilities/scan', { method: 'POST' })
+// Fleet Setup opens from the stored results (instant, no SSH). Each card's
+// Check button re-checks only that item on every online node in a background
+// job, 16 at a time; the card shows the progress, then the new numbers.
+const CAPS = ['docker', 'nodered', 'orgui', 'heartbeat'];
+function renderCapSummary(d) {
+    document.getElementById('capLoading').style.display = 'none';
+    document.getElementById('capBody').style.display = '';
+    document.getElementById('capChecked').textContent = d.checked_at
+        ? 'Last checked ' + new Date(d.checked_at).toLocaleString() : 'Not checked yet: use Check on a card.';
+    CAPS.forEach(cap => {
+        const c = d.counts[cap];
+        document.querySelector(`.cap-count[data-cap="${cap}"]`).textContent = `${c.installed}/${d.total} installed`;
+        const missing = d.nodes.filter(n => n[cap] === false).map(n => n.name);
+        const unknown = d.nodes.filter(n => n[cap] === null || n[cap] === undefined).map(n => n.name);
+        const box = document.querySelector(`.cap-missing[data-cap="${cap}"]`);
+        let txt = missing.length ? `Missing (${missing.length}): ` + missing.slice(0, 40).join(', ') + (missing.length > 40 ? ', ...' : '')
+                                 : 'Every checked node has it.';
+        if (unknown.length) txt += ` · Not checked or unreachable: ${unknown.length}`;
+        box.textContent = txt;
+        const btn = document.querySelector(`.cap-install[data-cap="${cap}"]`);
+        btn.disabled = missing.length === 0 && cap !== 'heartbeat';
+        btn.dataset.missing = missing.length;
+    });
+}
+function loadCapSummary() {
+    fetch('/nodes/capabilities/summary').then(r => r.json()).then(renderCapSummary)
+        .catch(e => { document.getElementById('capLoading').textContent = 'Could not load: ' + e.message; });
+}
+function scanCapabilities() { loadCapSummary(); }          // opening the panel: no scan
+function checkCapability(cap) {
+    const caps = cap ? [cap] : CAPS;
+    const prog = caps.map(c => document.querySelector(`.cap-progress[data-cap="${c}"]`));
+    caps.forEach(c => { const b = document.querySelector(`.cap-check[data-cap="${c}"]`); if (b) b.disabled = true; });
+    const show = t => prog.forEach(p => { p.style.display = ''; p.textContent = t; });
+    show('Starting...');
+    fetch('/nodes/capabilities/scan', {method: 'POST', headers: {'Content-Type': 'application/json'},
+                                       body: JSON.stringify({capabilities: caps})})
         .then(r => r.json()).then(d => {
-            document.getElementById('capLoading').style.display = 'none';
-            document.getElementById('capBody').style.display = '';
-            ['docker', 'nodered', 'orgui'].forEach(cap => {
-                const c = d.counts[cap];
-                document.querySelector(`.cap-count[data-cap="${cap}"]`).textContent =
-                    `${c.installed}/${d.total} installed`;
-                const missing = d.nodes.filter(n => n[cap] === false).map(n => n.name);
-                const unknown = d.nodes.filter(n => n[cap] === null).map(n => n.name);
-                const box = document.querySelector(`.cap-missing[data-cap="${cap}"]`);
-                let txt = missing.length ? 'Missing: ' + missing.join(', ') : 'All reachable nodes have it.';
-                if (unknown.length) txt += ' · Unreachable: ' + unknown.join(', ');
-                box.textContent = txt;
-                const btn = document.querySelector(`.cap-install[data-cap="${cap}"]`);
-                btn.disabled = missing.length === 0;
-                btn.dataset.missing = missing.length;
-            });
-        }).catch(e => {
-            document.getElementById('capLoading').textContent = 'Scan failed: ' + e.message;
-        });
+            if (!d.job_id) { show(d.message || 'Nothing to check.'); finish(); return; }
+            const poll = () => fetch('/nodes/jobs/' + d.job_id).then(r => r.json()).then(j => {
+                show(`Checking ${j.done}/${j.total} node(s)...`);
+                if (j.state === 'running') return setTimeout(poll, 2000);
+                show(j.message || 'Done.');
+                finish();
+            }).catch(() => setTimeout(poll, 4000));
+            poll();
+        }).catch(e => { show('Check failed: ' + e.message); finish(); });
+    function finish() {
+        caps.forEach(c => { const b = document.querySelector(`.cap-check[data-cap="${c}"]`); if (b) b.disabled = false; });
+        loadCapSummary();
+    }
 }
 
 // ── Heartbeat agent settings (config.yaml, hot reloaded on the nodes) ───────
