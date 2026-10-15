@@ -3,34 +3,53 @@
 {% block content %}
 <div class="page-header">
     <div>
-        <div class="page-title">{{ 'Add your personal email' if required else 'Account email' }}</div>
-        <div class="page-subtitle">
-          {% if current_user.is_admin() %}Password reset links for administrators are sent only to this address.{% else %}Used to identify your account.{% endif %}
-        </div>
+        <div class="page-title">{{ 'Add and verify your email' if required else 'Account email' }}</div>
+        <div class="page-subtitle">Password reset links for your account are sent only to this address.</div>
     </div>
 </div>
-<div class="card" style="max-width:520px">
+<div class="card" style="max-width:560px">
     <div class="card-body">
-        {% if required %}
+        {% if required and mail_ready %}
+        <div class="alert alert-warning small">Every account needs an email address that works. We send a link to it;
+            open the link to confirm the address and continue.</div>
+        {% elif required %}
         <div class="alert alert-warning small">Administrators must keep a personal email they can read. If you forget your
             password, a reset link goes there; your backup codes are the other way back in.</div>
         {% endif %}
-        {% if current_user.is_admin() and not mail_ready %}
-        <div class="alert alert-info small">Outgoing email is not configured on this server yet (SMTP_* and PUBLIC_URL in
-            .env), so reset links cannot be sent until it is. Keep your backup codes safe.</div>
+        {% if not mail_ready and current_user.is_admin() %}
+        <div class="alert alert-info small">Outgoing email is not set up on this server yet (SMTP or useSend, and PUBLIC_URL),
+            so addresses cannot be verified and reset links cannot be sent. Keep your backup codes safe.</div>
         {% endif %}
+
+        <div class="small mb-3">
+          Current address: <b>{{ current_user.email if current_user.has_real_email() else 'none' }}</b>
+          {% if current_user.email_verified() %}<span class="status-badge status-online ms-1">verified</span>
+          {% elif current_user.has_real_email() %}<span class="status-badge status-offline ms-1">not verified</span>{% endif %}
+        </div>
+
+        {% if mail_ready and (current_user.email_pending or (current_user.has_real_email() and not current_user.email_verified())) %}
+        <div class="alert alert-light border small">
+          {% if current_user.email_pending %}A confirmation link was sent to <b>{{ current_user.email_pending }}</b>
+          (valid {{ verify_hours }} hours). Open it on any device.{% else %}Confirm <b>{{ current_user.email }}</b> by opening a link we send to it.{% endif %}
+          <form method="POST" action="{{ url_for('account.email_resend') }}" class="mt-2">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button class="btn btn-outline btn-sm">{{ 'Send the link again' if current_user.email_pending else 'Send the link' }}</button>
+          </form>
+        </div>
+        {% endif %}
+
         <form method="POST">
             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <div class="form-group">
-                <label class="form-label">Email</label>
-                <input type="email" name="email" class="form-control" required
-                       value="{{ '' if required else current_user.email }}" autocomplete="email">
+                <label class="form-label">{{ 'New email' if current_user.has_real_email() else 'Email' }}</label>
+                <input type="email" name="email" class="form-control" required autocomplete="email"
+                       value="{{ '' if not current_user.has_real_email() else (current_user.email_pending or current_user.email) }}">
             </div>
             <div class="form-group">
                 <label class="form-label">Current password</label>
                 <input type="password" name="password" class="form-control" required autocomplete="current-password">
             </div>
-            <button type="submit" class="btn btn-primary">Save</button>
+            <button type="submit" class="btn btn-primary">{{ 'Send confirmation link' if mail_ready else 'Save' }}</button>
         </form>
     </div>
 </div>

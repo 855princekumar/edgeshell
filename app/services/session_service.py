@@ -38,7 +38,8 @@ SESSION_EXEMPT_ENDPOINTS = {'static', 'health.healthz'}
 ACTIVE_WRITE_EVERY = timedelta(seconds=20)  # throttle interaction writes
 # Pages a signed-in user may still open while a required step is pending.
 GATE_OPEN_ENDPOINTS = {'auth.logout', 'auth.change_password', 'auth.session_status',
-                       'auth.session_activity', 'account.email', 'static',
+                       'auth.session_activity', 'account.email', 'account.email_verify',
+                       'account.email_resend', 'static',
                        'health.healthz'}
 
 REVOKE_MESSAGES = {
@@ -335,10 +336,13 @@ def register_single_session(app):
                 db.session.rollback()
 
         # Required steps before the rest of the app opens.
-        if request.endpoint not in GATE_OPEN_ENDPOINTS:
+        # An administrator stuck at email verification can still reach the mail
+        # settings, or a broken mail setup would lock everyone out for good.
+        admin_mail_fix = request.endpoint == 'issues.email_settings' and current_user.is_admin()
+        if request.endpoint not in GATE_OPEN_ENDPOINTS and not admin_mail_fix:
             if current_user.needs_recovery_email():
-                return _gate('account.email', 'Administrators must add a personal '
-                             'email address for password reset links.')
+                return _gate('account.email', 'Add and verify your email address before '
+                             'continuing: password reset links are sent there.')
             if current_user.must_change_password:
                 return _gate('auth.change_password',
                              'Please set a new password before continuing.')

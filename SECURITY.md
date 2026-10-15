@@ -44,9 +44,14 @@ You will be credited in the release notes unless you ask not to be.
   down requires password and 2FA.
 - nginx is the only container with published ports; the app, database and
   privacyIDEA sit on internal Docker networks.
-- Password reset links are single-use, expire in 30 minutes and are built from
-  `PUBLIC_URL`, never from the request's Host header. An admin reset of a
-  user's password also resets that user's 2FA.
+- Password reset links are single-use, expire in 30 minutes, go only to an
+  address the user has verified, and are built from `PUBLIC_URL`, never from
+  the request's Host header. 2FA stays on after a reset by email, so a mailbox
+  alone never opens an account. An admin reset of a user's password also
+  resets that user's 2FA.
+- With mail set up, every account verifies its email by a signed link (24
+  hours) before the app opens; a new address replaces the old one only once
+  its link is opened.
 - Sessions are tracked server-side: one device per user by default (up to 4,
   set by an administrator); logout, password change, password or 2FA reset and
   disabling a user revoke sessions immediately. Idle sessions are asked "still
@@ -127,5 +132,5 @@ You will be credited in the release notes unless you ask not to be.
 - [ ] Prefer SSH keys on nodes where possible; treat stored passwords as sensitive.
 - [ ] Store your backup codes privately, and back up `.env` and `data/` (including `data/privacyidea`).
 - [ ] Add a second administrator (up to 3) so the platform is never locked out.
-- [ ] Set `PUBLIC_URL` and `SMTP_*` so administrators can receive reset links.
+- [ ] Set `PUBLIC_URL` and `SMTP_*` so users verify their email and can receive reset links (test delivery first).
 - [ ] Set `SIGNUP_ENABLED=false` if accounts should only be created by administrators.

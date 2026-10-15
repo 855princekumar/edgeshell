@@ -58,10 +58,11 @@ anything else you set up two-factor authentication (scan the QR code with any
 authenticator app and save the 10 backup codes), your personal email (where
 password reset links go) and a new password.
 
-**Password reset emails (optional):** set `PUBLIC_URL` and the `SMTP_*` values
-in `.env` (any SMTP server: Gmail app password, AWS SES, Brevo...) so
-administrators can get a reset link. Without them, administrators recover with
-a backup code, and other users ask an administrator.
+**Email (optional):** set `PUBLIC_URL` and the `SMTP_*` values in `.env` (any
+SMTP server: Gmail app password, AWS SES, Brevo...). Every user then confirms
+their email with a link, anyone can reset their password by email (2FA stays
+on), and ticket notifications are mailed. Without them, administrators recover
+with a backup code, and other users ask an administrator.
 
 **Adding a domain (HTTPS):** point its DNS `A` record at the server, open port
 443, then set in `.env`:
@@ -140,7 +141,7 @@ edgeshell/
 | `CREDENTIAL_KEY` | yes | | Encrypts node passwords and API keys |
 | `DB_PASSWORD`, `DB_ROOT_PASSWORD` | yes | | MariaDB passwords (hex, so they are URL-safe) |
 | `MFA_ADMIN_PASSWORD`, `MFA_PEPPER`, `MFA_DB_PASSWORD` | yes | | privacyIDEA service account, password pepper and database user |
-| `PUBLIC_URL` + `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`, `SMTP_FROM`, `SMTP_SECURITY` | no | | Emailed reset links for administrators. `PUBLIC_URL` is the address users open, e.g. `https://fleet.yourdomain.com` |
+| `PUBLIC_URL` + `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`, `SMTP_FROM`, `SMTP_SECURITY` | no | | Email verification, reset links for every user, ticket mail. `PUBLIC_URL` is the address users open, e.g. `https://fleet.yourdomain.com` |
 | `COLLECTOR_INTERVAL` / `COLLECTOR_WORKERS` | no | `30` / `48` | Seconds between fleet metric passes, and nodes polled at once |
 | `IDLE_MINUTES` / `IDLE_WARNING_MINUTES` | no | `10` / `5` | "Still there?" prompt after this much inactivity, then sign-out (`0` turns it off) |
 | `SIGNUP_ENABLED` | no | `true` | Let people request an account (an admin approves it with a role) |

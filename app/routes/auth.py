@@ -389,8 +389,8 @@ def reset_link(user):
     return f"{base}{url_for('auth.reset_with_link', token=token)}"
 
 
-FORGOT_DONE = ('If that account exists, the request has been recorded. Administrators '
-               'receive a reset link by email; other accounts are reset by an administrator.')
+FORGOT_DONE = ('If that account exists, a reset link was sent to its verified email address. '
+               'Accounts without one get a reset from an administrator, who has been told.')
 
 
 @auth_bp.route('/forgot', methods=['GET', 'POST'])
@@ -402,23 +402,27 @@ def forgot():
         username = request.form.get('username', '').strip()
         user = User.query.filter_by(username=username).first()
         if user and user.is_active and not user.is_pending():
-            if user.is_admin():
-                if mail_ready and not user.needs_recovery_email():
-                    minutes = current_app.config.get('RESET_LINK_MINUTES', 30)
-                    ok, detail = send_account_email(
-                        user.email, 'EdgeShell password reset',
-                        f'A password reset was requested for the EdgeShell administrator '
-                        f'"{user.username}" from {request.remote_addr}.\n\n'
-                        f'Open this link within {minutes} minutes to choose a new password:\n'
-                        f'{reset_link(user)}\n\n'
-                        'Two-factor authentication stays on. If you did not ask for this, '
-                        'ignore this email; your password has not changed.\n')
-                    log_activity(f'Password reset link requested: {user.username}',
-                                 response=detail, status='success' if ok else 'failure')
-                else:
-                    log_activity(f'Password reset link requested: {user.username}',
-                                 response='mail not configured', status='warning')
-            elif not PasswordResetRequest.query.filter_by(user_id=user.id, status='open').first():
+            # Every role: a link to the verified address. 2FA stays on, so the
+            # mailbox alone is never enough to get in.
+            sent = False
+            if mail_ready and user.email_verified():
+                minutes = current_app.config.get('RESET_LINK_MINUTES', 30)
+                ok, detail = send_account_email(
+                    user.email, 'EdgeShell password reset',
+                    f'A password reset was requested for the EdgeShell account '
+                    f'"{user.username}" from {request.remote_addr}.\n\n'
+                    f'Open this link within {minutes} minutes to choose a new password:\n'
+                    f'{reset_link(user)}\n\n'
+                    'Two-factor authentication stays on. If you did not ask for this, '
+                    'ignore this email; your password has not changed.\n')
+                log_activity(f'Password reset link requested: {user.username}',
+                             response=detail, status='success' if ok else 'failure')
+                sent = ok
+            elif user.is_admin():
+                log_activity(f'Password reset link requested: {user.username}',
+                             response='mail not configured or email not verified', status='warning')
+            if not sent and not user.is_admin() and \
+                    not PasswordResetRequest.query.filter_by(user_id=user.id, status='open').first():
                 db.session.add(PasswordResetRequest(user_id=user.id,
                                                     ip=(request.remote_addr or '')[:45]))
                 db.session.commit()
@@ -439,7 +443,7 @@ def reset_with_link(token):
     except (SignatureExpired, BadSignature):
         data = None
     user = db.session.get(User, data.get('u')) if isinstance(data, dict) else None
-    if not user or not user.is_admin() or not user.is_active \
+    if not user or not user.is_active or not user.email_verified() \
             or data.get('p') != _pw_fingerprint(user):
         flash('That reset link is invalid, already used or expired. Request a new one.', 'danger')
         return redirect(url_for('auth.forgot'))
@@ -507,11 +511,11 @@ def _apply_self_reset(user, new_password, how):
 
 def _notify_admin_reset(user, how):
     from app.services.email_service import account_mail_available, send_account_email
-    if account_mail_available() and not user.needs_recovery_email():
+    if account_mail_available() and user.email_verified():
         send_account_email(user.email, 'EdgeShell password changed',
-                           f'The password for EdgeShell administrator "{user.username}" was '
+                           f'The password for EdgeShell account "{user.username}" was '
                            f'changed using a {how} from {request.remote_addr}. If this was not '
-                           'you, sign in with a backup code and change it again now.\n')
+                           'you, tell an administrator now.\n')
 
 
 # ---------------------------------------------------------------- sign-up
