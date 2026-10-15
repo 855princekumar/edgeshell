@@ -16,7 +16,9 @@ from app.services.session_service import (close_session, device_label,
 
 account_bp = Blueprint('account', __name__, url_prefix='/account')
 
-EMAIL_RE = r'^[^@\s]+@[^@\s]+\.[^@\s]+$'
+# Unambiguous (dots only between domain labels) so matching stays linear;
+# input is also capped at the column size before it is matched.
+EMAIL_RE = r'^[^@\s]+@[^@\s.]+(?:\.[^@\s.]+)+$'
 
 
 def _confirm_identity(require_code=True):
@@ -273,7 +275,7 @@ def email():
     required = current_user.needs_recovery_email()
     if request.method == 'POST':
         new = request.form.get('email', '').strip().lower()
-        if not re.match(EMAIL_RE, new) or new.endswith('.local') or new.endswith('@example.com'):
+        if len(new) > 120 or not re.match(EMAIL_RE, new) or new.endswith('.local') or new.endswith('@example.com'):
             flash('Enter a real email address you can read.', 'danger')
         elif not current_user.check_password(request.form.get('password', '')):
             flash('Your password was not correct.', 'danger')

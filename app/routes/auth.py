@@ -535,7 +535,7 @@ def signup():
         problem = _password_problem(password, request.form.get('confirm_password', ''))
         if not USERNAME_RE.match(form['username']):
             flash('Usernames are 3 to 64 letters, digits, dots, dashes or underscores.', 'danger')
-        elif not re.match(r'^[^@\s]+@[^@\s]+\.[^@\s]+$', form['email']):
+        elif len(form['email']) > 120 or not re.match(r'^[^@\s]+@[^@\s.]+(?:\.[^@\s.]+)+$', form['email']):
             flash('Enter a valid email address.', 'danger')
         elif problem:
             flash(problem, 'danger')
