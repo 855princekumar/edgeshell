@@ -22,13 +22,15 @@
             <span class="node-tag" id="orguiCount" style="display:none"></span>
         </button>
         {% endif %}
-        {% if current_user.can_execute() %}
+        {% if current_user.is_admin() %}
         <button class="btn btn-outline" type="button" data-bs-toggle="offcanvas" data-bs-target="#fleetSetup" onclick="scanCapabilities()">
             <i class="bi bi-boxes"></i> Fleet Setup
         </button>
         <button class="btn btn-outline" id="orguiInstallAllBtn" onclick="installFleetOrgui()">
             <i class="bi bi-cloud-download"></i> Install on Fleet
         </button>
+        {% endif %}
+        {% if current_user.can_execute() %}
         <a href="{{ url_for('nodes.bulk_import') }}" class="btn btn-outline">
             <i class="bi bi-upload"></i> Import CSV
         </a>
@@ -316,8 +318,8 @@
   </div>
 </div>
 
-<!-- Fleet Setup: capability scan + install (operator+) -->
-{% if current_user.can_execute() %}
+<!-- Fleet Setup: capability scan + install (administrators only) -->
+{% if current_user.is_admin() %}
 <div class="offcanvas offcanvas-end" tabindex="-1" id="fleetSetup" style="width:460px">
   <div class="offcanvas-header border-bottom">
     <h5 class="offcanvas-title"><i class="bi bi-boxes me-2"></i>Fleet Setup</h5>
@@ -553,6 +555,7 @@ function restartSelected() {
 }
 
 // ── OpenRemoteGUI ────────────────────────────────────────────────────────────
+const CAN_INSTALL = {{ 'true' if current_user.is_admin() else 'false' }};   // installs: administrators only
 function openRemoteGui(id) {
     const btn = document.getElementById('orgui-' + id);
     const ip = btn.dataset.ip, port = btn.dataset.port;
@@ -565,6 +568,8 @@ function openRemoteGui(id) {
             if (d.installed) {
                 btn.dataset.installed = 'yes';
                 window.open(d.url, '_blank');
+            } else if (!CAN_INSTALL) {
+                showToast(`OpenRemoteGUI is not running on ${ip}. Installing software on nodes is for administrators: ask one to install it.`, 'warning');
             } else {
                 const why = d.signal === 'STOPPED' ? 'is installed but not running'
                           : d.signal === 'PORT_OTHER' ? 'is not installed (another program uses its port)'

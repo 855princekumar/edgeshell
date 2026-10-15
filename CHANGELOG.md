@@ -7,6 +7,7 @@ All notable changes are documented here. Format loosely follows Keep a Changelog
 ### Changed
 - **The activity log is for administrators only**: the page, its sidebar link, the dashboard's Recent Activity and Recent Errors panels, and `GET /api/v1/activity` (403) are no longer available to operators and monitors. Node logs in the Log Viewer are unchanged.
 - The login page's username field no longer suggests an account name.
+- **Installing software on nodes is for administrators only**: Fleet Setup, Install on Fleet and the OpenRemoteGUI install from a node card. Operators see the same as monitors there; they can still open OpenRemoteGUI where it already runs.
 - **API page in the sidebar** (Intelligence, API) for every role: your sessions and service keys, what your role allows on this server, the API address, a quick start, and links to the OpenAPI spec and guide (administrators also get a link to Administration, API Access). It replaces the API section on My account.
 
 ## [1.8.1] - 2026-10-15

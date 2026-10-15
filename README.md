@@ -566,7 +566,7 @@ sequenceDiagram
 |---|---|
 | `monitor` | View dashboards, monitoring, and node logs. Strictly read-only |
 | `operator` | Everything a monitor can, plus node management, terminal, remote desktop, file deploy, bulk import |
-| `administrator` | Everything an operator can, plus users, VPN, email, platform settings, and the activity log (audit trail, administrators only) |
+| `administrator` | Everything an operator can, plus users, VPN, email, platform settings, the activity log (audit trail), and installing software on nodes (Fleet Setup, OpenRemoteGUI) |
 
 Details: [docs/RBAC.md](docs/RBAC.md).
 

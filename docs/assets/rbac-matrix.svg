@@ -1,5 +1,5 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 394" font-family="Segoe UI,Roboto,Arial,sans-serif">
-  <rect width="720" height="394" fill="#f8fafc"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 428" font-family="Segoe UI,Roboto,Arial,sans-serif">
+  <rect width="720" height="428" fill="#f8fafc"/>
   <text x="30" y="36" font-size="18" font-weight="700" fill="#0f172a">RBAC capability matrix</text>
   <text x="30" y="56" font-size="12" fill="#64748b">Sessions are isolated per user; roles decide what each may do.</text>
   <g font-size="13" fill="#0f172a">
@@ -31,7 +31,7 @@
     </g>
     <g>
       <rect x="30" y="184" width="660" height="34" fill="#fff" stroke="#e2e8f0"/>
-      <text x="44" y="206" fill="#0f172a">Bulk import, OpenRemoteGUI fleet install</text>
+      <text x="44" y="206" fill="#0f172a">Bulk import CSV, bulk login updates</text>
       <text x="395" y="206" text-anchor="middle" fill="#cbd5e1">-</text>
       <text x="525" y="206" text-anchor="middle" fill="#059669">yes</text>
       <text x="640" y="206" text-anchor="middle" fill="#059669">yes</text>
@@ -57,6 +57,13 @@
       <text x="525" y="308" text-anchor="middle" fill="#cbd5e1">-</text>
       <text x="640" y="308" text-anchor="middle" fill="#059669">yes</text>
     </g>
+    <g>
+      <rect x="30" y="320" width="660" height="34" fill="#fff" stroke="#e2e8f0"/>
+      <text x="44" y="342" fill="#0f172a">Install on nodes (Fleet Setup, OpenRemoteGUI)</text>
+      <text x="395" y="342" text-anchor="middle" fill="#cbd5e1">-</text>
+      <text x="525" y="342" text-anchor="middle" fill="#cbd5e1">-</text>
+      <text x="640" y="342" text-anchor="middle" fill="#059669">yes</text>
+    </g>
   </g>
-  <text x="30" y="346" font-size="11" fill="#64748b">Enforced centrally in app/services/rbac.py. Login lockout after repeated failures.</text>
+  <text x="30" y="380" font-size="11" fill="#64748b">Enforced centrally in app/services/rbac.py. Login lockout after repeated failures.</text>
 </svg>
