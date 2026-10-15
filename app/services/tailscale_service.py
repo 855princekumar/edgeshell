@@ -124,7 +124,8 @@ def get_tailscale_status():
         try:
             return _normalize(_status_from_socket(), 'localapi')
         except Exception as e:
-            errors.append(f'LocalAPI: {e}')
+            from app.services.errors import describe
+            errors.append('LocalAPI: ' + describe(e, 'Tailscale LocalAPI', log_it=False))
     try:
         return _normalize(_status_from_cli(), 'cli')
     except FileNotFoundError:
@@ -132,7 +133,8 @@ def get_tailscale_status():
                       + ('' if os.path.exists(SOCKET) else
                          f' and {SOCKET} is not mounted'))
     except Exception as e:
-        errors.append(f'CLI: {e}')
+        from app.services.errors import describe
+        errors.append('CLI: ' + describe(e, 'tailscale CLI', log_it=False))
     return {'connected': False, 'backend_state': 'unavailable', 'nodes': [], 'node_count': 0,
             'online_count': 0, 'health': [], 'error': '; '.join(errors),
             'checked_at': datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')}
@@ -149,7 +151,8 @@ def connect_tailscale(auth_key):
     except FileNotFoundError:
         return False, 'Manage Tailscale on the host: sudo tailscale up'
     except Exception as e:
-        return False, str(e)
+        from app.services.errors import describe
+        return False, describe(e, 'tailscale up')
 
 
 def disconnect_tailscale():
@@ -163,4 +166,5 @@ def disconnect_tailscale():
     except FileNotFoundError:
         return False, 'Manage Tailscale on the host: sudo tailscale down'
     except Exception as e:
-        return False, str(e)
+        from app.services.errors import describe
+        return False, describe(e, 'tailscale down')

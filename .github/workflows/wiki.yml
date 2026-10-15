@@ -1,0 +1,60 @@
+name: Wiki
+
+# Publishes the GitHub Wiki from the repository's documentation (README.md,
+# docs/, the decision records, SECURITY.md, CONTRIBUTING.md, CHANGELOG.md) on
+# every change to them on main. The repository is the single source; the wiki
+# is regenerated, never edited by hand. Built by tools/build_wiki.py.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "README.md"
+      - "SECURITY.md"
+      - "CONTRIBUTING.md"
+      - "CHANGELOG.md"
+      - "docs/**"
+      - "tools/build_wiki.py"
+      - ".github/workflows/wiki.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write          # the wiki is a git repository next to this one
+
+concurrency:
+  group: wiki
+  cancel-in-progress: true
+
+jobs:
+  publish:
+    name: Publish the wiki
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: Build the pages (fails on broken links)
+        run: python tools/build_wiki.py "$RUNNER_TEMP/pages" --check
+      - name: Push to the wiki
+        env:
+          TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+        run: |
+          url="https://x-access-token:${TOKEN}@github.com/${REPO}.wiki.git"
+          if ! git clone --quiet --depth 1 "$url" "$RUNNER_TEMP/wiki" 2>/dev/null; then
+            echo "::warning::The wiki does not exist yet. Open the repository's Wiki tab once and save the first page; the next run fills it."
+            exit 0
+          fi
+          cd "$RUNNER_TEMP/wiki"
+          find . -mindepth 1 -maxdepth 1 ! -name .git -exec rm -rf {} +
+          cp "$RUNNER_TEMP/pages"/*.md .
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          if git diff --cached --quiet; then echo "Wiki already up to date"; exit 0; fi
+          git commit --quiet -m "Wiki: rebuilt from ${GITHUB_SHA::7}"
+          git push --quiet origin HEAD
+          echo "Wiki updated from ${GITHUB_SHA::7}"

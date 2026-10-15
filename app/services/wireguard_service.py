@@ -15,7 +15,8 @@ def _run(args, timeout=10):
     except FileNotFoundError:
         return 127, '', 'wireguard-tools not installed'
     except Exception as e:
-        return 1, '', str(e)
+        from app.services.errors import describe
+        return 1, '', describe(e, 'wireguard command')
 
 
 def get_status(interface='wg0'):

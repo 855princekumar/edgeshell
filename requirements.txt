@@ -28,6 +28,7 @@ python-dotenv>=1.2.4
 gunicorn>=22.0.0
 psutil>=5.9.8
 requests>=2.34.2
+urllib3>=2.8.0                # security floor (CVE-2026-97687..97689)
 jsonschema>=4.22.0
 
 # Database: MariaDB via Oracle's official pure-Python connector

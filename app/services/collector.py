@@ -167,8 +167,9 @@ class _Pool:
 
     @staticmethod
     def key(t):
-        pw = hashlib.sha256((t['password'] or '').encode()).hexdigest()[:16]
-        return (t['ip'], t['port'], t['username'], pw)
+        # The pool lives in memory only; an edited password simply makes a new
+        # key, so it needs no hash (a fast hash of a password is the wrong tool).
+        return (t['ip'], t['port'], t['username'], t['password'] or '')
 
     def lock(self, node_id):
         with self._guard:
@@ -220,11 +221,10 @@ def classify(exc):
         return 'unreachable', 'Connection refused on the SSH port'
     if isinstance(exc, (socket.gaierror,)):
         return 'unreachable', 'Unknown host name'
+    from app.services.errors import describe          # never the exception's own text
     if isinstance(exc, OSError) and not isinstance(exc, paramiko.SSHException):
-        return 'unreachable', f'Network error: {exc.strerror or exc}'
-    if isinstance(exc, paramiko.SSHException):
-        return 'error', f'SSH error: {exc}'
-    return 'error', f'{type(exc).__name__}: {exc}'
+        return 'unreachable', describe(exc, log_it=False)
+    return 'error', describe(exc, log_it=False)
 
 
 def collect_one(target):

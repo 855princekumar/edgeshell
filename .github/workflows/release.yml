@@ -91,6 +91,7 @@ jobs:
             VERSION=${{ steps.meta.outputs.version }}
             REVISION=${{ github.sha }}
             CREATED=${{ fromJSON(steps.meta.outputs.json).labels['org.opencontainers.image.created'] }}
+            DEPS_REFRESH=${{ env.TAG }}
           provenance: mode=max
           sbom: true
           cache-from: type=gha

@@ -199,7 +199,7 @@ def _delete_user_row(user):
     try:
         lake.require_ready()                    # refuse before changing anything
     except lake.LakeNotReady as e:
-        return f'Not deleted: the data lake must be caught up first ({e}).'
+        return f'Not deleted: the data lake must be caught up first ({lake.refusal_detail()}).'
     revoke_sessions(user, 'deactivated')
     api_auth.revoke_all_for(user, 'deleted')
     uid = user.id
@@ -210,7 +210,7 @@ def _delete_user_row(user):
     try:
         lake.hot_only([('DELETE FROM users WHERE id = :i', {'i': uid})])
     except lake.LakeNotReady as e:
-        return f'The account was disabled but not deleted: the data lake must be caught up first ({e}).'
+        return f'The account was disabled but not deleted: the data lake must be caught up first ({lake.refusal_detail()}).'
     except IntegrityError:
         db.session.rollback()
         return 'The account was disabled but not deleted: it gained records meanwhile. Deactivate it instead.'
@@ -237,7 +237,7 @@ def delete(user_id):
     try:
         lake.require_ready()                    # nothing (2FA included) is touched on a refusal
     except lake.LakeNotReady as e:
-        flash(f'Not deleted: the data lake must be caught up first ({e}).', 'danger')
+        flash(f'Not deleted: the data lake must be caught up first ({lake.refusal_detail()}).', 'danger')
         return redirect(url_for('users.index'))
     try:
         remove(user)

@@ -310,7 +310,7 @@ async function startDeploy() {
   } catch(err) {
     clearInterval(prog);
     document.getElementById('results').innerHTML =
-      `<div class="alert alert-danger small">Network error: ${err.message}</div>`;
+      `<div class="alert alert-danger small">Network error: ${String(err.message).replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[ch])}</div>`;
     document.getElementById('results').classList.remove('d-none');
   }
 

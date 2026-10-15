@@ -44,6 +44,9 @@ You will be credited in the release notes unless you ask not to be.
   down requires password and 2FA.
 - nginx is the only container with published ports; the app, database and
   privacyIDEA sit on internal Docker networks.
+- Paths sent to nodes (Log Viewer, file deploy) are validated and
+  shell-quoted, so no input can add a command. Errors shown to people are fixed
+  descriptions; exception details go only to the server log.
 - Password reset links are single-use, expire in 30 minutes, go only to an
   address the user has verified, and are built from `PUBLIC_URL`, never from
   the request's Host header. The reset page also asks for a 2FA code (or a

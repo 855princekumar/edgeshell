@@ -87,7 +87,7 @@
           ('docker ps','Docker'), ('cat /var/log/syslog | tail -10','Syslog'),
         ] %}
         <button class="btn btn-xs btn-outline-secondary text-start text-truncate"
-                onclick="setCmd('{{ cmd }}')" title="{{ cmd }}"
+                data-cmd="{{ cmd }}" onclick="setCmd(this.dataset.cmd)" title="{{ cmd }}"
                 style="font-size:.68rem;font-family:var(--bs-font-monospace,monospace)">
           {{ label }}
         </button>
@@ -285,7 +285,7 @@ function renderCustomCmds() {
   box.innerHTML = list.map((c, i) => `
     <div style="display:flex;gap:2px">
       <button class="btn btn-xs btn-outline-primary text-start text-truncate flex-grow-1"
-              onclick="setCmd('${esc(c.cmd).replace(/'/g, "\\'")}')" title="${esc(c.cmd)}"
+              data-cmd="${esc(c.cmd)}" onclick="setCmd(this.dataset.cmd)" title="${esc(c.cmd)}"
               style="font-size:.68rem;font-family:var(--bs-font-monospace,monospace)">
         ${esc(c.label)}
       </button>
@@ -424,7 +424,8 @@ async function sendCmd() {
 }
 
 function esc(s) {
-  return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+    .replace(/"/g,'&quot;').replace(/'/g,'&#39;');
 }
 
 inp.focus();

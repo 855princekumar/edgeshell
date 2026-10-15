@@ -4,6 +4,21 @@ All notable changes are documented here. Format loosely follows Keep a Changelog
 
 ## [Unreleased]
 
+### Security
+- **Log Viewer: shell injection fixed.** Browsing and viewing logs put the typed path into a `sudo` command on the node, and these pages are open to every signed-in role, so a monitor account could run commands as root on a node. Every path sent to a node (Log Viewer browse, view, download and new folder, and file deploy) is now validated (absolute, no control characters, at most 1024 characters) and shell-quoted, and the line count is a bounded number. Tests send injection payloads as a monitor.
+- **Names from nodes can no longer become script in the browser**: file and folder names, sizes and errors in the Log Viewer, and custom commands in the terminal, go into escaped data attributes read by event listeners instead of inline handlers (CodeQL js/xss-through-dom, js/incomplete-sanitization).
+- **Error messages never carry exception text** (CodeQL py/stack-trace-exposure, 13 places): one helper (`app/services/errors.py`) maps a failure to a fixed description (authentication failed, timed out, connection refused...) and writes the details to the server log. `/healthz` no longer shows database error text.
+- Sign-in redirects accept only a path on this site, checked with a URL parser (CodeQL py/url-redirection).
+- HTML stripping for email text cannot backtrack (CodeQL py/polynomial-redos).
+- SSH connection pool keys no longer hash the password with a fast hash (CodeQL py/weak-sensitive-data-hashing).
+- `run.py` never turns on the Werkzeug debugger (CodeQL py/flask-debug).
+- Native installer: generated passwords are hidden in every console message, and files are created with their final permissions (no moment where a secret is readable).
+- Image: the base image's own pip and setuptools are removed (the app runs from its virtualenv); CI rebuilds the dependency layer every week so the scanned image never runs on stale packages; `urllib3>=2.8.0`.
+- The Tailscale key placeholder in `.env.example` is empty (secret scanning flagged the old placeholder text).
+
+### Added
+- **GitHub Wiki generated from the docs** (`tools/build_wiki.py`, workflow `wiki.yml`): every doc, decision record, the security policy, contributing guide and changelog as wiki pages with a sidebar, rebuilt on every documentation change on main. CI fails on broken wiki links.
+
 ### Changed
 - **Password reset by link is one page with 2FA**: the new password and a code from the authenticator app (or a backup code). The link proves the mailbox and the code proves the device, so a stolen inbox alone cannot change a password. Wrong codes count toward the account lockout; the password is checked first so a typo never spends a backup code.
 

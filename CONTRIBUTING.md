@@ -65,3 +65,13 @@ its page or interaction, so the counts only go up.
 
 Releases are cut by pushing a `vX.Y.Z` tag that matches `VERSION`; CI then
 publishes the multi-arch image and the GitHub release.
+
+## Documentation and the wiki
+
+Edit documentation in the repository (README.md, docs/, docs/adr/, SECURITY.md,
+CONTRIBUTING.md, CHANGELOG.md). The [wiki](https://github.com/855princekumar/edgeshell/wiki)
+is generated from these files by `tools/build_wiki.py` and republished on every
+change on main, so never edit wiki pages by hand. Check locally with
+`python tools/build_wiki.py /tmp/wiki --check` (fails on broken links). After
+changing docs/API.md, also run `python tools/build_api_guide.py` for the in-app
+guide.
