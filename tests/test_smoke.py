@@ -802,3 +802,8 @@ def test_stale_orgui_flags_are_reset_once(app):
         db.session.commit()
         _one_time_fixes()
         assert db.session.query(Node.orgui_installed).filter_by(name='stale').scalar() is True
+
+
+def test_the_login_page_does_not_hint_an_account_name(client):
+    page = client.get('/login').get_data(as_text=True)
+    assert 'placeholder="admin"' not in page and 'placeholder="Username"' in page
