@@ -538,6 +538,24 @@ def heartbeat_settings():
     return _heartbeat_job(ids, 'config', s)
 
 
+@nodes_bp.route('/heartbeat/refresh', methods=['POST'])
+@login_required
+@operator_required
+def heartbeat_refresh():
+    """Fresh heartbeat state from SenseHive now (no SSH, about a second)."""
+    from app.services import heartbeat_service as hb
+    matched = hb.sync()
+    nodes = Node.query.filter(Node.is_active.is_(True), Node.is_deleted.isnot(True)).all()
+    counts = {'online': 0, 'offline': 0, 'silent': 0, 'no_agent': 0}
+    for n in nodes:
+        if n.hb_status in counts:
+            counts[n.hb_status] += 1
+        else:
+            counts['no_agent'] += 1
+    return jsonify({'success': matched is not None, 'total': len(nodes), 'counts': counts,
+                    'message': None if matched is not None else 'SenseHive is not reachable or not configured'})
+
+
 @nodes_bp.route('/heartbeat/settings')
 @login_required
 @admin_required
@@ -747,17 +765,51 @@ def job_detail(job_id):
 from app.services import capability_service as _cap
 
 
+@nodes_bp.route('/capabilities/summary')
+@login_required
+@admin_required
+def capabilities_summary():
+    """Fleet Setup opens from the stored results: instant, no SSH."""
+    return jsonify(_cap.summary(Node.query.filter_by(is_active=True).order_by(Node.name).all()))
+
+
 @nodes_bp.route('/capabilities/scan', methods=['POST'])
 @login_required
 @admin_required            # installs software on nodes: administrators only
 def capabilities_scan():
-    nodes = Node.query.filter_by(is_active=True).all()
-    summary = _cap.scan_fleet(nodes)
-    log_activity('Capability scan',
-                 response=', '.join(f"{c}:{summary['counts'][c]['installed']}/{summary['total']}"
-                                    for c in _cap.CAPABILITIES),
-                 status='success')
-    return jsonify(summary)
+    """Re-check one capability (or all) on every reachable node in a
+    background job, 16 nodes at a time; Fleet Setup polls the job and then the
+    summary. A request never waits for the fleet, so it cannot time out."""
+    data = request.get_json(silent=True) or {}
+    caps = [c for c in (data.get('capabilities') or _cap.CAPABILITIES) if c in _cap.CAPABILITIES]
+    if not caps:
+        return jsonify({'error': 'invalid capability'}), 400
+    if 'heartbeat' in caps:
+        from app.services import heartbeat_service as hb
+        try:
+            hb.sync()                             # SenseHive first: cards update at once
+        except Exception:
+            current_app.logger.warning('heartbeat sync before scan failed', exc_info=True)
+    nodes = (Node.query.filter(Node.is_active.is_(True), Node.is_deleted.isnot(True), Node.status == 'online')
+             .order_by(Node.name).all())
+    if not nodes:
+        return jsonify({'success': True, 'job_id': None, 'message': 'No node is online to check.'})
+
+    def work(nid):
+        node = db.session.get(Node, nid)
+        if node is None:
+            return False
+        state = _cap.check_node(node, caps)
+        _cap.record(node, state)
+        db.session.commit()
+        return state is not None
+    names = ', '.join({'docker': 'Docker', 'nodered': 'Node-RED', 'orgui': 'OpenRemoteGUI',
+                       'heartbeat': 'heartbeat agent'}[c] for c in caps)
+    jid = _jobs.run_each('capability-scan', f'Checking {names} on {len(nodes)} node(s)', current_user.id,
+                         [n.id for n in nodes], work, workers=16,
+                         summary=lambda j: f"{j['ok']} checked, {j['failed']} unreachable")
+    log_activity('Capability check started', response=f'{names}: {len(nodes)} node(s)', status='info')
+    return jsonify({'success': True, 'job_id': jid, 'count': len(nodes), 'capabilities': caps})
 
 
 @nodes_bp.route('/capabilities/install', methods=['POST'])
@@ -779,14 +831,23 @@ def capabilities_install():
     targets = q.all()
     if capability == 'heartbeat':
         return _heartbeat_job([n.id for n in targets], 'install')
+    if not targets:
+        return jsonify({'success': False, 'message': 'No node needs this.'})
+    # A background job with live progress (8 nodes at a time): the page never
+    # waits, and one slow node never holds up the rest.
+    ids, actor = [n.id for n in targets], current_user.username
+    labels = {'docker': 'Docker', 'nodered': 'Node-RED', 'orgui': 'OpenRemoteGUI'}
 
-    results, ok = {}, 0
-    for n in targets:
-        success, output = _cap.install(n, capability)
-        results[n.name] = {'success': success, 'output': output[-800:]}
-        ok += 1 if success else 0
-    fail = len(targets) - ok
-    log_activity(f'Install {capability} on fleet',
-                 response=f'{ok} ok, {fail} failed', status='success' if fail == 0 else 'warning')
-    return jsonify({'success': fail == 0, 'capability': capability,
-                    'ok': ok, 'failed': fail, 'results': results})
+    def work(nid):
+        node = db.session.get(Node, nid)
+        if node is None:
+            return False
+        ok, out = _cap.install(node, capability)
+        log_activity(f'Install {capability}', node=node.name, status='success' if ok else 'failure',
+                     response=(out or '')[-300:], user=actor)
+        return ok
+    jid = _jobs.run_each(f'install-{capability}', f'Installing {labels[capability]} on {len(ids)} node(s)',
+                         current_user.id, ids, work, workers=8,
+                         summary=lambda j: f"{j['ok']} ok, {j['failed']} failed")
+    log_activity(f'Install {capability} started', response=f'{len(ids)} node(s)', status='info')
+    return jsonify({'success': True, 'job_id': jid, 'count': len(ids)})

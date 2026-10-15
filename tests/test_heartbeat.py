@@ -233,3 +233,58 @@ def test_a_test_group_gets_the_agent_and_nobody_else(app, monkeypatch):
     assert r['job_id'] == 'j3' and sorted(started[0]) == sorted(picked)
     page = adm.get('/nodes/').get_data(as_text=True)
     assert 'node_ids: picked' in page                      # Fleet Setup sends the ticked nodes
+
+
+@pytest.mark.parametrize('cap', ['orgui', 'docker', 'nodered', 'heartbeat'])
+def test_install_on_selected_nodes_runs_as_a_job_for_every_kind(app, monkeypatch, cap):
+    from app.routes import nodes as routes
+    started = []
+    monkeypatch.setattr(routes._jobs, 'run_each', lambda kind, title, owner, ids, work, **kw: started.append((kind, ids)) or 'j9')
+    with app.app_context():
+        ids = [n.id for n in Node.query.order_by(Node.name).limit(2)]
+    r = login(app).post('/nodes/capabilities/install', json={'capability': cap, 'node_ids': ids}).get_json()
+    assert r['job_id'] == 'j9' and sorted(started[0][1]) == sorted(ids) and cap in started[0][0]
+
+
+def test_the_bulk_bar_offers_install_to_administrators_only(app):
+    page = login(app).get('/nodes/').get_data(as_text=True)
+    assert 'id="bulkInstallSel"' in page and 'Install on selected' in page and 'id="hbRefreshBtn"' in page
+    op = login(app, 'op', 'Operator-pass-1').get('/nodes/').get_data(as_text=True)
+    assert 'id="bulkInstallSel"' not in op and 'id="hbRefreshBtn"' in op       # operators may refresh, not install
+
+
+def test_heartbeat_refresh_counts_from_sensehive_without_ssh(app, monkeypatch):
+    import time
+    from app.services import heartbeat_service as hb
+    now = time.time()
+    monkeypatch.setattr(hb, 'fetch_nodes', lambda: {'nodes': [
+        {'name': 'pi-00', 'status': 'online', 'last_seen': now}, {'name': 'pi-01', 'status': 'offline', 'last_seen': now}]})
+    d = login(app, 'op', 'Operator-pass-1').post('/nodes/heartbeat/refresh').get_json()
+    assert d['success'] and d['counts'] == {'online': 1, 'offline': 1, 'silent': 0, 'no_agent': 1} and d['total'] == 3
+
+
+def test_fleet_setup_opens_from_stored_results_without_ssh(app, monkeypatch):
+    from app.services import capability_service as cap
+    monkeypatch.setattr(cap, 'execute_command', lambda *a, **k: (_ for _ in ()).throw(AssertionError('no SSH on open')))
+    with app.app_context():
+        n = Node.query.filter_by(name='pi-00').first()
+        n.docker_installed, n.hb_status = True, 'online'
+        db.session.commit()
+    d = login(app).get('/nodes/capabilities/summary').get_json()
+    assert d['total'] == 3 and d['counts']['docker']['installed'] == 1 and d['counts']['heartbeat']['installed'] == 1
+
+
+def test_a_single_capability_check_is_a_background_job(app, monkeypatch):
+    from app.routes import nodes as routes
+    from app.services import capability_service as cap
+    started = []
+    monkeypatch.setattr(routes._jobs, 'run_each', lambda kind, title, owner, ids, work, **kw: started.append((title, work, ids)) or 'jc')
+    r = login(app).post('/nodes/capabilities/scan', json={'capabilities': ['orgui']}).get_json()
+    assert r['job_id'] == 'jc' and r['capabilities'] == ['orgui'] and 'OpenRemoteGUI' in started[0][0]
+    cmds = []
+    monkeypatch.setattr(cap, 'execute_command', lambda node, cmd, timeout=20: cmds.append(cmd) or
+                        {'success': True, 'stdout': 'ARCH:aarch64\nORGUI:1\n'})
+    with app.app_context():
+        assert started[0][1](started[0][2][0])                 # the job's work: probe and store
+        assert Node.query.get(started[0][2][0]).orgui_installed is True
+    assert 'ORGUI:' in cmds[0] and 'DOCKER:' not in cmds[0]   # only what was asked

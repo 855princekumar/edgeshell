@@ -1,9 +1,10 @@
 """Fleet capability scan and install for Docker, Node-RED, OpenRemoteGUI and
 the MQTT heartbeat agent.
 
-One SSH round-trip reports which of the three are present on a node. Install
-runs the documented one-liner per capability. Docker uses sudo for the running
-check because the login user is often not in the docker group.
+One SSH round-trip per node reports the capabilities asked for (one, or all).
+Results are stored on the node, so Fleet Setup opens instantly from them
+(summary) and each capability is re-checked on its own, in a background job.
+Install runs the documented one-liner per capability.
 """
 from datetime import datetime
 from flask import current_app
@@ -11,22 +12,25 @@ from app import db
 from app.services.ssh_service import execute_command
 from app.services import orgui_service
 
-def _check_cmd(orgui_port):
-    """Build the per-node capability probe.
+def _probe(cap, orgui_port):
+    if cap == 'docker':
+        return 'echo "DOCKER:$(command -v docker >/dev/null 2>&1 && echo 1 || echo 0)"'
+    if cap == 'nodered':
+        return ('echo "NODERED:$((command -v node-red >/dev/null 2>&1 || '
+                "systemctl list-unit-files 2>/dev/null | grep -qE 'nodered|node-red') && echo 1 || echo 0)\"")
+    if cap == 'orgui':
+        return ('echo "ORGUI:$(' + orgui_service._CHECK.format(port=int(orgui_port))
+                + ' | grep -q RUNNING && echo 1 || echo 0)"')
+    return 'echo "HEARTBEAT:$((' + _hb_check() + ') | grep -q HB_RUNNING && echo 1 || echo 0)"'
+
+
+def _check_cmd(orgui_port, caps=None):
+    """Build the per-node probe for `caps` (default: all), plus the arch.
 
     OpenRemoteGUI counts only when installed and its gateway port listens
     (see orgui_service): Raspberry Pi OS's own wayvnc is not OpenRemoteGUI.
-    Also reports arch.
     """
-    return (
-        'echo "ARCH:$(uname -m)"; '
-        'echo "DOCKER:$(command -v docker >/dev/null 2>&1 && echo 1 || echo 0)"; '
-        'echo "NODERED:$((command -v node-red >/dev/null 2>&1 || '
-        "systemctl list-unit-files 2>/dev/null | grep -qE 'nodered|node-red') && echo 1 || echo 0)\"; "
-        'echo "ORGUI:$(' + orgui_service._CHECK.format(port=int(orgui_port))
-        + ' | grep -q RUNNING && echo 1 || echo 0)"; '
-        'echo "HEARTBEAT:$((' + _hb_check() + ') | grep -q HB_RUNNING && echo 1 || echo 0)"'
-    )
+    return '; '.join(['echo "ARCH:$(uname -m)"'] + [_probe(c, orgui_port) for c in (caps or CAPABILITIES)])
 
 
 def _hb_check():
@@ -40,10 +44,10 @@ COLUMNS = {'docker': 'docker_installed', 'nodered': 'nodered_installed', 'orgui'
            'heartbeat': 'hb_installed'}
 
 
-def check_node(node):
-    """Return dict {docker, nodered, orgui, arch}, or None if unreachable."""
+def check_node(node, caps=None):
+    """Return dict {<capability>: bool, arch}, or None if unreachable."""
     port = node.orgui_port or current_app.config.get('ORGUI_DEFAULT_PORT', 6080)
-    r = execute_command(node, _check_cmd(port), timeout=20)
+    r = execute_command(node, _check_cmd(port, caps), timeout=20)
     if not r.get('success') and not r.get('stdout'):
         return None
     out = {}
@@ -58,11 +62,22 @@ def check_node(node):
     return out or None
 
 
-def scan_fleet(nodes):
+def scan_fleet(nodes, workers=16):
+    """Check every node (16 at a time over SSH), then record the results."""
+    from concurrent.futures import ThreadPoolExecutor
+    app = current_app._get_current_object()
+
+    def probe(n):
+        with app.app_context():
+            try:
+                return check_node(n)
+            except Exception:
+                return None
+    with ThreadPoolExecutor(max_workers=max(1, min(workers, len(nodes) or 1))) as pool:
+        states = list(pool.map(probe, nodes))
     per_node = []
     counts = {c: {'installed': 0, 'missing': 0, 'unknown': 0} for c in CAPABILITIES}
-    for n in nodes:
-        state = check_node(n)
+    for n, state in zip(nodes, states):
         if state is not None:
             n.docker_installed = state.get('docker')
             n.nodered_installed = state.get('nodered')
@@ -83,6 +98,39 @@ def scan_fleet(nodes):
         per_node.append(row)
     db.session.commit()
     return {'total': len(nodes), 'counts': counts, 'nodes': per_node}
+
+
+def record(node, state):
+    """Store a probe result on the node (only the capabilities it reports)."""
+    if state is None:
+        return
+    for cap in CAPABILITIES:
+        if cap in state:
+            setattr(node, COLUMNS[cap], state[cap])
+    if 'heartbeat' in state:
+        node.hb_checked_at = datetime.utcnow()
+    if state.get('arch'):
+        node.arch = state['arch']
+    node.capabilities_checked_at = datetime.utcnow()
+
+
+def summary(nodes):
+    """Fleet Setup from what is stored (no SSH): counts and per-node state."""
+    counts = {c: {'installed': 0, 'missing': 0, 'unknown': 0} for c in CAPABILITIES}
+    rows = []
+    for n in nodes:
+        row = {'id': n.id, 'name': n.name, 'ip': n.ip_address, 'arch': n.arch, 'status': n.status}
+        for c in CAPABILITIES:
+            val = getattr(n, COLUMNS[c])
+            if c == 'heartbeat' and n.hb_status in ('online', 'offline', 'silent'):
+                val = True                         # SenseHive hears it: the agent is there
+            row[c] = val
+            counts[c]['installed' if val is True else ('missing' if val is False else 'unknown')] += 1
+        rows.append(row)
+    checked = [n.capabilities_checked_at for n in nodes if n.capabilities_checked_at]
+    from app.utils.timeutil import iso_utc
+    return {'total': len(nodes), 'counts': counts, 'nodes': rows,
+            'checked_at': iso_utc(max(checked)) if checked else None}
 
 
 def _install_command(capability):
