@@ -485,6 +485,68 @@ def orgui_install_all():
     return jsonify({'success': True, 'job_id': jid, 'count': len(ids)})
 
 
+# ── MQTT heartbeat agent (docs/adr/0013-mqtt-heartbeat.md) ───────────────────
+def _heartbeat_job(ids, action, settings=None):
+    """Install the agent, or push config.yaml, on many nodes in a background
+    job (8 at a time) with live progress. Administrators only (callers)."""
+    from app.services import heartbeat_service as hb
+    if not hb.enabled():
+        return jsonify({'success': False, 'message': 'Set HEARTBEAT_MASTER_KEY on the server first '
+                                                     '(see docs/HEARTBEAT.md).'}), 400
+    if not ids:
+        return jsonify({'success': False, 'message': 'No node needs this.'})
+    actor = current_user.username
+
+    def work(nid):
+        node = db.session.get(Node, nid)
+        if node is None:
+            return False
+        if action == 'install':
+            ok, out = hb.install(node)
+            log_activity('Heartbeat agent install', node=node.name, status='success' if ok else 'failure',
+                         response=(out or '')[-300:], user=actor)
+        else:
+            ok, out = hb.push_config(node, settings)
+            log_activity('Heartbeat config pushed', node=node.name, status='success' if ok else 'failure',
+                         response=out, user=actor)
+        return ok
+    title = (f'Installing the heartbeat agent on {len(ids)} node(s)' if action == 'install'
+             else f'Pushing heartbeat settings to {len(ids)} node(s)')
+    jid = _jobs.run_each(f'heartbeat-{action}', title, current_user.id, ids, work, workers=8,
+                         summary=lambda j: f"{j['ok']} ok, {j['failed']} failed")
+    log_activity(f'Heartbeat {action} started', response=f'{len(ids)} node(s)', status='info')
+    return jsonify({'success': True, 'job_id': jid, 'count': len(ids)})
+
+
+@nodes_bp.route('/heartbeat/settings', methods=['POST'])
+@login_required
+@admin_required            # changes software settings on nodes: administrators only
+def heartbeat_settings():
+    """Save the fleet's config.yaml and push it to every node with the agent;
+    the agents hot reload it, no restart."""
+    from app.services import heartbeat_service as hb
+    data = request.get_json() or {}
+    s, err = hb.validate_settings(data)
+    if err:
+        return jsonify({'success': False, 'message': err}), 400
+    hb.save_settings(s)
+    log_activity('Heartbeat settings changed', status='warning',
+                 response=f"broker {s['broker']}:{s['port']} tls={'on' if s['tls'] else 'off'} every {s['interval']}s")
+    ids = [n.id for n in Node.query.filter(Node.is_active.is_(True), Node.hb_installed.is_(True)).all()]
+    if not data.get('push', True) or not ids:
+        return jsonify({'success': True, 'saved': s, 'count': 0})
+    return _heartbeat_job(ids, 'config', s)
+
+
+@nodes_bp.route('/heartbeat/settings')
+@login_required
+@admin_required
+def heartbeat_settings_get():
+    from app.services import heartbeat_service as hb
+    return jsonify({'settings': hb.agent_settings(), 'enabled': hb.enabled(),
+                    'sensehive': hb.sensehive_configured(), 'agent_version': hb.agent_version()})
+
+
 # ── Bulk import (CSV / TXT / JSON) ───────────────────────────────────────────
 # The parsed rows wait on the server between upload and commit (only a short
 # token sits in the session cookie: whole files in the cookie overflowed the
@@ -712,9 +774,11 @@ def capabilities_install():
         q = q.filter(Node.id.in_(node_ids))
     else:
         # default: nodes missing this capability
-        col = getattr(Node, f'{capability}_installed')
+        col = getattr(Node, _cap.COLUMNS[capability])
         q = q.filter(col.isnot(True))
     targets = q.all()
+    if capability == 'heartbeat':
+        return _heartbeat_job([n.id for n in targets], 'install')
 
     results, ok = {}, 0
     for n in targets:

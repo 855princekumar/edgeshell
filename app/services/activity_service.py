@@ -5,12 +5,14 @@ from app import db
 from app.models import ActivityLog
 
 
-def log_activity(action, node=None, command=None, response=None, status='success', duration=None):
-    """Record a fleet activity to the database."""
+def log_activity(action, node=None, command=None, response=None, status='success', duration=None, user=None):
+    """Record a fleet activity to the database. `user` names the person when
+    there is no request (background jobs started by someone)."""
     try:
         entry = ActivityLog(
             timestamp=datetime.utcnow(),
-            user=current_user.username if current_user and current_user.is_authenticated else 'system',
+            user=user or (current_user.username if has_request_context() and current_user
+                          and current_user.is_authenticated else 'system'),
             node=node,
             action=action,
             command=command,

@@ -53,6 +53,7 @@ def sample_rows(nodes, latest, fresh_s):
     """System_metrics rows for one sampling tick: every node with its state,
     and its metrics when the last collection succeeded within fresh_s."""
     from app.models import SystemMetrics
+    from app.services import heartbeat_service
     now = datetime.utcnow()
     rows = []
     for n in nodes:
@@ -61,7 +62,7 @@ def sample_rows(nodes, latest, fresh_s):
         m = r['metrics'] if ok else {}
         status = 'online' if ok else (n.status if n.status in ('offline', 'auth_failed') else 'offline')
         rows.append(SystemMetrics(
-            node_id=n.id, timestamp=now, status=status,
+            node_id=n.id, timestamp=now, status=status, heartbeat=heartbeat_service.fresh(n, now),
             cpu_percent=m.get('cpu_percent'), ram_percent=m.get('mem_percent'),
             disk_percent=m.get('disk_percent'), temperature=m.get('temperature'),
             load_avg_1=m.get('load_1'), load_avg_5=m.get('load_5'), load_avg_15=m.get('load_15'),
@@ -101,7 +102,7 @@ def _rollup_hour(start):
                              SystemMetrics.cpu_percent, SystemMetrics.ram_percent,
                              SystemMetrics.disk_percent, SystemMetrics.temperature,
                              SystemMetrics.load_avg_1, SystemMetrics.uptime_seconds,
-                             SystemMetrics.network_rx, SystemMetrics.network_tx)
+                             SystemMetrics.network_rx, SystemMetrics.network_tx, SystemMetrics.heartbeat)
             .filter(SystemMetrics.timestamp >= start, SystemMetrics.timestamp < end)
             .order_by(SystemMetrics.node_id, SystemMetrics.timestamp).all())
     by_node = {}
@@ -111,13 +112,16 @@ def _rollup_hour(start):
     for nid, rs in by_node.items():
         if nid is None:
             continue
-        st = [(r.status or 'online') for r in rs]
+        # Up when SSH reached the node OR a verified heartbeat arrived: a VPN
+        # gap with heartbeats flowing is not node downtime (ADR 0013).
+        st = [('online' if (r.status or 'online') == 'online' or r.heartbeat else (r.status or 'online')) for r in rs]
+        hb_only = sum(1 for r in rs if r.heartbeat and (r.status or 'online') != 'online')
         ups = [r.uptime_seconds for r in rs if r.uptime_seconds is not None]
         reboots = sum(1 for a, b in zip(ups, ups[1:]) if b < a)
         rx = [r.network_rx for r in rs if r.network_rx is not None]
         tx = [r.network_tx for r in rs if r.network_tx is not None]
         db.session.add(MetricsHourly(
-            node_id=nid, hour=start, samples=len(rs), online=st.count('online'),
+            node_id=nid, hour=start, samples=len(rs), online=st.count('online'), heartbeat_only=hb_only,
             offline=st.count('offline'), auth_failed=st.count('auth_failed'),
             cpu_avg=_avg([r.cpu_percent for r in rs]), cpu_max=_max([r.cpu_percent for r in rs]),
             ram_avg=_avg([r.ram_percent for r in rs]), ram_max=_max([r.ram_percent for r in rs]),

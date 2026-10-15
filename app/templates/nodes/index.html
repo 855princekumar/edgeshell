@@ -170,6 +170,7 @@
                   {% if node.last_error %}title="{{ node.last_error }}"{% endif %}>
                 {{ 'Login failed' if node.status == 'auth_failed' else (node.status or 'Unknown').capitalize() }}
             </span>
+            {% include "nodes/_hb_badge.html" %}
             {% if node.login_paused_at %}
             <span class="badge" style="background:#fef3c7;color:#92400e" title="Automatic logins paused: {{ node.last_error or '' }}">
                 <i class="bi bi-pause-fill"></i> {{ 'Tailscale check' if node.login_pause_reason == 'tailscale' else 'logins paused' }}
@@ -329,10 +330,10 @@
     </div>
   </div>
   <div class="offcanvas-body">
-    <p class="text-muted text-sm">Which nodes have Docker, Node-RED, and OpenRemoteGUI. Install on the ones that are missing, in one click. Unreachable nodes are reported, not skipped silently.</p>
+    <p class="text-muted text-sm">Which nodes have Docker, Node-RED, OpenRemoteGUI and the MQTT heartbeat agent. Install on the ones that are missing, in one click. Unreachable nodes are reported, not skipped silently.</p>
     <div id="capLoading" class="text-center text-muted py-4"><div class="spinner-border spinner-border-sm"></div> Scanning fleet...</div>
     <div id="capBody" style="display:none">
-      {% for cap, label, icon in [('docker','Docker','bi-box-seam'),('nodered','Node-RED','bi-diagram-3'),('orgui','OpenRemoteGUI','bi-display')] %}
+      {% for cap, label, icon in [('docker','Docker','bi-box-seam'),('nodered','Node-RED','bi-diagram-3'),('orgui','OpenRemoteGUI','bi-display'),('heartbeat','Heartbeat agent','bi-heart-pulse')] %}
       <div class="card mb-3" data-cap="{{ cap }}">
         <div class="card-body" style="padding:12px 14px">
           <div class="flex items-center gap-2" style="justify-content:space-between">
@@ -348,6 +349,22 @@
         </div>
       </div>
       {% endfor %}
+      <div class="card mb-3" id="hbSettings">
+        <div class="card-body" style="padding:12px 14px">
+          <div class="fw-semibold"><i class="bi bi-sliders me-1"></i>Heartbeat settings (config.yaml)</div>
+          <p class="text-xs text-muted" style="margin:6px 0 8px">The same file goes to every node with the agent; each agent reloads it
+            within one interval, without a restart. A new broker makes a clean switch. No secrets are in this file.</p>
+          <div class="text-xs text-danger" id="hbOff" style="display:none;margin-bottom:6px">HEARTBEAT_MASTER_KEY is not set on this server: the agent cannot be installed yet (docs/HEARTBEAT.md).</div>
+          <div class="flex gap-2" style="flex-wrap:wrap">
+            <label class="text-xs" style="flex:1 1 160px">Broker<input class="form-control form-control-sm" id="hbBroker" maxlength="253"></label>
+            <label class="text-xs" style="flex:0 0 80px">Port<input class="form-control form-control-sm" id="hbPort" type="number" min="1" max="65535"></label>
+            <label class="text-xs" style="flex:0 0 90px">Every (s)<input class="form-control form-control-sm" id="hbInterval" type="number" min="5" max="3600"></label>
+            <label class="text-xs" style="flex:0 0 70px;align-self:flex-end"><input type="checkbox" id="hbTls"> TLS</label>
+          </div>
+          <button class="btn btn-primary btn-xs" style="margin-top:8px" onclick="saveHeartbeatSettings()"><i class="bi bi-send"></i> Save and push to fleet</button>
+          <span class="text-xs text-muted" id="hbAgentVersion"></span>
+        </div>
+      </div>
       <p class="text-xs text-muted">Docker and Node-RED installs run vendor scripts over SSH and can take several minutes per node. Validate on one node before running fleet-wide.</p>
     </div>
   </div>
@@ -652,6 +669,33 @@ function scanCapabilities() {
         });
 }
 
+// ── Heartbeat agent settings (config.yaml, hot reloaded on the nodes) ───────
+function loadHeartbeatSettings() {
+    fetch('/nodes/heartbeat/settings').then(r => r.json()).then(d => {
+        const s = d.settings || {};
+        document.getElementById('hbBroker').value = s.broker || '';
+        document.getElementById('hbPort').value = s.port || 8883;
+        document.getElementById('hbInterval').value = s.interval || 10;
+        document.getElementById('hbTls').checked = !!s.tls;
+        document.getElementById('hbOff').style.display = d.enabled ? 'none' : '';
+        document.getElementById('hbAgentVersion').textContent = d.agent_version ? ' agent ' + d.agent_version : '';
+    }).catch(() => {});
+}
+function saveHeartbeatSettings() {
+    const body = {broker: document.getElementById('hbBroker').value.trim(),
+                  port: parseInt(document.getElementById('hbPort').value, 10),
+                  interval: parseInt(document.getElementById('hbInterval').value, 10),
+                  tls: document.getElementById('hbTls').checked};
+    if (!confirm(`Push these heartbeat settings to every node with the agent?\n\n${body.broker}:${body.port}, TLS ${body.tls ? 'on' : 'off'}, every ${body.interval}s\n\nEach agent applies them within one interval, without a restart.`)) return;
+    fetch('/nodes/heartbeat/settings', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)})
+        .then(r => r.json()).then(d => {
+            if (d.job_id) esJobWindow(d.job_id);
+            else showToast(d.message || (d.success ? 'Saved (no node has the agent yet).' : 'Not saved.'), d.success ? 'success' : 'danger');
+        }).catch(e => showToast('Error: ' + e.message, 'danger'));
+}
+document.getElementById('fleetSetup') && document.getElementById('fleetSetup')
+    .addEventListener('show.bs.offcanvas', loadHeartbeatSettings);
+
 function installCapability(cap, label) {
     const btn = document.querySelector(`.cap-install[data-cap="${cap}"]`);
     const n = btn.dataset.missing || 0;
@@ -663,6 +707,16 @@ function installCapability(cap, label) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ capability: cap })
     }).then(r => r.json()).then(d => {
+        if (d.job_id) {                      // long fleet jobs run in the background with live progress
+            esJobWindow(d.job_id);
+            btn.disabled = false;
+            return;
+        }
+        if (d.message && !d.ok && !d.failed) {
+            btn.disabled = false;
+            showToast(d.message, d.success ? 'info' : 'danger');
+            return;
+        }
         showToast(`${label}: ${d.ok} succeeded, ${d.failed} failed. Rescanning...`,
             d.failed ? 'warning' : 'success');
         scanCapabilities();

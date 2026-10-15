@@ -25,6 +25,7 @@ DOCS = {
     'docs/RBAC.md': 'Roles-and-Access',
     'docs/API.md': 'API',
     'docs/EMAIL.md': 'Email',
+    'docs/HEARTBEAT.md': 'MQTT-Heartbeat',
     'docs/VPN-NETWORK.md': 'VPN-and-Network',
     'docs/MIGRATION.md': 'Database-Migration',
     'docs/ISSUES.md': 'Support-Tickets',
@@ -51,7 +52,7 @@ HOME_SECTIONS = ('Why EdgeShell', 'Screenshots', 'The ecosystem')
 
 SIDEBAR = [
     ('Start', ['Home', 'Features', 'Quick-Start', 'Getting-Started', 'Sandbox']),
-    ('Deploy', ['Deploy-on-AWS-EC2', 'Run-on-Any-Cloud', 'Configuration', 'Email', 'VPN-and-Network',
+    ('Deploy', ['Deploy-on-AWS-EC2', 'Run-on-Any-Cloud', 'Configuration', 'Email', 'MQTT-Heartbeat', 'VPN-and-Network',
                 'Database-Migration']),
     ('Use', ['Roles-and-Access', 'API', 'Support-Tickets', 'Management-CLI', 'Troubleshooting']),
     ('How it is built', ['Architecture', 'Security', 'Decision-Records', 'Testing-and-CI', 'Project-Layout']),

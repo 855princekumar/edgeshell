@@ -79,7 +79,7 @@ jobs:
         run: |
           cp .env.example .env
           docker compose config --quiet
-          SANDBOX_SECRET_KEY=x SANDBOX_CREDENTIAL_KEY=x SANDBOX_MFA_PASSWORD=x SANDBOX_MFA_PEPPER=x docker compose -f sandbox/docker-compose.yml config --quiet
+          SANDBOX_SECRET_KEY=x SANDBOX_CREDENTIAL_KEY=x SANDBOX_MFA_PASSWORD=x SANDBOX_MFA_PEPPER=x SANDBOX_HB_MASTER=x SANDBOX_HB_TOKEN=x docker compose -f sandbox/docker-compose.yml config --quiet
           cp docker/.env.example docker/.env
           for k in SECRET_KEY CREDENTIAL_KEY DB_PASSWORD DB_ROOT_PASSWORD MFA_ADMIN_PASSWORD MFA_PEPPER MFA_DB_PASSWORD MFA_SECRET_KEY; do
             sed -i "s|^$k=.*|$k=$(openssl rand -hex 32)|" docker/.env; done

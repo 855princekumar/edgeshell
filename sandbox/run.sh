@@ -5,7 +5,7 @@
 #
 #   sandbox/run.sh              build EdgeShell from this checkout, test, tear down
 #   sandbox/run.sh --keep       same, but leave everything running afterwards
-#   EDGESHELL_IMAGE=devprincekumar/edgeshell:1.8.5 sandbox/run.sh   test a published image
+#   EDGESHELL_IMAGE=devprincekumar/edgeshell:1.9.0 sandbox/run.sh   test a published image
 #
 # Needs Docker with Compose v2, curl and Python 3. Exit code 0 = all passed.
 set -euo pipefail
@@ -21,6 +21,8 @@ export SANDBOX_SECRET_KEY="$("$PY" -c 'import secrets; print(secrets.token_hex(3
 export SANDBOX_CREDENTIAL_KEY="$("$PY" -c 'import secrets; print(secrets.token_hex(32))')"
 export SANDBOX_MFA_PASSWORD="$("$PY" -c 'import secrets; print(secrets.token_hex(32))')"
 export SANDBOX_MFA_PEPPER="$("$PY" -c 'import secrets; print(secrets.token_hex(32))')"
+export SANDBOX_HB_MASTER="$("$PY" -c 'import secrets; print(secrets.token_hex(32))')"
+export SANDBOX_HB_TOKEN="$("$PY" -c 'import secrets; print(secrets.token_hex(32))')"
 COMPOSE=(docker compose -f docker-compose.yml)
 ES=edgeshell-sandbox
 SPAWNER=edgeshell-sandbox-spawner

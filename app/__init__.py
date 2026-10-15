@@ -111,6 +111,7 @@ def create_app(config_name='default'):
             'NODERED_DEFAULT_PORT': app.config['NODERED_DEFAULT_PORT'],
             'VPN_BACKEND': app.config['VPN_BACKEND'],
             'SIGNUP_ENABLED': app.config.get('SIGNUP_ENABLED', True),
+            'SENSEHIVE_PATH': app.config.get('SENSEHIVE_PUBLIC_PATH') or '',
         }
 
     _register_api(app)
@@ -338,6 +339,13 @@ def _ensure_schema():
             'is_deleted': 'BOOLEAN DEFAULT 0',
             'deleted_at': 'DATETIME',
             'docker_installed': 'BOOLEAN',
+            'hb_installed': 'BOOLEAN',
+            'hb_checked_at': 'DATETIME',
+            'hb_status': 'VARCHAR(16)',
+            'hb_last_seen': 'DATETIME',
+            'hb_since': 'DATETIME',
+            'hb_lwt_at': 'DATETIME',
+            'hb_agent_version': 'VARCHAR(16)',
             'nodered_installed': 'BOOLEAN',
             'capabilities_checked_at': 'DATETIME',
             'last_error': 'VARCHAR(256)',
@@ -366,6 +374,10 @@ def _ensure_schema():
         },
         'system_metrics': {
             'status': 'VARCHAR(16)',
+            'heartbeat': 'BOOLEAN',
+        },
+        'metrics_hourly': {
+            'heartbeat_only': 'INTEGER DEFAULT 0',
         },
         'api_tokens': {
             'purpose': 'VARCHAR(200)',

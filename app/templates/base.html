@@ -584,6 +584,11 @@
             <a href="{{ url_for('users.api_access') }}" class="nav-item {% if 'users.api' in request.endpoint %}active{% endif %}">
                 <i class="bi bi-plug"></i> API Access
             </a>
+            {% if SENSEHIVE_PATH %}
+            <a href="{{ SENSEHIVE_PATH }}" class="nav-item" target="_blank" rel="noopener" title="Heartbeat receiver (opens in a new tab)">
+                <i class="bi bi-heart-pulse"></i> SenseHive <i class="bi bi-box-arrow-up-right" style="font-size:.7rem;margin-left:auto"></i>
+            </a>
+            {% endif %}
             <a href="{{ url_for('tailscale.index') }}" class="nav-item {% if 'tailscale.' in request.endpoint %}active{% endif %}">
                 <i class="bi bi-shield-lock"></i> VPN / Tailscale
             </a>

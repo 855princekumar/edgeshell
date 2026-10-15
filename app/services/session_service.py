@@ -39,7 +39,7 @@ ACTIVE_WRITE_EVERY = timedelta(seconds=20)  # throttle interaction writes
 # Pages a signed-in user may still open while a required step is pending.
 GATE_OPEN_ENDPOINTS = {'auth.logout', 'auth.change_password', 'auth.session_status',
                        'auth.session_activity', 'account.email', 'account.email_verify',
-                       'account.email_resend', 'static',
+                       'account.email_resend', 'auth.admin_check', 'static',
                        'health.healthz'}
 
 REVOKE_MESSAGES = {

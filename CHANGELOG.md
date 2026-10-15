@@ -2,6 +2,18 @@
 
 All notable changes are documented here. Format loosely follows Keep a Changelog.
 
+## [1.9.0] - 2026-10-16
+
+### Added
+- **MQTT heartbeat: a second, VPN-independent liveness signal per node** ([docs/HEARTBEAT.md](docs/HEARTBEAT.md), [ADR 0013](docs/adr/0013-mqtt-heartbeat.md)).
+  - The [heartbeat agent](https://github.com/855princekumar/mqtt-heartbeat-service) on each node (`/opt/edgeshell-heartbeat`, hardened systemd service) sends an encrypted, authenticated heartbeat every 10 s and a signed last will over a public broker (default `broker.hivemq.com`, TLS). Per-node keys, rotating random topics, no data but the node name and a time.
+  - [SenseHive](https://github.com/855princekumar/sense-hive) joins the Docker stack (SQLite in `./data/sensehive`): it verifies the heartbeats and serves them read-only to EdgeShell. Administrators open it from the sidebar (new tab) at `/sensehive/`, after nginx checks with EdgeShell that they are signed-in administrators.
+  - Node cards show heartbeat, LWT offline, silent or "no heartbeat agent" for every role; status changes are events (`heartbeat_changed`).
+  - **Uptime counts a node as up when SSH or a verified heartbeat says so**: dashboard availability (SLA) and the hourly history; VPN gaps are recorded separately (`heartbeat_only`).
+  - Fleet Setup: install the agent (background job, 8 nodes at a time) and push heartbeat settings (`config.yaml`) to every node, hot reloaded by the agents without a restart; administrators only.
+  - Sandbox end to end: agent on an emulated node, local broker, SenseHive, EdgeShell, settings push and last will.
+- `log_activity` records who started a background job.
+
 ## [1.8.5] - 2026-10-15
 
 ### Security
