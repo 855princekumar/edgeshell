@@ -10,6 +10,9 @@ All notable changes are documented here. Format loosely follows Keep a Changelog
 - **Admin alerts in the sidebar**: open tickets on Issues; reset requests and sign-ups waiting on User Management.
 - Ticket notifications are sent over SMTP when useSend is not configured.
 
+### Security
+- Email address checks use a pattern that cannot backtrack (CodeQL py/polynomial-redos), with a length cap.
+
 ### Changed
 - **The activity log is for administrators only**: the page, its sidebar link, the dashboard's Recent Activity and Recent Errors panels, and `GET /api/v1/activity` (403) are no longer available to operators and monitors. Node logs in the Log Viewer are unchanged.
 - The login page's username field no longer suggests an account name.
