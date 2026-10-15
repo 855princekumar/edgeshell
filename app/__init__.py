@@ -87,6 +87,24 @@ def create_app(config_name='default'):
     csrf.exempt(health_bp)
 
     @app.context_processor
+    def _inject_admin_alerts():
+        """Sidebar badges for administrators: open tickets, and reset requests
+        plus sign-ups waiting for approval, so nothing waits unseen when no
+        mail is set up."""
+        from flask_login import current_user
+        try:
+            if not (current_user.is_authenticated and current_user.is_admin()):
+                return {}
+            from app.models.issue import Issue
+            from app.models.user import PasswordResetRequest, User
+            return {'ADMIN_ALERTS': {
+                'tickets': Issue.query.filter(Issue.status == 'open').count(),
+                'accounts': PasswordResetRequest.query.filter_by(status='open').count()
+                + User.query.filter_by(approval_status='pending').count()}}
+        except Exception:
+            return {}
+
+    @app.context_processor
     def _inject_defaults():
         return {
             'ORGUI_DEFAULT_PORT': app.config['ORGUI_DEFAULT_PORT'],
@@ -333,6 +351,8 @@ def _ensure_schema():
             'max_sessions': 'INTEGER NOT NULL DEFAULT 1',
             'ui_prefs': 'TEXT',
             'api_access': 'BOOLEAN NOT NULL DEFAULT 1',
+            'email_verified_at': 'DATETIME',
+            'email_pending': 'VARCHAR(120)',
             'approval_status': "VARCHAR(16) NOT NULL DEFAULT 'approved'",
             'is_owner': 'BOOLEAN NOT NULL DEFAULT 0',
             'admin_since': 'DATETIME',

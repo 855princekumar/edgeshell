@@ -230,7 +230,7 @@ relayed, last seen, traffic) by reading the host's `tailscaled` socket.
 tailscaled allows non-root programs to read status only, so the panel can
 never change the VPN.
 
-### A9. Password reset email (optional, free)
+### A9. Email: verification and password reset (optional, free)
 
 Any SMTP server works; no paid API is needed. With Gmail: turn on 2-step
 verification, create an app password, and add to `.env`:
@@ -247,6 +247,13 @@ then `docker compose up -d`. Other free options: Brevo (300 emails a day);
 AWS SES is paid per use and needs a verified domain. Without email,
 administrators recover with a backup code, and other users ask an
 administrator.
+
+Once mail works (with `PUBLIC_URL` set), **every user confirms their email at
+the next sign-in** by opening a link sent to it, and from then on anyone can
+reset their own password by email (2FA stays on). Send yourself a test first
+(Issues, Email settings, or a reset of your own account) so nobody is held at
+the confirmation step by a mail setup that does not deliver. The same mail
+server also delivers ticket notifications.
 
 ### A10. Operate
 

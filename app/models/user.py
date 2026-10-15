@@ -51,6 +51,11 @@ class User(UserMixin, db.Model):
     ui_prefs = db.Column(db.Text)
     # An administrator can block a user from the API (all credentials end).
     api_access = db.Column(db.Boolean, nullable=False, default=True)
+    # When `email` was proven to reach its owner (a link sent there was opened).
+    # A new address waits in `email_pending` until its link is opened, so a
+    # typo or someone else's address never replaces a working one.
+    email_verified_at = db.Column(db.DateTime)
+    email_pending = db.Column(db.String(120))
     sessions = db.relationship('UserSession', backref='user',
                                cascade='all, delete-orphan', passive_deletes=True)
 
@@ -93,11 +98,22 @@ class User(UserMixin, db.Model):
     def is_pending(self):
         return self.approval_status == 'pending'
 
-    def needs_recovery_email(self):
-        """Administrators must keep a personal email for reset links."""
+    def has_real_email(self):
         email = (self.email or '').lower()
-        return self.is_admin() and (not email or email.endswith('.local')
-                                    or email.endswith('@example.com'))
+        return bool(email) and not (email.endswith('.local') or email.endswith('@example.com'))
+
+    def email_verified(self):
+        return self.has_real_email() and self.email_verified_at is not None
+
+    def needs_recovery_email(self):
+        """A required step before the app opens. With outgoing mail set up,
+        every account needs a verified email (reset links go there). Without
+        it nobody can be verified, so only administrators must enter a real
+        address, as before."""
+        from app.services.email_service import mail_ready
+        if mail_ready():
+            return not self.email_verified()
+        return self.is_admin() and not self.has_real_email()
 
     def is_operator(self):
         return self._role() in ('administrator', 'operator')

@@ -4,6 +4,12 @@ All notable changes are documented here. Format loosely follows Keep a Changelog
 
 ## [Unreleased]
 
+### Added
+- **Verified email for every account** when outgoing mail is set up: after 2FA at the first sign-in, a link is sent to the address and the app opens once it is confirmed. A new address is used only after its link is opened (older links stop working). Accounts from before confirm their address at the next sign-in. Without mail, nothing changes.
+- **Password reset by email for every role** (to the verified address only; 2FA stays on). Accounts without a verified address still go to the administrators.
+- **Admin alerts in the sidebar**: open tickets on Issues; reset requests and sign-ups waiting on User Management.
+- Ticket notifications are sent over SMTP when useSend is not configured.
+
 ### Changed
 - **The activity log is for administrators only**: the page, its sidebar link, the dashboard's Recent Activity and Recent Errors panels, and `GET /api/v1/activity` (403) are no longer available to operators and monitors. Node logs in the Log Viewer are unchanged.
 - The login page's username field no longer suggests an account name.

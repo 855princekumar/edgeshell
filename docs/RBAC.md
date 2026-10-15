@@ -73,12 +73,33 @@ and API callers get a JSON 403; browser navigation gets a flash and redirect.
 
 | Who | How |
 |---|---|
-| Monitor or operator | "Forgot password?" sends a request to the administrators. An admin sets a temporary password; this also removes the user's 2FA, so it is set up again at the next sign-in, and ends every session. |
-| Administrator | A reset link to the personal email on the account (needs `SMTP_*` and `PUBLIC_URL`), single use, valid 30 minutes. Or "use a backup code": username + one backup code + new password. 2FA stays on either way. The owner can also reset another administrator. |
+| Monitor or operator | "Forgot password?" emails a reset link to the account's **verified** address (single use, valid 30 minutes; 2FA stays on). Without mail, or without a verified address, the request goes to the administrators, who set a temporary password; that also removes the user's 2FA, so it is set up again at the next sign-in, and ends every session. |
+| Administrator | The same emailed link, or "use a backup code": username + one backup code + new password. 2FA stays on either way. The owner can also reset another administrator. |
 | Owner | Emailed link or a backup code. Nobody else can reset the owner. |
 
-Administrators must add a personal email before using the platform: the
-first sign-in goes 2FA, then the email, then a new password.
+The reply to "Forgot password?" is the same whether or not the account exists.
+Administrators see waiting reset requests and sign-ups as a badge on **User
+Management**, and open tickets as a badge on **Issues**.
+
+## Verified email
+
+With outgoing mail set up (`SMTP_*` or useSend, and `PUBLIC_URL`), **every
+account needs a verified email** before the app opens: the first sign-in goes
+2FA, then the email, then a new password.
+
+- EdgeShell sends a link to the address; opening it (on any device, valid 24
+  hours) confirms that the address works. Until then the account keeps its
+  previous address, so a typo or someone else's address never replaces one
+  that works.
+- Requesting another address makes older links stop working. An address used
+  by another account is refused.
+- Reset links only ever go to a verified address.
+- Accounts from before 1.8.2 confirm their current address at the next sign-in.
+- An administrator held at this step can still open Issues, Email settings, so
+  a broken mail setup can be fixed without locking everyone out.
+
+Without outgoing mail nothing is verified (it could not be) and only
+administrators must enter a personal address, as before.
 
 ## Administrators
 

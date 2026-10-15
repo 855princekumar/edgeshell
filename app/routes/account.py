@@ -240,34 +240,128 @@ def reset_2fa():
     return redirect(url_for('auth.login'))
 
 
+def _verify_serializer():
+    from itsdangerous import URLSafeTimedSerializer
+    return URLSafeTimedSerializer(current_app.config['SECRET_KEY'], salt='edgeshell-email-verify')
+
+
+VERIFY_HOURS = 24
+
+
+def _send_verification(user, address):
+    """Email a one-use link that proves `address` reaches this user."""
+    from app.services.email_service import send_account_email
+    token = _verify_serializer().dumps({'u': user.id, 'e': address})
+    link = f"{current_app.config.get('PUBLIC_URL', '').rstrip('/')}{url_for('account.email_verify', token=token)}"
+    return send_account_email(
+        address, 'EdgeShell: confirm your email address',
+        f'Someone (hopefully you) set this address for the EdgeShell account "{user.username}".\n\n'
+        f'Open this link within {VERIFY_HOURS} hours to confirm it:\n{link}\n\n'
+        'Password reset links for the account will be sent here. If this was not you, ignore '
+        'this email; nothing changes until the link is opened.\n')
+
+
 @account_bp.route('/email', methods=['GET', 'POST'])
 @login_required
+@limiter.limit('10 per hour', methods=['POST'])
 def email():
+    """Set the account email. With outgoing mail set up, a new address is only
+    used after the link sent to it is opened (it waits in email_pending)."""
     import re
+    from app.services.email_service import mail_ready
+    ready = mail_ready()
     required = current_user.needs_recovery_email()
     if request.method == 'POST':
         new = request.form.get('email', '').strip().lower()
-        if not re.match(EMAIL_RE, new) or new.endswith('.local'):
+        if not re.match(EMAIL_RE, new) or new.endswith('.local') or new.endswith('@example.com'):
             flash('Enter a real email address you can read.', 'danger')
         elif not current_user.check_password(request.form.get('password', '')):
             flash('Your password was not correct.', 'danger')
-        elif User.query.filter(db.func.lower(User.email) == new,
+        elif User.query.filter(db.or_(db.func.lower(User.email) == new, db.func.lower(User.email_pending) == new),
                                User.id != current_user.id).first():
             flash('That email address is used by another account.', 'danger')
+        elif ready:
+            if new == (current_user.email or '').lower() and current_user.email_verified():
+                flash('That address is already verified.', 'info')
+                return redirect(url_for('account.email'))
+            current_user.email_pending = new
+            db.session.commit()
+            ok, detail = _send_verification(current_user, new)
+            log_activity('Email verification sent', response=new if ok else f'{new}: {detail}',
+                         status='success' if ok else 'failure')
+            if ok:
+                flash(f'We sent a link to {new}. Open it to confirm the address; until then your account '
+                      'keeps its current email.', 'info')
+            else:
+                flash('The verification email could not be sent. Check the address or try again shortly; '
+                      'an administrator can check the mail settings.', 'danger')
+            return redirect(url_for('account.email'))
         else:
             current_user.email = new
             db.session.commit()
             log_activity('Account email changed', status='success')
-            flash('Email saved.' + (' Password reset links will be sent there.'
-                                     if current_user.is_admin() else ''), 'success')
+            flash('Email saved. It is verified once outgoing mail is set up on this server.', 'success')
             if current_user.must_change_password:
                 return redirect(url_for('auth.change_password'))
             return redirect(url_for('account.index') if not required
                             else url_for('dashboard.index'))
-    from app.services.email_service import account_mail_available
-    return render_template('account/email.html', required=required,
-                           mail_ready=bool(account_mail_available()
-                                           and current_app.config.get('PUBLIC_URL')))
+    return render_template('account/email.html', required=required, mail_ready=ready,
+                           verify_hours=VERIFY_HOURS)
+
+
+@account_bp.route('/email/resend', methods=['POST'])
+@login_required
+@limiter.limit('5 per hour')
+def email_resend():
+    """Send the link again: to the waiting address, or to the current one when
+    it has never been verified (accounts from before verification existed)."""
+    from app.services.email_service import mail_ready
+    target = current_user.email_pending or (current_user.email if current_user.has_real_email()
+                                            and not current_user.email_verified() else None)
+    if not mail_ready() or not target:
+        flash('There is nothing to verify.', 'info')
+        return redirect(url_for('account.email'))
+    if not current_user.email_pending:
+        current_user.email_pending = target
+        db.session.commit()
+    ok, detail = _send_verification(current_user, target)
+    log_activity('Email verification sent', response=target if ok else f'{target}: {detail}',
+                 status='success' if ok else 'failure')
+    flash(f'Link sent to {target}.' if ok else 'The verification email could not be sent. Try again shortly.',
+          'info' if ok else 'danger')
+    return redirect(url_for('account.email'))
+
+
+@account_bp.route('/email/verify/<token>')
+@limiter.limit('20 per hour')
+def email_verify(token):
+    """Opening the link proves the address works. No sign-in needed (the link
+    may be opened on a phone); it only confirms the address this account asked
+    for, and stops working once another address is requested."""
+    from itsdangerous import BadSignature, SignatureExpired
+    try:
+        data = _verify_serializer().loads(token, max_age=VERIFY_HOURS * 3600)
+    except (SignatureExpired, BadSignature):
+        data = None
+    user = db.session.get(User, data.get('u')) if isinstance(data, dict) else None
+    address = data.get('e') if isinstance(data, dict) else None
+    if not user or not user.is_active or not address or (user.email_pending or '').lower() != address.lower():
+        flash('That confirmation link is invalid, expired or already used. Request a new one.', 'danger')
+        return redirect(url_for('account.email') if current_user.is_authenticated else url_for('auth.login'))
+    if User.query.filter(db.func.lower(User.email) == address.lower(), User.id != user.id).first():
+        flash('That email address is now used by another account.', 'danger')
+        return redirect(url_for('auth.login'))
+    old = user.email
+    user.email, user.email_pending, user.email_verified_at = address, None, datetime.utcnow()
+    db.session.commit()
+    log_activity(f'Email verified: {user.username}', response=address if old == address else f'{old} -> {address}',
+                 status='success')
+    flash('Email address confirmed. Password reset links will be sent there.', 'success')
+    if current_user.is_authenticated and current_user.id == user.id:
+        if user.must_change_password:
+            return redirect(url_for('auth.change_password'))
+        return redirect(url_for('dashboard.index'))
+    return redirect(url_for('auth.login'))
 
 
 @account_bp.route('/step-down', methods=['POST'])

@@ -2,15 +2,19 @@
 {% block title %}Forgot password{% endblock %}
 {% block heading %}
     <h2>Forgot your password?</h2>
-    <p class="subtitle">How you get back in depends on your role</p>
+    <p class="subtitle">{{ 'We email you a reset link' if mail_ready else 'An administrator helps you back in' }}</p>
 {% endblock %}
 {% block body %}
+    {% if mail_ready %}
+    <p class="muted">Enter your username. A reset link goes to the <strong>verified</strong> email on your account
+       (valid 30 minutes, single use). Your two-factor authentication stays on. If your account has no verified
+       email, the request goes to an administrator instead.</p>
+    {% else %}
     <p class="muted"><strong>Users:</strong> send a reset request. An administrator sets a temporary
        password and gives it to you. Your two-factor authentication is reset too, so you set it up
        again at your next sign-in.</p>
-    <p class="muted"><strong>Administrators:</strong> a reset link is emailed to the personal address
-       on your account{% if not mail_ready %} (email is not configured on this server yet){% endif %},
-       or <a class="link" href="{{ url_for('auth.recover') }}">use one of your backup codes</a>.</p>
+    {% endif %}
+    <p class="muted"><strong>Administrators</strong> can also <a class="link" href="{{ url_for('auth.recover') }}">use one of their backup codes</a>.</p>
     <form method="POST" action="{{ url_for('auth.forgot') }}" data-busy="Sending...">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <div class="field">

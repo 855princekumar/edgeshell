@@ -258,9 +258,9 @@ def test_forgot_password_user_creates_one_request(app):
     c = app.test_client()
     for _ in range(2):
         r = c.post('/forgot', data={'username': 'olly'}, follow_redirects=True)
-        assert b'request has been recorded' in r.data
+        assert b'If that account exists' in r.data
     r = c.post('/forgot', data={'username': 'nobody'}, follow_redirects=True)
-    assert b'request has been recorded' in r.data            # same answer
+    assert b'If that account exists' in r.data              # same answer
     with app.app_context():
         assert PasswordResetRequest.query.count() == 1
 
@@ -271,6 +271,10 @@ def test_admin_email_reset_link_single_use(app, monkeypatch):
     sent = []
     import app.services.email_service as es
     monkeypatch.setattr(es, '_send_smtp', lambda to, subject, text: sent.append((to, text)) or (True, 'sent'))
+    from datetime import datetime
+    with app.app_context():
+        db.session.get(User, 1).email_verified_at = datetime.utcnow()   # links go to verified addresses only
+        db.session.commit()
     c = app.test_client()
     c.post('/forgot', data={'username': 'admin'})
     assert sent and sent[0][0] == 'owner@fleet.test'

@@ -71,6 +71,12 @@ def send_email(to, subject, html, text=None):
     """Return (ok, detail). Never raises."""
     c = get_email_config()
     if not (c['enabled'] and c['api_key'] and c['from']):
+        # No useSend: ticket and other notices go through SMTP when that is set.
+        if smtp_configured() and to:
+            recipients = [to] if isinstance(to, str) else [t for t in to if t]
+            results = [_send_smtp(t, subject, text or _strip_html(html)) for t in recipients]
+            ok = bool(results) and all(r[0] for r in results)
+            return ok, 'sent' if ok else '; '.join(r[1] for r in results if not r[0])
         return False, 'email disabled or not configured'
     if not to:
         return False, 'no recipient'
@@ -109,6 +115,22 @@ def smtp_configured():
 
 def account_mail_available():
     return smtp_configured() or is_enabled()
+
+
+def mail_ready():
+    """Mail can reach users with working links: a transport and PUBLIC_URL.
+    Asked on every page (the email step), so the cheap checks come first and
+    the answer is kept for the rest of the request."""
+    from flask import g, has_request_context
+    if not current_app.config.get('PUBLIC_URL'):
+        return False
+    if smtp_configured():
+        return True
+    if has_request_context():
+        if '_mail_ready' not in g:
+            g._mail_ready = is_enabled()
+        return g._mail_ready
+    return is_enabled()
 
 
 def send_account_email(to, subject, text):

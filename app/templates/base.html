@@ -559,6 +559,7 @@
             <span class="nav-section">Intelligence</span>
             <a href="{{ url_for('issues.index') }}" class="nav-item {% if 'issues.' in request.endpoint %}active{% endif %}">
                 <i class="bi bi-life-preserver"></i> {% if current_user.is_admin() %}Issues{% else %}My Issues{% endif %}
+                {% if ADMIN_ALERTS and ADMIN_ALERTS.tickets %}<span class="nav-badge" title="Open tickets">{{ ADMIN_ALERTS.tickets }}</span>{% endif %}
             </a>
             <a href="{{ url_for('logs.index') }}" class="nav-item {% if 'logs.' in request.endpoint %}active{% endif %}">
                 <i class="bi bi-journal-text"></i> Log Viewer
@@ -578,6 +579,7 @@
             <span class="nav-section">Administration</span>
             <a href="{{ url_for('users.index') }}" class="nav-item {% if 'users.' in request.endpoint and 'users.api' not in request.endpoint %}active{% endif %}">
                 <i class="bi bi-people"></i> User Management
+                {% if ADMIN_ALERTS and ADMIN_ALERTS.accounts %}<span class="nav-badge" title="Password reset requests and sign-ups waiting">{{ ADMIN_ALERTS.accounts }}</span>{% endif %}
             </a>
             <a href="{{ url_for('users.api_access') }}" class="nav-item {% if 'users.api' in request.endpoint %}active{% endif %}">
                 <i class="bi bi-plug"></i> API Access
