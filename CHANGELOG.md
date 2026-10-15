@@ -2,7 +2,7 @@
 
 All notable changes are documented here. Format loosely follows Keep a Changelog.
 
-## [Unreleased]
+## [1.8.3] - 2026-10-15
 
 ### Added
 - **Activity log: filter by user** (administrators): a user list on the Activity Log (everyone who appears in it, including deleted accounts and `system`), a click on any username shows only that user's entries, and `GET /api/v1/activity?user=<username>`. Indexed, so it stays quick on a long log.
