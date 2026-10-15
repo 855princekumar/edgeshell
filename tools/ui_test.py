@@ -34,7 +34,7 @@ SCREENS = [('phone', 390, 844, 3), ('tablet', 820, 1180, 2), ('laptop', 1366, 76
 ZOOMS = [('laptop', 1366, 768, z) for z in (0.67, 1.25, 1.5, 2.0)] + \
         [('desktop', 1920, 1080, z) for z in (1.5, 2.0)]
 PAGES = ['/', '/nodes/', '/monitoring/', '/terminal/', '/files/', '/logs/', '/logs/activity',
-         '/users/', '/users/add', '/users/api', '/account/', '/tailscale/', '/settings/', '/issues/',
+         '/users/', '/users/add', '/users/api', '/account/', '/account/api', '/tailscale/', '/settings/', '/issues/',
          '/nodes/add', '/nodes/import']
 TYPES = [('pi-node', 0.86, 'site-a-pi-node'), ('gateway', 0.10, 'site-b-gateway'),
          ('mini-pc', 0.02, 'site-c-mini-pc'), ('rtu', 0.02, 'plant-east-gate-sensor-hub-panel')]
@@ -369,8 +369,8 @@ def run_interactions(pw, base, rep, total, real_id, label, w, h, scale):
               page.get_attribute('#expBar', 'style'), page)
     page.click('#expClose')
 
-    # My account, API access: create a service key (password and 2FA again), shown once
-    page.goto(base + '/account/')
+    # API page (sidebar, Intelligence): create a service key (password and 2FA again), shown once
+    page.goto(base + '/account/api')
     page.locator('#api summary').click()
     page.fill('#api input[name=name]', f'ui-test-{label}')
     page.fill('#api input[name=purpose]', 'browser test of the API access section')
@@ -382,7 +382,7 @@ def run_interactions(pw, base, rep, total, real_id, label, w, h, scale):
     rep.check(f'{label}: a new service key is shown once', key.startswith('esk_'), key[:8], page)
     issues = page.evaluate(LAYOUT_JS)
     rep.check(f'{label}: API access section fits', not issues, '; '.join(issues[:4]), page)
-    page.goto(base + '/account/')
+    page.goto(base + '/account/api')
     rep.check(f'{label}: the key is not shown again', page.locator('#newKey').count() == 0
               and f'ui-test-{label}' in page.inner_text('#api'), '', page)
 
