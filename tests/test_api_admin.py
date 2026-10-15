@@ -280,3 +280,13 @@ def test_every_role_reaches_the_api_page_from_the_sidebar(app, name):
     assert 'Your access' in page and 'Create a service key' in page and '/api/v1' in page
     assert ('href="/users/api"' in page) == (name == 'admin')          # administration link for admins only
     assert 'Create a service key' not in c.get('/account/').get_data(as_text=True)
+
+
+def test_the_api_guide_is_a_readable_page_for_every_signed_in_user(app):
+    assert app.test_client().get('/account/api/guide').status_code == 302          # sign-in first
+    c = app.test_client()
+    c.post('/login', data={'username': 'mon', 'password': 'Operator-pass-1'})
+    page = c.get('/account/api/guide').get_data(as_text=True)
+    assert '<title>EdgeShell API guide</title>' in page and 'class="guide-toc"' in page
+    assert 'id="signing-in"' in page and '<table' in page                          # docs/API.md, rendered
+    assert 'href="/account/api/guide"' in c.get('/account/api').get_data(as_text=True)

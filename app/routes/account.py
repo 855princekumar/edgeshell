@@ -71,6 +71,14 @@ def api():
                            new_key=session.pop('new_api_key', None))
 
 
+@account_bp.route('/api/guide')
+@login_required
+def api_guide():
+    """The API guide (docs/API.md) as one readable page, opened in a new tab.
+    Built by tools/build_api_guide.py; CI checks it matches the doc."""
+    return render_template('account/api_guide.html')
+
+
 @account_bp.route('/api-keys', methods=['POST'])
 @login_required
 @limiter.limit('10 per hour', methods=['POST'])

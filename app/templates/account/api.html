@@ -7,8 +7,8 @@
         <div class="page-subtitle">Connect other systems to EdgeShell with your own credentials</div>
     </div>
     <div class="d-flex gap-2 flex-wrap">
-        <a href="{{ url_for('api.openapi') }}" class="btn btn-outline btn-sm" target="_blank" rel="noopener"><i class="bi bi-filetype-json"></i> OpenAPI spec</a>
-        <a href="https://github.com/855princekumar/edgeshell/blob/main/docs/API.md" class="btn btn-outline btn-sm" target="_blank" rel="noopener"><i class="bi bi-book"></i> API guide</a>
+        <a href="{{ url_for('account.api_guide') }}" class="btn btn-primary btn-sm" target="_blank" rel="noopener"><i class="bi bi-book"></i> API guide</a>
+        <a href="{{ url_for('api.openapi') }}" class="btn btn-outline btn-sm" target="_blank" rel="noopener" title="Machine-readable spec for tools such as Postman or code generators"><i class="bi bi-filetype-json"></i> OpenAPI (for tools)</a>
         {% if current_user.is_admin() %}<a href="{{ url_for('users.api_access') }}" class="btn btn-outline btn-sm"><i class="bi bi-plug"></i> Administration</a>{% endif %}
     </div>
 </div>

@@ -9,6 +9,7 @@ All notable changes are documented here. Format loosely follows Keep a Changelog
 - The login page's username field no longer suggests an account name.
 - **Installing software on nodes is for administrators only**: Fleet Setup, Install on Fleet and the OpenRemoteGUI install from a node card. Operators see the same as monitors there; they can still open OpenRemoteGUI where it already runs.
 - **API page in the sidebar** (Intelligence, API) for every role: your sessions and service keys, what your role allows on this server, the API address, a quick start, and links to the OpenAPI spec and guide (administrators also get a link to Administration, API Access). It replaces the API section on My account.
+- **API guide as a readable page**: the API page's "API guide" opens docs/API.md in a new tab as one formatted page with a table of contents (built by `tools/build_api_guide.py`; CI fails if it drifts from the doc). The raw OpenAPI JSON stays available for tools.
 
 ## [1.8.1] - 2026-10-15
 
