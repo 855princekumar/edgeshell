@@ -220,3 +220,15 @@ def test_the_capability_scan_reads_the_agent_state(app, monkeypatch):
         assert summary['counts']['heartbeat']['installed'] == 3
         assert all(n.hb_installed for n in Node.query.all())
         assert 'HB_RUNNING' in cap._check_cmd(6080)
+
+
+def test_a_test_group_gets_the_agent_and_nobody_else(app, monkeypatch):
+    from app.routes import nodes as routes
+    started = []
+    monkeypatch.setattr(routes._jobs, 'run_each', lambda kind, title, owner, ids, work, **kw: started.append(ids) or 'j3')
+    with app.app_context():
+        picked = [n.id for n in Node.query.order_by(Node.name).limit(2)]
+    r = login(app).post('/nodes/capabilities/install', json={'capability': 'heartbeat', 'node_ids': picked}).get_json()
+    assert r['job_id'] == 'j3' and sorted(started[0]) == sorted(picked)
+    page = login(app).get('/nodes/').get_data(as_text=True)
+    assert 'node_ids: picked' in page                      # Fleet Setup sends the ticked nodes
