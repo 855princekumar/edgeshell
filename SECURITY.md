@@ -46,8 +46,9 @@ You will be credited in the release notes unless you ask not to be.
   privacyIDEA sit on internal Docker networks.
 - Password reset links are single-use, expire in 30 minutes, go only to an
   address the user has verified, and are built from `PUBLIC_URL`, never from
-  the request's Host header. 2FA stays on after a reset by email, so a mailbox
-  alone never opens an account. An admin reset of a user's password also
+  the request's Host header. The reset page also asks for a 2FA code (or a
+  backup code), and wrong codes count toward the lockout, so a mailbox alone
+  cannot even change the password; 2FA stays on afterwards. An admin reset of a user's password also
   resets that user's 2FA.
 - With mail set up, every account verifies its email by a signed link (24
   hours) before the app opens; a new address replaces the old one only once

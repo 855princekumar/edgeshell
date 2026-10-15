@@ -287,6 +287,41 @@ def test_admin_email_reset_link_single_use(app, monkeypatch):
     assert '/forgot' in r.headers['Location']                 # link already used
 
 
+def test_the_reset_page_asks_for_the_new_password_and_a_2fa_code(app, monkeypatch):
+    """One page: the link proves the mailbox, the code proves the device."""
+    app.config.update(SMTP_HOST='smtp.test', SMTP_FROM='es@fleet.test', PUBLIC_URL='https://fleet.test')
+    sent = []
+    import app.services.email_service as es
+    monkeypatch.setattr(es, '_send_smtp', lambda to, subject, text: sent.append((to, text)) or (True, 'sent'))
+    c = app.test_client()
+    secret, codes = _enroll(c, 'admin', 'admin123')
+    c.get('/logout')
+    from datetime import datetime
+    with app.app_context():
+        db.session.get(User, 1).email_verified_at = datetime.utcnow()
+        db.session.commit()
+    c = app.test_client()
+    c.post('/forgot', data={'username': 'admin'})
+    link = re.search(r'https://fleet\.test(/reset/\S+)', sent[-1][1]).group(1)
+    page = c.get(link).get_data(as_text=True)
+    assert 'name="new_password"' in page and 'name="code"' in page          # both on one page
+    form = {'new_password': 'Brand-new-pass', 'confirm_password': 'Brand-new-pass'}
+    r = c.post(link, data=dict(form, code='000000'))
+    assert r.status_code == 200 and 'That code is not valid' in r.get_data(as_text=True)
+    with app.app_context():
+        u = db.session.get(User, 1)
+        assert u.check_password('admin123') and u.failed_logins == 1      # unchanged, counted
+    r = c.post(link, data={'new_password': 'short', 'confirm_password': 'short', 'code': codes[0]})
+    with app.app_context():
+        assert db.session.get(User, 1).check_password('admin123')          # a typo does not spend the code
+    r = c.post(link, data=dict(form, code=codes[0]))
+    assert r.status_code == 302 and '/login' in r.headers['Location']
+    with app.app_context():
+        assert db.session.get(User, 1).check_password('Brand-new-pass')
+    r = c.post(link, data=dict(form, code=codes[1]))
+    assert '/forgot' in r.headers['Location']                                # single use
+
+
 def test_no_reset_mail_without_public_url(app, monkeypatch):
     app.config.update(SMTP_HOST='smtp.test', SMTP_FROM='es@fleet.test', PUBLIC_URL='')
     sent = []

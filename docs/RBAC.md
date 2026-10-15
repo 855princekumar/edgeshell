@@ -73,7 +73,7 @@ and API callers get a JSON 403; browser navigation gets a flash and redirect.
 
 | Who | How |
 |---|---|
-| Monitor or operator | "Forgot password?" emails a reset link to the account's **verified** address (single use, valid 30 minutes; 2FA stays on). Without mail, or without a verified address, the request goes to the administrators, who set a temporary password; that also removes the user's 2FA, so it is set up again at the next sign-in, and ends every session. |
+| Monitor or operator | "Forgot password?" emails a reset link to the account's **verified** address (single use, valid 30 minutes). The link opens one page asking for the new password **and a 2FA code** (or a backup code); wrong codes count toward the lockout. Without mail, or without a verified address, the request goes to the administrators, who set a temporary password; that also removes the user's 2FA, so it is set up again at the next sign-in, and ends every session. |
 | Administrator | The same emailed link, or "use a backup code": username + one backup code + new password. 2FA stays on either way. The owner can also reset another administrator. |
 | Owner | Emailed link or a backup code. Nobody else can reset the owner. |
 
