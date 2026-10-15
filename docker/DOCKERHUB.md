@@ -58,6 +58,12 @@ anything else you set up two-factor authentication (scan the QR code with any
 authenticator app and save the 10 backup codes), your personal email (where
 password reset links go) and a new password.
 
+**MQTT heartbeat (optional):** set `HEARTBEAT_MASTER_KEY` and `SENSEHIVE_API_TOKEN`
+in `.env` (`openssl rand -hex 32` each). Then install the heartbeat agent from
+Fleet Setup: nodes send encrypted heartbeats over a public broker to SenseHive
+(in the stack), so a VPN glitch is not counted as downtime. See
+[docs/HEARTBEAT.md](https://github.com/855princekumar/edgeshell/blob/main/docs/HEARTBEAT.md).
+
 **Email (optional):** set `PUBLIC_URL` and the `SMTP_*` values in `.env` (any
 SMTP server; free options such as Resend, Brevo, useSend or Gmail are explained in [docs/EMAIL.md](https://github.com/855princekumar/edgeshell/blob/main/docs/EMAIL.md)). Every user then confirms
 their email with a link, anyone can reset their password by email (2FA stays
@@ -145,7 +151,7 @@ edgeshell/
 | `COLLECTOR_INTERVAL` / `COLLECTOR_WORKERS` | no | `30` / `48` | Seconds between fleet metric passes, and nodes polled at once |
 | `IDLE_MINUTES` / `IDLE_WARNING_MINUTES` | no | `10` / `5` | "Still there?" prompt after this much inactivity, then sign-out (`0` turns it off) |
 | `SIGNUP_ENABLED` | no | `true` | Let people request an account (an admin approves it with a role) |
-| `EDGESHELL_TAG` | no | `1.8.5` | Image version |
+| `EDGESHELL_TAG` | no | `1.9.0` | Image version |
 | `DISPLAY_TZ` | no | `UTC` | Time zone shown in the UI (the database stores UTC) |
 | `SESSION_HOURS` | no | `8` | Idle session lifetime |
 | `SINGLE_SESSION` | no | `true` | Enforce each user's device limit (1 by default, up to 4 per user) |
@@ -193,7 +199,7 @@ sed -i 's|^EDGESHELL_DOMAIN=:80$|EDGESHELL_DOMAIN=|' .env    # IP mode is now an
 for k in MFA_ADMIN_PASSWORD MFA_PEPPER MFA_DB_PASSWORD MFA_SECRET_KEY; do
   grep -q "^$k=" .env || echo "$k=$(openssl rand -hex 32)" >> .env
 done
-sed -i 's|^EDGESHELL_TAG=.*|EDGESHELL_TAG=1.8.5|' .env
+sed -i 's|^EDGESHELL_TAG=.*|EDGESHELL_TAG=1.9.0|' .env
 docker compose pull && docker compose up -d --remove-orphans   # removes the old caddy container
 ```
 
@@ -247,4 +253,4 @@ Report vulnerabilities privately: see
 | Tag | Meaning |
 |---|---|
 | `latest` | Newest release |
-| `1.8.5`, `1.8`, `1` | Specific versions; pin one in production |
+| `1.9.0`, `1.9`, `1` | Specific versions; pin one in production |

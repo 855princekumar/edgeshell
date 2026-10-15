@@ -96,10 +96,14 @@ def collector_status():
 @login_required
 def fleet_summary():
     """Aggregate SLA-style stats across all nodes for the dashboard."""
+    from app.services import heartbeat_service
     nodes = Node.query.filter_by(is_active=True).all()
     total  = len(nodes)
     online = [n for n in nodes if n.status == 'online']
     offline= [n for n in nodes if n.status != 'online']
+    # Availability counts a node as up when SSH reaches it OR a verified MQTT
+    # heartbeat arrived in the last seconds (a VPN glitch is not downtime).
+    up = [n for n in nodes if n.status == 'online' or heartbeat_service.fresh(n)]
     auth_failed = sum(1 for n in nodes if n.status == 'auth_failed')
 
     def avg(lst): return round(sum(lst) / len(lst), 1) if lst else 0
@@ -129,15 +133,18 @@ def fleet_summary():
             'load_15': float(la[2]) if len(la) > 2 else None,
             'last_seen': iso_utc(n.last_seen),
             'tags': n.tags, 'arch': getattr(n, 'arch', '-'),
+            'heartbeat': n.hb_status, 'heartbeat_fresh': heartbeat_service.fresh(n),
+            'heartbeat_lwt_at': iso_utc(n.hb_lwt_at),
         })
 
-    sla = round(len(online) / total * 100, 1) if total else 0
+    sla = round(len(up) / total * 100, 1) if total else 0
 
     return jsonify({
         'total': total, 'online': len(online), 'offline': len(offline),
         'auth_failed': auth_failed,
         'categories': _categories.load(),
         'sla_percent': sla,
+        'heartbeat_only': len(up) - len(online),
         'avg_cpu':    avg(cpus),
         'avg_mem':    avg(mems),
         'avg_disk':   avg(disks),

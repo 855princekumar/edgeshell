@@ -177,6 +177,18 @@ class Config:
     EVENT_RETENTION_DAYS = int(os.environ.get('EVENT_RETENTION_DAYS', '90'))
     API_LOG_RETENTION_DAYS = int(os.environ.get('API_LOG_RETENTION_DAYS', '30'))   # hot DB; the lake keeps all
 
+    # MQTT heartbeat (docs/adr/0013-mqtt-heartbeat.md): the fleet master key
+    # gives each node its own keys at install time (never sent to a node);
+    # SenseHive verifies the heartbeats and EdgeShell reads its API.
+    HEARTBEAT_MASTER_KEY = os.environ.get('HEARTBEAT_MASTER_KEY', '').strip()
+    HEARTBEAT_BROKER = os.environ.get('HEARTBEAT_BROKER', 'broker.hivemq.com')
+    HEARTBEAT_PORT = int(os.environ.get('HEARTBEAT_PORT', '8883'))
+    HEARTBEAT_TLS = os.environ.get('HEARTBEAT_TLS', 'true')
+    HEARTBEAT_INTERVAL = int(os.environ.get('HEARTBEAT_INTERVAL', '10'))
+    SENSEHIVE_URL = os.environ.get('SENSEHIVE_URL', '').strip()               # internal, e.g. http://sensehive:5000
+    SENSEHIVE_API_TOKEN = os.environ.get('SENSEHIVE_API_TOKEN', '').strip()
+    SENSEHIVE_PUBLIC_PATH = os.environ.get('SENSEHIVE_PUBLIC_PATH', '').strip()  # e.g. /sensehive/ (admins only)
+
     # Background metrics collector (persistent SSH, parallel, off the request
     # path). Interval in seconds between fleet passes; workers = nodes polled
     # at once.

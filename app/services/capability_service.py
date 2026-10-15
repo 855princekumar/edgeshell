@@ -1,4 +1,5 @@
-"""Fleet capability scan and install for Docker, Node-RED, and OpenRemoteGUI.
+"""Fleet capability scan and install for Docker, Node-RED, OpenRemoteGUI and
+the MQTT heartbeat agent.
 
 One SSH round-trip reports which of the three are present on a node. Install
 runs the documented one-liner per capability. Docker uses sudo for the running
@@ -23,11 +24,20 @@ def _check_cmd(orgui_port):
         'echo "NODERED:$((command -v node-red >/dev/null 2>&1 || '
         "systemctl list-unit-files 2>/dev/null | grep -qE 'nodered|node-red') && echo 1 || echo 0)\"; "
         'echo "ORGUI:$(' + orgui_service._CHECK.format(port=int(orgui_port))
-        + ' | grep -q RUNNING && echo 1 || echo 0)"'
+        + ' | grep -q RUNNING && echo 1 || echo 0)"; '
+        'echo "HEARTBEAT:$((' + _hb_check() + ') | grep -q HB_RUNNING && echo 1 || echo 0)"'
     )
 
 
-CAPABILITIES = ('docker', 'nodered', 'orgui')
+def _hb_check():
+    from app.services.heartbeat_service import CHECK
+    return CHECK
+
+
+CAPABILITIES = ('docker', 'nodered', 'orgui', 'heartbeat')
+# The node column for each capability.
+COLUMNS = {'docker': 'docker_installed', 'nodered': 'nodered_installed', 'orgui': 'orgui_installed',
+           'heartbeat': 'hb_installed'}
 
 
 def check_node(node):
@@ -41,7 +51,8 @@ def check_node(node):
         line = line.strip()
         if line.startswith('ARCH:'):
             out['arch'] = line.split(':', 1)[1].strip()
-        for key, cap in (('DOCKER:', 'docker'), ('NODERED:', 'nodered'), ('ORGUI:', 'orgui')):
+        for key, cap in (('DOCKER:', 'docker'), ('NODERED:', 'nodered'), ('ORGUI:', 'orgui'),
+                         ('HEARTBEAT:', 'heartbeat')):
             if line.startswith(key):
                 out[cap] = line.split(':', 1)[1].strip() == '1'
     return out or None
@@ -56,6 +67,9 @@ def scan_fleet(nodes):
             n.docker_installed = state.get('docker')
             n.nodered_installed = state.get('nodered')
             n.orgui_installed = state.get('orgui')
+            if 'heartbeat' in state:
+                n.hb_installed = state.get('heartbeat')
+                n.hb_checked_at = datetime.utcnow()
             if state.get('arch'):
                 n.arch = state['arch']
             n.capabilities_checked_at = datetime.utcnow()
@@ -88,6 +102,9 @@ def _install_command(capability):
 
 def install(node, capability):
     """Install one capability on one node. Returns (success, output)."""
+    if capability == 'heartbeat':
+        from app.services import heartbeat_service
+        return heartbeat_service.install(node)
     cmd = _install_command(capability)
     if not cmd:
         return False, 'unknown capability'
@@ -95,7 +112,7 @@ def install(node, capability):
     r = execute_command(node, cmd, timeout=timeout)
     ok = r.get('success', False)
     if ok:
-        setattr(node, f'{capability}_installed', True)
+        setattr(node, COLUMNS[capability], True)
         node.capabilities_checked_at = datetime.utcnow()
         db.session.commit()
     return ok, (r.get('stdout', '') + r.get('stderr', '')).strip()[-4000:]

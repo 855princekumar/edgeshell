@@ -11,7 +11,7 @@ not interfere. Roles decide what each person may do, enforced centrally in
 |---|---|---|
 | monitor | 0 | View dashboards, monitoring, node logs |
 | operator | 1 | Everything monitor can, plus node CRUD, terminal, remote desktop (opening it where it runs), file deploy, bulk import |
-| administrator | 2 | Everything operator can, plus user management, VPN config, platform settings, the activity log (audit trail), and installing software on nodes (Fleet Setup, Install on Fleet, OpenRemoteGUI install) |
+| administrator | 2 | Everything operator can, plus user management, VPN config, platform settings, the activity log (audit trail), and installing software on nodes (Fleet Setup, Install on Fleet, OpenRemoteGUI install, the MQTT heartbeat agent and its settings), and opening SenseHive |
 
 The activity log is the audit trail, so only administrators see it: the page, its
 sidebar link, the Recent Activity and Recent Errors panels on the dashboard, and

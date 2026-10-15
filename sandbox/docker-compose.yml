@@ -26,6 +26,16 @@ services:
       # The suite drives fleet jobs through the API for minutes at a time; the
       # inactivity sign-out is covered by the unit tests instead.
       IDLE_MINUTES: "60"
+      # MQTT heartbeat end to end: a local broker (no TLS inside the sandbox)
+      # and SenseHive, with throwaway keys from run.sh.
+      HEARTBEAT_MASTER_KEY: ${SANDBOX_HB_MASTER:?run sandbox/run.sh}
+      HEARTBEAT_BROKER: mosquitto
+      HEARTBEAT_PORT: "1883"
+      HEARTBEAT_TLS: "false"
+      HEARTBEAT_INTERVAL: "5"
+      SENSEHIVE_URL: http://sensehive:5000
+      SENSEHIVE_API_TOKEN: ${SANDBOX_HB_TOKEN:?run sandbox/run.sh}
+      SENSEHIVE_PUBLIC_PATH: /sensehive/
     ports:
       - "127.0.0.1:5050:5000"
     volumes:
@@ -71,6 +81,28 @@ services:
       - sandbox
 
   # Pi Fleet Emulator: https://github.com/855princekumar/pi-fleet-emulator
+  mosquitto:
+    image: eclipse-mosquitto:2.0.20
+    container_name: edgeshell-sandbox-mosquitto
+    command: ["mosquitto", "-c", "/mosquitto-no-auth.conf"]
+    networks:
+      - sandbox
+
+  sensehive:
+    image: ${SENSEHIVE_IMAGE:-devprincekumar/sense-hive:1.2.0}
+    container_name: edgeshell-sandbox-sensehive
+    environment:
+      HEARTBEAT_MASTER_KEY: ${SANDBOX_HB_MASTER:?run sandbox/run.sh}
+      HEARTBEAT_API_TOKEN: ${SANDBOX_HB_TOKEN:?run sandbox/run.sh}
+      HEARTBEAT_BROKER: mosquitto
+      HEARTBEAT_PORT: "1883"
+      HEARTBEAT_TLS: "false"
+      HEARTBEAT_STALE_SECONDS: "20"
+    depends_on:
+      - mosquitto
+    networks:
+      - sandbox
+
   spawner:
     image: devprincekumar/pi-fleet-spawner:${PFE_TAG:-1.0.0}
     container_name: edgeshell-sandbox-spawner

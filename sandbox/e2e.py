@@ -356,6 +356,59 @@ def main():
     check('update applied with sudo on every node', len(applied) == EXPECTED_NODES,
           f'{len(applied)}/{EXPECTED_NODES}')
 
+    # ── MQTT heartbeat (agent on a node -> broker -> SenseHive -> EdgeShell) ─
+    section('MQTT heartbeat: agent, signed last will, hot-reloaded settings')
+    hb_node = nodes[0]
+
+    def job_done(job_id, seconds=300):
+        t0 = time.time()
+        while time.time() - t0 < seconds:
+            st, _, b = admin.request('GET', f'/nodes/jobs/{job_id}')
+            try:
+                j = json.loads(b).get('job') or json.loads(b)
+            except ValueError:
+                j = {}
+            if j.get('state') in ('done', 'error'):
+                return j
+            time.sleep(3)
+        return {}
+
+    def hb_state(name, want, seconds=120):
+        t0 = time.time()
+        while time.time() - t0 < seconds:
+            st, _, b = admin.request('GET', '/monitoring/fleet-summary')
+            if st == 200:
+                row = {n['name']: n for n in json.loads(b)['nodes']}.get(name, {})
+                if row.get('heartbeat') == want:
+                    return row
+            time.sleep(3)
+        return None
+
+    status, r = admin.post_json('/nodes/capabilities/install',
+                                {'capability': 'heartbeat', 'node_ids': [hb_node['id']]})
+    check('heartbeat agent install starts as a background job (admin)', bool(r.get('job_id')), r)
+    j = job_done(r.get('job_id')) if r.get('job_id') else {}
+    check('heartbeat agent installed on the node', j.get('ok') == 1, j)
+    row = hb_state(hb_node['name'], 'online')
+    check('verified heartbeats reach EdgeShell through SenseHive (node card: online)', bool(row and row.get('heartbeat_fresh')), row)
+
+    status, r = admin.post_json('/nodes/heartbeat/settings', {'broker': 'mosquitto', 'port': 1883,
+                                                              'tls': False, 'interval': 7})
+    j = job_done(r.get('job_id')) if r.get('job_id') else {}
+    check('heartbeat settings pushed to the node (config.yaml)', j.get('ok') == 1, j)
+    time.sleep(12)
+    status, res, _ = admin.fleet_exec([hb_node['id']],
+                                      'grep -c "interval: 7" /opt/edgeshell-heartbeat/config.yaml; '
+                                      'grep -c "settings reloaded: interval=7" /var/log/edgeshell-heartbeat.log 2>/dev/null '
+                                      '|| sudo journalctl -u edgeshell-heartbeat --no-pager | grep -c "settings reloaded: interval=7"')
+    out = (res.get(hb_node['name']) or {}).get('stdout', '')
+    check('the agent hot reloaded the pushed settings without a restart', out.split()[:2] == ['1', '1'], out[-200:])
+
+    status, res, _ = admin.fleet_exec([hb_node['id']], 'sudo pkill -9 -f /opt/edgeshell-heartbeat/heartbeat_agent.py; echo killed')
+    row = hb_state(hb_node['name'], 'offline', seconds=120)
+    check('agent killed: the broker delivers its signed last will (node card: LWT offline)',
+          bool(row and row.get('heartbeat_lwt_at')), row)
+
     # ── Login and session security ─────────────────────────────────────────
     section('Two-factor checks')
     probe = Client('Firefox/130.0 (Linux) E2E-2fa-probe')

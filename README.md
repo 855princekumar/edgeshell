@@ -187,6 +187,7 @@ flowchart LR
 | **Encrypted credentials** | Node SSH passwords and API keys encrypted at rest (Fernet), with key rotation |
 | **CSRF everywhere** | Every state-changing request, AJAX call and WebSocket (same-origin check) is protected |
 | **Fail-safe config** | Production refuses to start without its secret keys |
+| **MQTT heartbeat** | A second, VPN-independent signal per node: an agent sends encrypted, authenticated heartbeats and a signed last will over a public MQTT broker; SenseHive verifies them; node cards show heartbeat and LWT state, and uptime counts a node as up when SSH or a heartbeat says so ([docs](docs/HEARTBEAT.md)) |
 | **Audit trail** | Administrators only: activity log of user actions (logins, terminals opened and closed, bulk changes, exports, paused and resumed logins) plus every service start, stop, crash and restart |
 
 ### Platform
@@ -355,7 +356,7 @@ Change [`sandbox/fleet.json`](sandbox/fleet.json) to test any mix, up to 20 node
 
 ```bash
 bash sandbox/run.sh                                                 # build from source, test, tear down
-EDGESHELL_IMAGE=devprincekumar/edgeshell:1.8.5 bash sandbox/run.sh  # test a published image
+EDGESHELL_IMAGE=devprincekumar/edgeshell:1.9.0 bash sandbox/run.sh  # test a published image
 ```
 
 **Your own workflow:** run a change (command, playbook, file rollout) against
@@ -712,6 +713,7 @@ Dependabot keeps Python packages, the base image and Actions up to date.
 | [Architecture](docs/ARCHITECTURE.md) | Components, data model, monitoring contract, hot database and data lake, API |
 | [Roles and access](docs/RBAC.md) | Roles, enforcement, lockout, sessions |
 | [Wiki](https://github.com/855princekumar/edgeshell/wiki) | All of this documentation as a browsable wiki with a sidebar, generated from these files |
+| [MQTT heartbeat](docs/HEARTBEAT.md) | VPN-independent liveness: encrypted heartbeats over a public broker, SenseHive, SLA |
 | [Email](docs/EMAIL.md) | Verification, password resets and ticket mail; free providers (Resend, Brevo, useSend, Gmail) step by step |
 | [VPN and network](docs/VPN-NETWORK.md) | Tailscale, WireGuard, container networking |
 | [Database migration](docs/MIGRATION.md) | SQLite to MariaDB or PostgreSQL |

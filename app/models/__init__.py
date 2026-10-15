@@ -115,6 +115,7 @@ class SystemMetrics(db.Model):
     docker_running = db.Column(db.Boolean)
     nodered_running = db.Column(db.Boolean)
     status = db.Column(db.String(16))           # online | offline | auth_failed (null: older rows, online)
+    heartbeat = db.Column(db.Boolean)           # a verified MQTT heartbeat at sample time
 
     node = db.relationship('Node', backref='metrics')
 
@@ -133,6 +134,7 @@ class MetricsHourly(db.Model):
     online = db.Column(db.Integer, default=0)
     offline = db.Column(db.Integer, default=0)
     auth_failed = db.Column(db.Integer, default=0)
+    heartbeat_only = db.Column(db.Integer, default=0)   # up by heartbeat while SSH failed (VPN gaps)
     cpu_avg = db.Column(db.Float)
     cpu_max = db.Column(db.Float)
     ram_avg = db.Column(db.Float)

@@ -259,6 +259,8 @@ def collect_one(target):
 
 class Collector:
     def __init__(self):
+        from app.services.heartbeat_service import Syncer
+        self.heartbeat = Syncer()
         self.latest = {}            # node_id -> last result (metrics or error)
         self.next_at = {}           # node_id -> earliest next attempt (epoch)
         self.failures = {}          # node_id -> consecutive failures
@@ -345,6 +347,11 @@ class Collector:
                                          message=(n.last_error or '')[:250] or None))
         from app.services import login_policy
         login_policy.apply(nodes, results, self)
+        if not node_ids:
+            try:
+                self.heartbeat.tick()               # SenseHive's heartbeat state onto the nodes
+            except Exception:
+                current_app.logger.warning('heartbeat sync failed', exc_info=True)
         if not node_ids and now - self.last_sample >= HISTORY_EVERY_S:
             # one history sample per node per minute, whatever its state
             from app.services import history

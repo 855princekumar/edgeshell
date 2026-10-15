@@ -273,6 +273,19 @@ def _finish_login(user, next_page=None, via=None):
     return redirect(_safe_next(next_page) or url_for('dashboard.index'))
 
 
+@auth_bp.route('/internal/admin-check')
+def admin_check():
+    """For nginx auth_request in front of admin-only tools (SenseHive): 204 for
+    a signed-in administrator who has finished the sign-in steps, 401 when not
+    signed in, 403 otherwise. Never a redirect (nginx would treat it as an
+    error). Not reachable from outside: nginx serves it only internally."""
+    if not current_user.is_authenticated:
+        return '', 401
+    if not current_user.is_admin() or current_user.needs_recovery_email() or current_user.must_change_password:
+        return '', 403
+    return '', 204
+
+
 @auth_bp.route('/login/confirm', methods=['POST'])
 @limiter.limit('20 per minute')
 def login_confirm():

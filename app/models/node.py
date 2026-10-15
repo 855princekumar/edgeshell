@@ -33,6 +33,14 @@ class Node(db.Model):
     docker_installed = db.Column(db.Boolean, default=None)
     nodered_installed = db.Column(db.Boolean, default=None)
     capabilities_checked_at = db.Column(db.DateTime)
+    # MQTT heartbeat agent (second, VPN-independent signal, via SenseHive)
+    hb_installed = db.Column(db.Boolean, default=None)          # None=unknown
+    hb_checked_at = db.Column(db.DateTime)
+    hb_status = db.Column(db.String(16))                        # online | offline (last will) | silent | None
+    hb_last_seen = db.Column(db.DateTime)
+    hb_since = db.Column(db.DateTime)
+    hb_lwt_at = db.Column(db.DateTime)
+    hb_agent_version = db.Column(db.String(16))
     is_deleted = db.Column(db.Boolean, default=False, index=True)  # recycle bin
     deleted_at = db.Column(db.DateTime)
 
@@ -109,6 +117,9 @@ class Node(db.Model):
             'login_paused': self.login_paused_at is not None,
             'login_paused_at': iso_utc(self.login_paused_at),
             'login_pause_reason': self.login_pause_reason,
+            'heartbeat': {'installed': self.hb_installed, 'status': self.hb_status,
+                          'last_seen': iso_utc(self.hb_last_seen), 'since': iso_utc(self.hb_since),
+                          'lwt_at': iso_utc(self.hb_lwt_at), 'agent_version': self.hb_agent_version},
         }
 
     def __repr__(self):

@@ -61,6 +61,43 @@ location ^~ /ws/ {
     proxy_buffering off;
 }
 
+# SenseHive (heartbeat receiver), administrators only: every request is first
+# checked with EdgeShell (signed in, administrator), then SenseHive asks for
+# its own login. The host is resolved per request, so nginx starts normally
+# when the sensehive container is not part of the stack (then 502).
+location ^~ /internal/ {
+    return 404;                             # only nginx itself asks (below)
+}
+location = /_edgeshell_admin_check {
+    internal;
+    proxy_pass http://edgeshell/internal/admin-check;
+    proxy_pass_request_body off;
+    proxy_set_header Content-Length "";
+    proxy_set_header Cookie $http_cookie;
+    include /etc/nginx/edgeshell-proxy.conf;
+}
+location @sensehive_signin {
+    return 302 /login?next=/sensehive/;
+}
+location @sensehive_denied {
+    return 302 /;
+}
+location = /sensehive {
+    return 301 /sensehive/;
+}
+location ^~ /sensehive/ {
+    auth_request /_edgeshell_admin_check;
+    error_page 401 = @sensehive_signin;
+    error_page 403 = @sensehive_denied;
+    resolver 127.0.0.11 valid=30s ipv6=off;
+    set $sensehive http://sensehive:5000;
+    rewrite ^/sensehive/(.*)$ /$1 break;
+    proxy_pass $sensehive;
+    include /etc/nginx/edgeshell-proxy.conf;
+    proxy_buffering off;                    # live updates (server-sent events)
+    proxy_read_timeout 3600s;
+}
+
 location ~ ^/(login|recover|forgot|signup|reset/) {
     limit_req zone=edgeshell_auth burst=20 nodelay;
     proxy_pass http://edgeshell;
