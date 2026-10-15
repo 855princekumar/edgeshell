@@ -2,7 +2,7 @@
 
 All notable changes are documented here. Format loosely follows Keep a Changelog.
 
-## [Unreleased]
+## [1.8.4] - 2026-10-15
 
 ### Security
 - **Log Viewer: shell injection fixed.** Browsing and viewing logs put the typed path into a `sudo` command on the node, and these pages are open to every signed-in role, so a monitor account could run commands as root on a node. Every path sent to a node (Log Viewer browse, view, download and new folder, and file deploy) is now validated (absolute, no control characters, at most 1024 characters) and shell-quoted, and the line count is a bounded number. Tests send injection payloads as a monitor.

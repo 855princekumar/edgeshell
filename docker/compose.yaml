@@ -26,7 +26,7 @@ name: edgeshell
 services:
   # One-shot: the app runs as uid 10001, so give it the host data folders.
   init-data:
-    image: devprincekumar/edgeshell:${EDGESHELL_TAG:-1.8.3}
+    image: devprincekumar/edgeshell:${EDGESHELL_TAG:-1.8.4}
     user: "0:0"
     entrypoint: ["sh", "-c", "mkdir -p /data/instance /data/uploads /data/privacyidea && chown -R 10001:10001 /data/instance /data/uploads && chown -R 65532:65532 /data/privacyidea && chmod 700 /data/privacyidea"]
     volumes:
@@ -164,7 +164,7 @@ services:
       - backend
 
   edgeshell:
-    image: devprincekumar/edgeshell:${EDGESHELL_TAG:-1.8.3}
+    image: devprincekumar/edgeshell:${EDGESHELL_TAG:-1.8.4}
     restart: unless-stopped
     depends_on:
       init-data:
