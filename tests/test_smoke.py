@@ -283,11 +283,20 @@ def test_capability_routes_gated(app):
         return c
 
     mon, op = cli('mon'), cli('op')
-    assert mon.post('/nodes/capabilities/scan', follow_redirects=False).status_code in (302, 403)
-    assert op.post('/nodes/capabilities/scan', follow_redirects=False).status_code == 200
-    # monitor does not see the fleet setup control
-    assert b'data-bs-target="#fleetSetup"' not in mon.get('/nodes/').data
-    assert b'data-bs-target="#fleetSetup"' in op.get('/nodes/').data
+    adm = app.test_client()
+    adm.post('/login', data={'username': 'admin', 'password': 'admin123'})
+    # Installing software on nodes is for administrators only: operators get
+    # the same view as monitors (no Fleet Setup, no Install on Fleet).
+    for c in (mon, op):
+        for url in ('/nodes/capabilities/scan', '/nodes/capabilities/install', '/nodes/orgui/install-all',
+                    '/nodes/1/orgui/install'):
+            assert c.post(url, follow_redirects=False).status_code in (302, 403), url
+        page = c.get('/nodes/').data
+        assert b'data-bs-target="#fleetSetup"' not in page and b'orguiInstallAllBtn' not in page
+        assert b'const CAN_INSTALL = false' in page or c is mon
+    assert adm.post('/nodes/capabilities/scan', follow_redirects=False).status_code == 200
+    page = adm.get('/nodes/').data
+    assert b'data-bs-target="#fleetSetup"' in page and b'orguiInstallAllBtn' in page and b'const CAN_INSTALL = true' in page
 
 
 def test_legacy_capital_role_still_operator(app):

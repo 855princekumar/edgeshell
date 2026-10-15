@@ -426,7 +426,7 @@ def orgui_status(node_id):
 
 @nodes_bp.route('/<int:node_id>/orgui/install', methods=['POST'])
 @login_required
-@operator_required
+@admin_required            # installs software on nodes: administrators only
 def orgui_install(node_id):
     """Guided install on one node as a background job (steps + live log)."""
     node = Node.query.get_or_404(node_id)
@@ -463,7 +463,7 @@ def orgui_scan():
 
 @nodes_bp.route('/orgui/install-all', methods=['POST'])
 @login_required
-@operator_required
+@admin_required            # installs software on nodes: administrators only
 def orgui_install_all():
     """Install on every online node that does not run it yet, one node at a
     time, stopping at the first failure so a problem cannot spread across a
@@ -685,7 +685,7 @@ from app.services import capability_service as _cap
 
 @nodes_bp.route('/capabilities/scan', methods=['POST'])
 @login_required
-@operator_required
+@admin_required            # installs software on nodes: administrators only
 def capabilities_scan():
     nodes = Node.query.filter_by(is_active=True).all()
     summary = _cap.scan_fleet(nodes)
@@ -698,7 +698,7 @@ def capabilities_scan():
 
 @nodes_bp.route('/capabilities/install', methods=['POST'])
 @login_required
-@operator_required
+@admin_required            # installs software on nodes: administrators only
 def capabilities_install():
     data = request.get_json() or {}
     capability = data.get('capability')
