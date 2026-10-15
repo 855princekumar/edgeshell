@@ -275,15 +275,17 @@ def _finish_login(user, next_page=None, via=None):
 
 @auth_bp.route('/internal/admin-check')
 def admin_check():
-    """For nginx auth_request in front of admin-only tools (SenseHive): 204 for
-    a signed-in administrator who has finished the sign-in steps, 401 when not
-    signed in, 403 otherwise. Never a redirect (nginx would treat it as an
-    error). Not reachable from outside: nginx serves it only internally."""
+    """For nginx auth_request in front of SenseHive: 204 for a signed-in
+    administrator holding a valid SenseHive pass (sensehive_gate), 401 when
+    not signed in or without a pass (nginx sends the browser to the unlock
+    page), 403 for everyone else. Never a redirect (nginx would treat it as an
+    error). Not reachable from outside: nginx blocks /internal/."""
+    from app.routes.sensehive_gate import pass_valid
     if not current_user.is_authenticated:
         return '', 401
-    if not current_user.is_admin() or current_user.needs_recovery_email() or current_user.must_change_password:
+    if not current_user.is_admin():
         return '', 403
-    return '', 204
+    return ('', 204) if pass_valid() else ('', 401)
 
 
 @auth_bp.route('/login/confirm', methods=['POST'])

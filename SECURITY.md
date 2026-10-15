@@ -44,6 +44,11 @@ You will be credited in the release notes unless you ask not to be.
   down requires password and 2FA.
 - nginx is the only container with published ports; the app, database and
   privacyIDEA sit on internal Docker networks.
+- SenseHive (heartbeat receiver) is reachable only through EdgeShell's gate:
+  administrators with a pass from the admin panel (CSRF-protected POST) or a
+  fresh 2FA code; the pass is HttpOnly, SameSite=Strict, bound to the EdgeShell
+  session; nginx never forwards EdgeShell's cookies to it; its own sign-in is
+  rate limited and locks out repeated failures.
 - Paths sent to nodes (Log Viewer, file deploy) are validated and
   shell-quoted, so no input can add a command. Errors shown to people are fixed
   descriptions; exception details go only to the server log.

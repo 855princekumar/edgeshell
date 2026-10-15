@@ -77,7 +77,7 @@ location = /_edgeshell_admin_check {
     include /etc/nginx/edgeshell-proxy.conf;
 }
 location @sensehive_signin {
-    return 302 /login?next=/sensehive/;
+    return 302 /tools/sensehive/unlock;    # sign-in if needed, then a 2FA code
 }
 location @sensehive_denied {
     return 302 /;
@@ -89,13 +89,15 @@ location ^~ /sensehive/ {
     auth_request /_edgeshell_admin_check;
     error_page 401 = @sensehive_signin;
     error_page 403 = @sensehive_denied;
+    limit_req zone=edgeshell_auth burst=20 nodelay;   # form posts only (SenseHive sign-in included)
     resolver 127.0.0.11 valid=30s ipv6=off;
     set $sensehive http://sensehive:5000;
     rewrite ^/sensehive/(.*)$ /$1 break;
     proxy_pass $sensehive;
     include /etc/nginx/edgeshell-proxy.conf;
-    proxy_buffering off;                    # live updates (server-sent events)
-    proxy_read_timeout 3600s;
+    # SenseHive gets its own cookie only: never EdgeShell's session or pass.
+    proxy_set_header Cookie "sensehive_session=$cookie_sensehive_session";
+    proxy_buffering off;                    # live updates (server-sent events; keepalive every 30 s)
 }
 
 location ~ ^/(login|recover|forgot|signup|reset/) {

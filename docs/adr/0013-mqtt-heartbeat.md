@@ -37,9 +37,16 @@ Options considered:
     offline.
 - **Receiver: SenseHive** in the stack (own container, SQLite, internal
   network). It verifies, keeps per-node state, events and per-minute presence,
-  and serves them on a read-only API (bearer token). Administrators reach its
-  page only after nginx checks with EdgeShell that they are signed-in
-  administrators.
+  and serves them on a read-only API (bearer token).
+- **Access to SenseHive** goes through EdgeShell first (nginx `auth_request`):
+  - only administrators with a SenseHive pass get through;
+  - the sidebar button (a POST with the CSRF token) issues the pass;
+  - a direct visit needs a fresh 2FA code;
+  - the pass is HttpOnly, SameSite=Strict, scoped to `/sensehive/`, and bound
+    to the EdgeShell session;
+  - nginx forwards only SenseHive's own cookie;
+  - SenseHive adds its own login with salted hashes, a lockout, a new session
+    at each sign-in and CSRF refusal, behind nginx's rate limit.
 - **EdgeShell** installs the agent (a pinned copy in the image, never downloaded
   at install time), pushes a fleet `config.yaml` that agents hot reload, reads
   SenseHive's API every 15 s, shows heartbeat and LWT state on node cards for

@@ -1,0 +1,28 @@
+{% extends "auth/_layout.html" %}
+{% block title %}Open SenseHive{% endblock %}
+{% block heading %}
+    <h2>Open SenseHive</h2>
+    <p class="subtitle">{{ 'Confirm with your second factor' if use_code else 'Confirm with your password' }}</p>
+{% endblock %}
+{% block body %}
+    <p class="muted">SenseHive is for administrators. Opening it directly needs a fresh confirmation;
+       the <strong>SenseHive</strong> button in the EdgeShell sidebar opens it without this step.</p>
+    <form method="POST" data-busy="Checking...">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        {% if use_code %}
+        <div class="field">
+            <label for="code">Two-factor code</label>
+            <input type="text" id="code" name="code" required autofocus maxlength="16" inputmode="numeric"
+                   autocomplete="one-time-code" placeholder="123456">
+            <div class="hint">From your authenticator app, or a backup code.</div>
+        </div>
+        {% else %}
+        <div class="field">
+            <label for="password">Password</label>
+            <input type="password" id="password" name="password" required autofocus autocomplete="current-password">
+        </div>
+        {% endif %}
+        <button type="submit" class="btn">Open SenseHive</button>
+    </form>
+    <div class="links"><a href="{{ url_for('dashboard.index') }}">Back to EdgeShell</a></div>
+{% endblock %}

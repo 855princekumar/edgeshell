@@ -61,6 +61,9 @@ jobs:
             fi
           done <<< "$FORBIDDEN_TERMS"
           exit $found
+      - name: nginx configuration is valid (rendered by the real entrypoint, nginx -t)
+        run: |
+          docker run --rm --add-host edgeshell:127.0.0.1 -v "$PWD/docker/nginx/entrypoint.sh:/e.sh:ro"             --entrypoint sh nginx:1.30-alpine -c 'timeout 6 sh /e.sh >/dev/null 2>&1; nginx -t'
       - name: Wiki builds from the docs with no broken links
         run: python tools/build_wiki.py "$RUNNER_TEMP/wiki" --check
       - name: In-app API guide matches docs/API.md

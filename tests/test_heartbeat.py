@@ -188,15 +188,15 @@ def test_the_install_sends_only_what_the_node_needs(app, monkeypatch):
     assert '\r' not in sent['install.sh']                        # Unix line endings reach the node
 
 
-@pytest.mark.parametrize('who,code', [(None, 401), ('op', 403), ('admin', 204)])
+@pytest.mark.parametrize('who,code', [(None, 401), ('op', 403), ('admin', 401)])   # admin: needs a pass first
 def test_nginx_admin_check_for_sensehive(app, who, code):
     c = app.test_client() if who is None else (login(app) if who == 'admin' else login(app, 'op', 'Operator-pass-1'))
     assert c.get('/internal/admin-check').status_code == code
 
 
 def test_the_sensehive_link_is_for_administrators_only(app):
-    assert 'href="/sensehive/"' in login(app).get('/nodes/').get_data(as_text=True)
-    assert 'href="/sensehive/"' not in login(app, 'op', 'Operator-pass-1').get('/nodes/').get_data(as_text=True)
+    assert 'action="/tools/sensehive/launch"' in login(app).get('/nodes/').get_data(as_text=True)
+    assert '/tools/sensehive/launch' not in login(app, 'op', 'Operator-pass-1').get('/nodes/').get_data(as_text=True)
 
 
 @pytest.mark.parametrize('status,installed,text', [

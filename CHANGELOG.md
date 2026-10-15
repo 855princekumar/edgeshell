@@ -12,6 +12,13 @@ All notable changes are documented here. Format loosely follows Keep a Changelog
   - **Uptime counts a node as up when SSH or a verified heartbeat says so**: dashboard availability (SLA) and the hourly history; VPN gaps are recorded separately (`heartbeat_only`).
   - Fleet Setup: install the agent (background job, 8 nodes at a time) and push heartbeat settings (`config.yaml`) to every node, hot reloaded by the agents without a restart; administrators only.
   - Sandbox end to end: agent on an emulated node, local broker, SenseHive, EdgeShell, settings push and last will.
+- **SenseHive behind a gate** ([docs/HEARTBEAT.md](docs/HEARTBEAT.md#opening-sensehive)): administrators only.
+  - The sidebar button opens it directly (a CSRF-protected POST that issues a pass).
+  - A direct visit to `/sensehive/` asks for a fresh 2FA code first; bots never see SenseHive's login.
+  - The pass is HttpOnly, SameSite=Strict, valid only for `/sensehive/`, and bound to the EdgeShell session.
+  - nginx never forwards EdgeShell's cookies to SenseHive and rate limits SenseHive's sign-in.
+  - SenseHive 1.3.0 adds salted password hashes, a lockout, CSRF refusal and strict cookies; `SENSEHIVE_ADMIN_PASSWORD` sets its first password.
+- CI renders the real nginx configuration and runs `nginx -t`; the sandbox runs the production nginx and tests the gate end to end.
 - `log_activity` records who started a background job.
 
 ## [1.8.5] - 2026-10-15
