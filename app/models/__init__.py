@@ -12,7 +12,7 @@ class ActivityLog(db.Model):
 
     id = db.Column(db.Integer, primary_key=True)
     timestamp = db.Column(db.DateTime, default=datetime.utcnow, index=True)
-    user = db.Column(db.String(64))
+    user = db.Column(db.String(64), index=True)          # filter by user (audits)
     node = db.Column(db.String(64))
     action = db.Column(db.String(128))
     command = db.Column(LongText)

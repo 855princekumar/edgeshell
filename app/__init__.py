@@ -325,7 +325,7 @@ def _ensure_schema():
     """
     from sqlalchemy import inspect, text
     bind = db.engine
-    if bind.dialect.name not in ('sqlite', 'mysql'):
+    if bind.dialect.name not in ('sqlite', 'mysql', 'mariadb'):   # mariadb:// URLs report 'mariadb'
         return
     inspector = inspect(bind)
     wanted = {
@@ -379,6 +379,16 @@ def _ensure_schema():
             for col, ddl in cols.items():
                 if col not in existing:
                     conn.execute(text(f'ALTER TABLE {table} ADD COLUMN {col} {ddl}'))
+
+    # Indexes added after a table was first created (create_all skips them).
+    wanted_indexes = {('activity_logs', 'ix_activity_logs_user'): 'user'}
+    for (table, name), col in wanted_indexes.items():
+        if table in inspector.get_table_names() and \
+                name not in {i['name'] for i in inspector.get_indexes(table)}:
+            q = bind.dialect.identifier_preparer.quote
+            with bind.begin() as conn:
+                # Bandit B608 reviewed: identifiers come from the fixed dict above, quoted by the dialect
+                conn.execute(text(f'CREATE INDEX {q(name)} ON {q(table)} ({q(col)})'))  # nosec B608
 
     # Repair role casing: permission checks are lowercase, but an older user-add
     # form saved 'Administrator'/'Operator'/'Monitor'. Normalize so an operator

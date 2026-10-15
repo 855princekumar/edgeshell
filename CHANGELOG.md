@@ -2,6 +2,14 @@
 
 All notable changes are documented here. Format loosely follows Keep a Changelog.
 
+## [Unreleased]
+
+### Added
+- **Activity log: filter by user** (administrators): a user list on the Activity Log (everyone who appears in it, including deleted accounts and `system`), a click on any username shows only that user's entries, and `GET /api/v1/activity?user=<username>`. Indexed, so it stays quick on a long log.
+
+### Fixed
+- Startup schema upgrades also run with `mariadb://` database URLs (they were skipped; `mysql://` URLs, as in the Docker stack, were not affected).
+
 ## [1.8.2] - 2026-10-15
 
 ### Added

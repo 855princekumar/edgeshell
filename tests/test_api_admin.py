@@ -290,3 +290,38 @@ def test_the_api_guide_is_a_readable_page_for_every_signed_in_user(app):
     assert '<title>EdgeShell API guide</title>' in page and 'class="guide-toc"' in page
     assert 'id="signing-in"' in page and '<table' in page                          # docs/API.md, rendered
     assert 'href="/account/api/guide"' in c.get('/account/api').get_data(as_text=True)
+
+
+def test_administrators_filter_the_activity_log_by_user(app):
+    from app.models import ActivityLog
+    with app.app_context():
+        for i in range(60):
+            db.session.add(ActivityLog(user='op', action=f'op action {i}', status='success'))
+        db.session.add(ActivityLog(user='mon', action='mon looked around', status='success'))
+        db.session.add(ActivityLog(user='leaver~deleted-9', action='old account action', status='success'))
+        db.session.commit()
+    adm = admin(app)
+    page = adm.get('/logs/activity?user=mon').get_data(as_text=True)
+    assert 'mon looked around' in page and 'op action' not in page
+    assert '<option value="leaver~deleted-9"' in page and '<option value="op"' in page   # deleted accounts too
+    page = adm.get('/logs/activity?user=op').get_data(as_text=True)
+    assert 'Everything <b>op</b> did: 60 entries' in page and 'mon looked around' not in page
+    assert 'user=op' in page.split('Next')[0].rsplit('href=', 1)[-1]                # paging keeps the filter
+    assert 'href="/logs/activity?user=op"' in page                                    # click a name to filter
+    tok, _ = api_login(app.test_client(), 'admin', 'admin123')
+    r = app.test_client().get('/api/v1/activity?user=mon', headers=H(tok)).get_json()
+    assert [a['action'] for a in r['activity']] == ['mon looked around']
+    c = app.test_client()
+    c.post('/login', data={'username': 'op', 'password': 'Operator-pass-1'})
+    assert c.get('/logs/activity?user=mon').status_code == 302                        # still admin only
+
+
+def test_the_user_index_is_added_to_an_existing_database(app):
+    from sqlalchemy import inspect, text
+    from app import _ensure_schema
+    with app.app_context():
+        with db.engine.begin() as c:
+            c.execute(text('DROP INDEX IF EXISTS ix_activity_logs_user'))
+        _ensure_schema()
+        assert 'ix_activity_logs_user' in {i['name'] for i in inspect(db.engine).get_indexes('activity_logs')}
+        _ensure_schema()                                                              # idempotent
