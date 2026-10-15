@@ -436,14 +436,17 @@ def main():
           'es_sensehive=' in cookie and 'HttpOnly' in cookie and 'SameSite=Strict' in cookie
           and 'Path=/sensehive/' in cookie, cookie[:160])
     st, _, body = admin.request('GET', NGINX + '/sensehive/login')
-    check("SenseHive's own login page appears", st == 200 and 'sensehive' in body.lower(), st)
+    check("SenseHive's own login page appears", st == 200 and 'sense-hive' in body.lower() and 'password' in body.lower(), st)
 
     for c in list(admin.jar):                      # back to no pass: the admin panel route
         if c.name == 'es_sensehive':
             admin.jar.clear(c.domain, c.path, c.name)
-    st, _, _ = admin.request('POST', NGINX + '/tools/sensehive/launch',
-                             data=b'', headers={'Content-Type': 'application/x-www-form-urlencoded', 'X-CSRFToken': ''})
-    check('the admin-panel button without its CSRF token is refused', st in (400, 403), st)
+    token, admin.csrf = admin.csrf, None          # the client adds the token to every POST: not this one
+    st, h, _ = admin.request('POST', NGINX + '/tools/sensehive/launch',
+                             data=b'', headers={'Content-Type': 'application/x-www-form-urlencoded'})
+    admin.csrf = token
+    check('the admin-panel button without its CSRF token is refused',
+          st in (400, 403) and 'es_sensehive=' not in (h.get('Set-Cookie', '') if h else ''), st)
     admin.get('/nodes/')
     st, h, _ = admin.post_form(NGINX + '/tools/sensehive/launch', {})
     check('the admin-panel button opens SenseHive without a code',
