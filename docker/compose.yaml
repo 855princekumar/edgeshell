@@ -205,7 +205,8 @@ services:
       IDLE_MINUTES: ${IDLE_MINUTES:-10}
       IDLE_WARNING_MINUTES: ${IDLE_WARNING_MINUTES:-5}
       SIGNUP_ENABLED: ${SIGNUP_ENABLED:-true}
-      # Reset links for administrators: the public address plus any SMTP server.
+      # Email (verification, reset links for every user, ticket notices): the
+      # public address plus any SMTP server. Options: docs/EMAIL.md.
       PUBLIC_URL: ${PUBLIC_URL:-}
       SMTP_HOST: ${SMTP_HOST:-}
       SMTP_PORT: ${SMTP_PORT:-587}
