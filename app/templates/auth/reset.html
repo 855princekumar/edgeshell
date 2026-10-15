@@ -16,8 +16,16 @@
             <label for="confirm_password">Confirm new password</label>
             <input type="password" id="confirm_password" name="confirm_password" required autocomplete="new-password">
         </div>
+        {% if need_code %}
+        <div class="field">
+            <label for="code">Two-factor code</label>
+            <input type="text" id="code" name="code" required maxlength="16" inputmode="numeric"
+                   autocomplete="one-time-code" placeholder="123456">
+            <div class="hint">The 6-digit code from your authenticator app, or one of your backup codes.</div>
+        </div>
+        {% endif %}
         <button type="submit" class="btn">Save password</button>
     </form>
-    <p class="hint" style="margin-top:12px">Two-factor authentication stays on: sign in with the new
-       password and a code from your app (or a backup code). Every other session is signed out.</p>
+    <p class="hint" style="margin-top:12px">This link works once. Two-factor authentication stays on, and
+       every other session is signed out.</p>
 {% endblock %}

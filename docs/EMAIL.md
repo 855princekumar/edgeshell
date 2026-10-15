@@ -5,7 +5,7 @@ EdgeShell sends a few kinds of email:
 | Email | When |
 |---|---|
 | Confirm your email address | At the first sign-in (after 2FA), and whenever a user changes their address |
-| Password reset link | "Forgot password?" on the sign-in page, for any role, to the verified address only |
+| Password reset link | "Forgot password?" on the sign-in page, for any role, to the verified address only. It opens one page: new password plus a 2FA code (or a backup code) |
 | Password changed | After a reset by link or backup code |
 | Ticket notices | A new ticket (to administrators, plus a receipt to the reporter) and replies |
 

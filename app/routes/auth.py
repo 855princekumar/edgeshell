@@ -447,16 +447,36 @@ def reset_with_link(token):
             or data.get('p') != _pw_fingerprint(user):
         flash('That reset link is invalid, already used or expired. Request a new one.', 'danger')
         return redirect(url_for('auth.forgot'))
+    # One page: the new password and a 2FA code (or a backup code). The link
+    # proves the mailbox, the code proves the device, so an inbox alone cannot
+    # change the password. Wrong codes count toward the account lockout.
+    need_code = mfa.mfa_required() and mfa.is_enrolled(user)
     if request.method == 'POST':
         problem = _password_problem(request.form.get('new_password', ''),
                                     request.form.get('confirm_password', ''), user)
-        if problem:
-            flash(problem, 'danger')
+        if _locked(user):
+            flash('This account is locked for a while after too many failed attempts. Try again later.', 'danger')
+        elif problem:
+            flash(problem, 'danger')                # checked first: a backup code is not spent on a typo
         else:
-            _apply_self_reset(user, request.form['new_password'], 'email link')
-            flash('Password changed. Sign in with the new password and a 2FA code.', 'success')
+            kind = 'none'
+            if need_code:
+                try:
+                    kind = mfa.verify(user, request.form.get('code', ''))
+                except mfa.MFAUnavailable:
+                    flash(MFA_DOWN, 'danger')
+                    return render_template('auth/reset.html', username=user.username, need_code=need_code)
+                if not kind:
+                    db.session.rollback()
+                    _record_failure(user, '2FA code (reset link)')
+                    flash('That code is not valid. Use the current code from your authenticator app, '
+                          'or one of your backup codes.', 'danger')
+                    return render_template('auth/reset.html', username=user.username, need_code=need_code)
+            _apply_self_reset(user, request.form['new_password'],
+                              'email link' + {'totp': ' and 2FA code', 'backup': ' and a backup code'}.get(kind, ''))
+            flash('Password changed. Sign in with the new password.', 'success')
             return redirect(url_for('auth.login'))
-    return render_template('auth/reset.html', username=user.username)
+    return render_template('auth/reset.html', username=user.username, need_code=need_code)
 
 
 @auth_bp.route('/recover', methods=['GET', 'POST'])

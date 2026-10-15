@@ -2,6 +2,11 @@
 
 All notable changes are documented here. Format loosely follows Keep a Changelog.
 
+## [Unreleased]
+
+### Changed
+- **Password reset by link is one page with 2FA**: the new password and a code from the authenticator app (or a backup code). The link proves the mailbox and the code proves the device, so a stolen inbox alone cannot change a password. Wrong codes count toward the account lockout; the password is checked first so a typo never spends a backup code.
+
 ## [1.8.3] - 2026-10-15
 
 ### Added
