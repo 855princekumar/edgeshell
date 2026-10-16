@@ -76,10 +76,11 @@ def create_app(config_name='default'):
     from app.routes.issues import issues_bp
     from app.routes.account import account_bp
     from app.routes import shell as _shell  # noqa: F401  (registers the WebSocket route)
+    from app.routes.nodered import nodered_bp
 
     for bp in (auth_bp, sensehive_bp, dashboard_bp, nodes_bp, terminal_bp, files_bp, logs_bp,
                settings_bp, users_bp, api_bp, tailscale_bp, monitoring_bp,
-               vpn_bp, health_bp, issues_bp, account_bp):
+               vpn_bp, health_bp, issues_bp, account_bp, nodered_bp):
         app.register_blueprint(bp)
 
     # JSON API and health checks are token/session protected but not CSRF-form
@@ -162,6 +163,27 @@ def _register_api(app):
 
     def is_api():
         return request.path.startswith('/api/')
+
+    @app.before_request
+    def _isolate_nodered_pages():
+        """Node-RED pages share this origin (/nodered/, ADR 0014): they must not use
+        the EdgeShell session. API calls with a bearer token are not affected."""
+        from app.services import isolation
+        if request.path.startswith(('/internal/', '/healthz')) or request.headers.get('Authorization'):
+            return None
+        reason = isolation.blocked_reason(request)
+        if reason:
+            app.logger.warning('Refused %s %s: %s', request.method, request.path, reason)
+            return ('Refused: this request was ' + reason + '.', 403,
+                    {'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'no-store'})
+        return None
+
+    @app.after_request
+    def _never_framed(resp):
+        # EdgeShell pages are never shown inside a frame (a Node-RED page could read them).
+        if (resp.mimetype or '').startswith('text/html'):
+            resp.headers.setdefault('Content-Security-Policy', "frame-ancestors 'none'")
+        return resp
 
     @app.before_request
     def _api_auth():

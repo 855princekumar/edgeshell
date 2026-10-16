@@ -489,6 +489,56 @@ def main():
     st, _, _ = bot.request('POST', NGINX + '/sensehive/api/login', json_body={'username': 'admin', 'password': 'x'})
     check('a client without an EdgeShell admin session cannot even try', st == 302, st)
 
+    # ── Node-RED through EdgeShell (ADR 0014) ───────────────────────────────
+    section('Node-RED at /nodered/<node>/: no node address shown, isolated from EdgeShell')
+    nr = [x for x in rows if x.get('nodered')][:2]
+    nr_id = nr[0].get('id') or nr[0].get('node_id')
+    nr_name, other = nr[0]['name'], (nr[1]['name'] if len(nr) > 1 else 'another-node')
+    st, h, _ = admin.request('GET', NGINX + f'/nodes/{nr_id}/nodered')
+    check('the Node-RED button goes to /nodered/<node name>/ (and is logged)',
+          st == 302 and h.get('Location', '').endswith(f'/nodered/{nr_name}/'), (st, h.get('Location')))
+    st, h, body = admin.request('GET', NGINX + f'/nodered/{nr_name}/')
+    check("the node's Node-RED editor opens through EdgeShell", st == 200 and 'Node-RED' in body, (st, body[:120]))
+    node_ip = next((x.get('ip_address') or x.get('ip') or '') for x in nr)
+    check('no node address in what the browser receives',
+          bool(node_ip) and node_ip not in body and node_ip not in str(dict(h)), node_ip)
+    check('Node-RED cannot set cookies on the EdgeShell site', 'Set-Cookie' not in h, h.get('Set-Cookie'))
+    check('Node-RED pages get their own opener policy (no window handle into EdgeShell)',
+          h.get('Cross-Origin-Opener-Policy', 'unsafe-none') != 'same-origin', h.get('Cross-Origin-Opener-Policy'))
+    st, _, body = admin.request('GET', NGINX + f'/nodered/{nr_name}/settings',
+                                headers={'Referer': NGINX + f'/nodered/{nr_name}/', 'Accept': 'application/json'})
+    check("Node-RED's own API works under the path", st == 200 and 'httpNodeRoot' in body, (st, body[:120]))
+    st, h, _ = admin.request('GET', NGINX + f'/nodered/{nr_name}')
+    check('/nodered/<node> without the slash is completed', st == 301 and h.get('Location', '').endswith('/'), st)
+    st, h, _ = Client('E2E-anon-nr').request('GET', NGINX + f'/nodered/{nr_name}/')
+    check('signed out: sent to sign in first', st == 302 and '/login' in h.get('Location', ''), (st, h.get('Location')))
+    st, _, _ = admin.request('GET', NGINX + f'/nodered/{nr_name}/sw.js', headers={'Service-Worker': 'script'})
+    check('no service worker can be installed under /nodered/', st == 403, st)
+    st, _, _ = admin.request('POST', NGINX + f'/nodered/{nr_name}/flows', json_body=[],
+                             headers={'Referer': NGINX + f'/nodered/{other}/'})
+    check("one node's Node-RED page cannot drive another node's Node-RED", st == 403, st)
+    from_nr = {'Referer': NGINX + f'/nodered/{nr_name}/', 'Sec-Fetch-Site': 'same-origin',
+               'Sec-Fetch-Mode': 'cors', 'Sec-Fetch-Dest': 'empty'}
+    st, _, _ = admin.request('GET', NGINX + '/users/', headers=from_nr)
+    check('EdgeShell refuses requests made by a Node-RED page (users page)', st == 403, st)
+    st, _, _ = admin.request('POST', NGINX + f'/nodes/{nr_id}/shell-ticket', headers=from_nr)
+    check('a Node-RED page cannot get a terminal ticket', st == 403, st)
+    st, h, _ = admin.request('GET', NGINX + '/sensehive/', headers=from_nr)
+    check('a Node-RED page cannot reach SenseHive (refused, not even sent to unlock)',
+          st == 302 and urllib.parse.urlparse(h.get('Location', '')).path == '/', (st, h.get('Location')))
+    no_ref = {'Sec-Fetch-Site': 'same-origin', 'Sec-Fetch-Mode': 'cors', 'Sec-Fetch-Dest': 'empty'}
+    st, _, _ = admin.request('GET', NGINX + '/users/', headers=no_ref)
+    check('a script request without a Referer is refused (a page can hide where it comes from)', st == 403, st)
+    st, _, _ = admin.request('GET', NGINX + '/users/', headers={'Sec-Fetch-Site': 'none', 'Sec-Fetch-Mode': 'navigate',
+                                                                'Sec-Fetch-Dest': 'document'})
+    check('typing an address still works (a navigation without a Referer)', st == 200, st)
+    st, h, _ = admin.request('GET', NGINX + '/users/', headers={'Sec-Fetch-Site': 'same-origin', 'Sec-Fetch-Mode': 'navigate',
+                                                                 'Sec-Fetch-Dest': 'iframe', 'Referer': NGINX + '/'})
+    check('EdgeShell is never shown inside a frame', st == 403, st)
+    st, h, _ = admin.request('GET', NGINX + '/nodes/')
+    check("EdgeShell pages forbid framing (CSP frame-ancestors 'none')",
+          "frame-ancestors 'none'" in h.get('Content-Security-Policy', ''), h.get('Content-Security-Policy'))
+
     # ── Login and session security ─────────────────────────────────────────
     section('Two-factor checks')
     probe = Client('Firefox/130.0 (Linux) E2E-2fa-probe')

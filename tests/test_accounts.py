@@ -362,7 +362,7 @@ def _admin_client(app, name='admin', password='admin123'):
     return c
 
 
-def test_at_most_three_admins_and_only_owner_grants(app):
+def test_at_most_five_admins_and_only_owner_grants(app):
     a2 = _mk(app, 'adm2', role='administrator')
     owner = _admin_client(app)
     peer = _admin_client(app, 'adm2', 'pw-adm2-123')
@@ -372,11 +372,16 @@ def test_at_most_three_admins_and_only_owner_grants(app):
     owner.post(f'/users/{op}/role', data={'role': 'administrator'})
     with app.app_context():
         assert db.session.get(User, op).is_admin()
-    four = _mk(app, 'fourth')
-    r = owner.post(f'/users/{four}/role', data={'role': 'administrator'}, follow_redirects=True)
-    assert b'at most 3' in r.data
+    for name in ('fourth', 'fifth'):                          # 3 admins now: two more fit
+        uid = _mk(app, name)
+        owner.post(f'/users/{uid}/role', data={'role': 'administrator'})
+        with app.app_context():
+            assert db.session.get(User, uid).is_admin(), name
+    six = _mk(app, 'sixth')
+    r = owner.post(f'/users/{six}/role', data={'role': 'administrator'}, follow_redirects=True)
+    assert b'at most 5' in r.data
     with app.app_context():
-        assert not db.session.get(User, four).is_admin() and db.session.get(User, a2).is_admin()
+        assert not db.session.get(User, six).is_admin() and db.session.get(User, a2).is_admin()
 
 
 def test_admins_cannot_touch_other_admins_or_the_owner(app):
@@ -414,24 +419,34 @@ def test_owner_has_full_control_over_admins(app):
         assert db.session.get(User, a2) is None
 
 
-def test_step_down_rules_and_owner_handover(app):
+def test_the_primary_admin_is_permanent_and_others_may_step_down(app):
     c = app.test_client()
     secret, codes = _enroll(c, 'admin', 'admin123')
     form = {'new_role': 'operator', 'password': 'admin123', 'confirm': 'STEP DOWN'}
-    r = c.post('/account/step-down', data=dict(form, code=codes[0]), follow_redirects=True)
-    assert b'only administrator' in r.data                    # last admin stays
     _mk(app, 'later', role='administrator')
-    with app.app_context():                                    # make 'early' the longest-serving
+    with app.app_context():                                    # even with an older admin around
         early = db.session.get(User, _mk(app, 'early', role='administrator'))
         early.admin_since = datetime.utcnow() - timedelta(days=30)
         db.session.commit()
-    r = c.post('/account/step-down', data=dict(form, code='123123'), follow_redirects=True)
-    assert b'code was not valid' in r.data
-    r = c.post('/account/step-down', data=dict(form, code=codes[1]), follow_redirects=True)
-    assert b'early is the new owner' in r.data
+    r = c.post('/account/step-down', data=dict(form, code=codes[0]), follow_redirects=True)
+    assert b'primary administrator' in r.data and b'permanent' in r.data
     with app.app_context():
-        assert db.session.get(User, 1).role == 'operator' and not db.session.get(User, 1).is_owner
-        assert User.query.filter_by(username='early').first().is_owner
+        assert db.session.get(User, 1).is_admin() and db.session.get(User, 1).is_owner
+        assert not User.query.filter_by(username='early').first().is_owner
+        from app.services import account_service as accounts
+        accounts.ensure_owner()                                # a startup repair never moves it either
+        assert accounts.owner().id == 1
+    page = c.get('/account/').get_data(as_text=True)
+    assert 'This role is permanent' in page and 'account/step-down' not in page
+
+    d = app.test_client()                                      # another admin may still step down
+    _s, other_codes = _enroll(d, 'later', 'pw-later-123')
+    r = d.post('/account/step-down', data={'new_role': 'monitor', 'password': 'pw-later-123',
+                                           'confirm': 'STEP DOWN', 'code': other_codes[0]}, follow_redirects=True)
+    assert b'You are now monitor' in r.data
+    with app.app_context():
+        assert User.query.filter_by(username='later').first().role == 'monitor'
+        assert db.session.get(User, 1).is_owner
 
 
 def test_signup_waits_for_approval(app):

@@ -1,6 +1,6 @@
 """User management for administrators.
 
-Rules live in app/services/account_service.py: at most 3 administrators;
+Rules live in app/services/account_service.py: at most 5 administrators;
 the owner (primary administrator) manages every other account, admins
 included; other administrators manage monitors and operators only.
 """
@@ -119,7 +119,8 @@ def add():
 
     return render_template('users/add.html',
                            session_range=range(MIN_SESSIONS, MAX_SESSIONS + 1),
-                           grantable=accounts.grantable_roles(current_user))
+                           grantable=accounts.grantable_roles(current_user),
+                           max_admins=accounts.MAX_ADMINS)
 
 
 @users_bp.route('/check')

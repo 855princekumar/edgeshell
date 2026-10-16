@@ -103,19 +103,20 @@ administrators must enter a personal address, as before.
 
 ## Administrators
 
-- At most **3** administrators.
-- The first administrator is the **owner** (primary administrator), with
-  full control: the only account that can grant or remove the administrator
-  role, and it can change, reset (password and 2FA), sign out, disable or
-  delete **any** other account, administrators included. The owner is
-  prompted to add up to 2 more administrators so the platform is never
+- At most **5** administrators.
+- The first administrator is the **owner** (primary or super administrator),
+  with full control: the only account that can grant or remove the
+  administrator role, and it can change, reset (password and 2FA), sign out,
+  disable or delete **any** other account, administrators included. The owner
+  is prompted to add up to 4 more administrators so the platform is never
   locked out.
+- **The owner is permanent.** It cannot step down, be demoted, disabled,
+  deleted or replaced, and ownership never passes to anyone else. Its own
+  password and 2FA are recovered with the emailed link or a backup code.
 - **Other administrators** manage monitors and operators only. They cannot
   change another administrator, and **nobody can change the owner**.
-- An administrator leaves the role from My account ("Step down"), confirming
-  with password, a 2FA code and typing `STEP DOWN`. The last administrator
-  cannot step down. When the owner steps down, ownership passes to the
-  longest-serving remaining administrator.
+- Other administrators may leave the role from My account ("Step down"),
+  confirming with password, a 2FA code and typing `STEP DOWN`.
 
 ## Sign-up and approval
 

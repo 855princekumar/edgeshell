@@ -7,9 +7,11 @@ from app import db, bcrypt, login_manager
 MIN_SESSIONS = 1
 MAX_SESSIONS = 4
 
-# At most this many administrators. The owner (the first administrator) is the
-# only one who may promote another account to administrator.
-MAX_ADMINS = 3
+# At most this many administrators. The owner (the first administrator, the
+# primary or super administrator) is the only one who may promote another account
+# to administrator, and stays the owner for good: the role cannot be taken away,
+# handed over or given up.
+MAX_ADMINS = 5
 ROLES = ('administrator', 'operator', 'monitor')
 
 
