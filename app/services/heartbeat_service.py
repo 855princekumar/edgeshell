@@ -259,7 +259,7 @@ def fetch_history(name, rng):
     r.raise_for_status()
     d = r.json()
     keep = ('node', 'range', 'since', 'until', 'kind', 'points', 'interval', 'breaks', 'received', 'lag_ms',
-            'longest_break', 'events', 'uptime')
+            'longest_break', 'current_break', 'events', 'uptime')
     return {k: d[k] for k in keep if k in d}
 
 

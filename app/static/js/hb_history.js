@@ -128,6 +128,17 @@
             msg.textContent = '';
             stats.innerHTML = ''; breaks.innerHTML = '';
             stat('Uptime', d.uptime + ' %');
+            var cur = d.current_break;
+            if (cur) {
+                // the outage still going on; it may have begun before this range
+                var down = el('div', 'font-size:13px;color:#b91c1c;background:#fef2f2;border:1px solid #fca5a5;border-radius:8px;padding:8px 10px;margin-bottom:10px');
+                down.id = 'hbDownNow';
+                down.appendChild(el('b', '', (cur.status === 'offline' ? 'Offline' : 'Silent') + ' for ' + duration(cur.seconds)));
+                down.appendChild(document.createTextNode(' since the last heartbeat at ' + new Date(cur.from * 1000).toLocaleString()
+                    + (cur.lwt_at ? '; last will received ' + new Date(cur.lwt_at * 1000).toLocaleString() : '')
+                    + (cur.from < d.since ? ' (before this range)' : '')));
+                breaks.appendChild(down);
+            }
             if (d.kind === 'beats') {
                 stat('Heartbeats received', String(d.received));
                 stat('Typical interval', d.interval ? d.interval + ' s' : '-');
@@ -139,7 +150,8 @@
                     d.breaks.slice(-20).reverse().forEach(function (b) {
                         var line = el('div', 'font-size:13px');
                         line.appendChild(el('span', 'color:#dc2626;font-weight:600;margin-right:8px', duration(b.seconds)));
-                        line.appendChild(el('span', 'color:#6b7280', new Date(b.from * 1000).toLocaleString() + (b.to ? '' : ' (still going)')));
+                        line.appendChild(el('span', 'color:#6b7280', new Date(b.from * 1000).toLocaleString() + (b.to ? '' : ' (still going)')
+                            + (b.lwt_at ? ', last will ' + new Date(b.lwt_at * 1000).toLocaleTimeString() : '')));
                         breaks.appendChild(line);
                     });
                 }
@@ -162,7 +174,7 @@
                         type: 'line', name: 'gap', data: gaps, showSymbol: gaps.length < 200, symbolSize: 5,
                         lineStyle: { width: 1.5, color: '#1a56db' }, itemStyle: { color: '#1a56db' },
                         markArea: { itemStyle: { color: 'rgba(220,38,38,0.12)' },
-                            data: d.breaks.map(function (b) { return [{ xAxis: b.from * 1000 }, { xAxis: (b.to || d.until) * 1000 }]; }) },
+                            data: d.breaks.map(function (b) { return [{ xAxis: Math.max(b.from, d.since) * 1000 }, { xAxis: (b.to || d.until) * 1000 }]; }) },
                         markLine: { symbol: 'none', silent: true, data: [].concat(
                             d.interval ? [{ yAxis: d.interval, lineStyle: { type: 'dashed', color: '#1a56db' }, label: { formatter: 'usual' } }] : [],
                             d.points.filter(function (p) { return p[1] === 2; }).map(function (p) {
