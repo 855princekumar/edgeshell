@@ -240,10 +240,10 @@
                 <span class="spinner" id="spinner-{{ node.id }}" style="display:none;width:12px;height:12px"></span>
                 <i class="bi bi-wifi" id="wifiicon-{{ node.id }}"></i> Test
             </button>
-            <button class="btn btn-outline btn-xs" title="Open Node-RED"
-                    onclick="window.open('http://{{ node.ip_address }}:{{ node.nodered_port or NODERED_DEFAULT_PORT }}','_blank')">
+            <a class="btn btn-outline btn-xs es-nodered" title="Open Node-RED (through EdgeShell, no VPN needed)"
+               href="{{ url_for('nodered.open_nodered', node_id=node.id) }}" target="_blank" rel="noopener noreferrer">
                 <i class="bi bi-diagram-3"></i>
-            </button>
+            </a>
             <button class="btn btn-outline btn-xs es-shell-btn" title="Open an SSH terminal on this node"
                     data-id="{{ node.id }}" data-name="{{ node.name }}"
                     {% if node.status != 'online' %}disabled{% endif %}>

@@ -57,7 +57,7 @@
         <h6 class="fw-bold mb-2"><i class="bi bi-people me-1"></i>Administrators ({{ admins|length }} of {{ max_admins }})</h6>
         <ul class="small mb-2 ps-3">
           {% for a in admins %}
-          <li>{{ a.username }}{% if a.is_owner %} <span class="badge bg-primary">owner</span>{% endif %}{% if a.id == current_user.id %} (you){% endif %}
+          <li>{{ a.username }}{% if a.is_owner %} <span class="badge bg-primary" title="Primary (super) administrator: permanent">primary admin</span>{% endif %}{% if a.id == current_user.id %} (you){% endif %}
               <span class="text-muted">since {{ a.admin_since|localtime('%d %b %Y') if a.admin_since else 'n/a' }}</span></li>
           {% endfor %}
         </ul>
@@ -65,13 +65,14 @@
         <div class="alert alert-info small py-2 mb-2">Recommended: add up to {{ max_admins - admins|length }} more administrator(s),
           so the platform is never locked out if one person loses access. Only you, the owner, can grant the administrator role.</div>
         {% endif %}
-        {% if current_user.is_admin() %}
+        {% if current_user.is_owner %}
+        <div class="small text-muted">You are the <strong>primary administrator</strong> (super administrator).
+          This role is permanent: it cannot be given up, handed over or taken away by anyone.</div>
+        {% elif current_user.is_admin() %}
         <form method="POST" action="{{ url_for('account.step_down') }}" onsubmit="return confirm('Leave the administrator role? This cannot be undone by you.')">
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
           <div class="small fw-semibold mb-1">Step down from administrator</div>
-          <div class="small text-muted mb-2">{% if current_user.is_owner %}Ownership (full control over every account) passes
-            to the longest-serving remaining administrator.{% else %}Only you or the owner can remove your administrator role.{% endif %}
-            The last administrator cannot step down.</div>
+          <div class="small text-muted mb-2">Only you or the primary administrator can remove your administrator role.</div>
           <div class="d-flex gap-2 flex-wrap">
             <select name="new_role" class="form-select form-select-sm" style="max-width:130px">
               <option value="operator">Operator</option>

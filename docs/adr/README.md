@@ -17,3 +17,4 @@ Short records of the significant choices in EdgeShell and why they were made.
 | [0011](0011-ci-as-a-release-gate.md) | CI as the release gate, with minimum counts and real dependencies |
 | [0012](0012-cia-triad-for-the-control-plane.md) | Security model: the CIA triad for a central fleet control plane |
 | [0013](0013-mqtt-heartbeat.md) | A second, VPN-independent liveness signal: encrypted MQTT heartbeats |
+| [0014](0014-nodered-through-edgeshell.md) | Node-RED through EdgeShell at /nodered/<node>/, isolated from EdgeShell on the same origin |

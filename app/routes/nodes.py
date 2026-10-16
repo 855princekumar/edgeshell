@@ -556,6 +556,17 @@ def heartbeat_refresh():
                     'message': None if matched is not None else 'SenseHive is not reachable or not configured'})
 
 
+@nodes_bp.route('/<int:node_id>/shell-ticket', methods=['POST'])
+@login_required
+@operator_required
+def shell_ticket(node_id):
+    """A 60-second ticket for this node's terminal WebSocket (shell.py, ADR 0014)."""
+    from flask import session
+    from app.routes.shell import make_ticket
+    Node.query.filter(Node.id == node_id, Node.is_deleted.isnot(True)).first_or_404()
+    return jsonify({'ticket': make_ticket(current_user.id, node_id, session.get('sid'))})
+
+
 @nodes_bp.route('/<int:node_id>/heartbeat/history')
 @login_required
 def heartbeat_history(node_id):

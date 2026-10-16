@@ -105,6 +105,61 @@ location ^~ /sensehive/ {
     proxy_hide_header Referrer-Policy;
 }
 
+# Node-RED of every node at /nodered/<node>/ (ADR 0014). EdgeShell checks the
+# user (operator or administrator) on every request and returns the node's
+# address in a header nginx keeps to itself: the browser never sees the IP and
+# needs no VPN. Node-RED never sees EdgeShell's cookies and cannot set any, and
+# no service worker can be installed under /nodered/.
+location = /_edgeshell_nodered_check {
+    internal;
+    proxy_pass http://edgeshell/internal/nodered-check;
+    proxy_pass_request_body off;
+    proxy_set_header Content-Length "";
+    proxy_set_header Cookie $http_cookie;
+    proxy_set_header X-Original-URI $request_uri;
+    include /etc/nginx/edgeshell-proxy.conf;
+}
+location @nodered_signin {
+    return 302 /login?next=$uri;
+}
+location @nodered_denied {
+    default_type text/plain;
+    return 403 "Node-RED through EdgeShell is for operators and administrators, from EdgeShell's Node-RED button.\n";
+}
+location ~ ^/nodered/(?<nr_node>[A-Za-z0-9._-]+)$ {
+    return 301 /nodered/$nr_node/;
+}
+location ~ ^/nodered/(?<nr_node>[A-Za-z0-9._-]+)(?<nr_rest>/.*)$ {
+    set $nr_path $nr_rest;
+    set $nr_name $nr_node;
+    if ($http_service_worker) {
+        return 403;
+    }
+    auth_request /_edgeshell_nodered_check;
+    auth_request_set $nr_upstream $upstream_http_x_nodered_upstream;
+    error_page 401 = @nodered_signin;
+    error_page 403 = @nodered_denied;
+    resolver 127.0.0.11 valid=30s ipv6=off;
+    proxy_pass http://$nr_upstream$nr_path$is_args$args;
+    proxy_redirect ~^https?://[^/]+/(.*)$ /nodered/$nr_name/$1;
+    proxy_redirect ~^/(.*)$ /nodered/$nr_name/$1;
+    proxy_http_version 1.1;
+    proxy_set_header Host $nr_upstream;
+    proxy_set_header Upgrade $http_upgrade;
+    proxy_set_header Connection $nodered_connection;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $remote_addr;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_set_header Cookie "";
+    proxy_hide_header Set-Cookie;
+    proxy_hide_header Server;
+    proxy_hide_header X-Powered-By;
+    proxy_connect_timeout 10s;
+    proxy_read_timeout 3600s;
+    proxy_send_timeout 3600s;
+    proxy_buffering off;
+}
+
 location ~ ^/(login|recover|forgot|signup|reset/) {
     limit_req zone=edgeshell_auth burst=20 nodelay;
     proxy_pass http://edgeshell;
@@ -157,6 +212,16 @@ map $request_method $edgeshell_post {
 }
 limit_req_zone $edgeshell_post zone=edgeshell_auth:10m rate=10r/m;
 limit_req_status 429;
+# Node-RED pages (/nodered/, ADR 0014) get a different opener policy from
+# EdgeShell's, so a window a Node-RED page opens is cut off from EdgeShell.
+map $uri $edgeshell_coop {
+    ~^/nodered/ "unsafe-none";
+    default     "same-origin";
+}
+map $http_upgrade $nodered_connection {
+    default upgrade;
+    ''      "";
+}
 EOF
     if [ -n "$d" ] && [ -s "$LE/$d/fullchain.pem" ] && [ -s "$LE/$d/privkey.pem" ]; then
         # The certificate's timestamp is part of the output, so a renewal
@@ -191,7 +256,7 @@ server {
     ssl_session_tickets off;
     if (\$host != "$d") { return 301 https://$d\$request_uri; }
     add_header Strict-Transport-Security "max-age=63072000; includeSubDomains" always;
-    add_header Cross-Origin-Opener-Policy "same-origin" always;
+    add_header Cross-Origin-Opener-Policy \$edgeshell_coop always;
     include $APP;
 }
 EOF

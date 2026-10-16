@@ -281,6 +281,9 @@ def admin_check():
     page), 403 for everyone else. Never a redirect (nginx would treat it as an
     error). Not reachable from outside: nginx blocks /internal/."""
     from app.routes.sensehive_gate import pass_valid
+    from app.services import isolation
+    if isolation.blocked_reason(request):                # a Node-RED page must not reach SenseHive (ADR 0014)
+        return '', 403
     if not current_user.is_authenticated:
         return '', 401
     if not current_user.is_admin():

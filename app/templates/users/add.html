@@ -49,7 +49,7 @@
               <option value="monitor">Monitor - Read-only access</option>
             </select>
             {% if 'administrator' not in grantable %}
-            <div class="form-text">{% if current_user.is_owner %}The limit of 3 administrators is reached.{% else %}Only the owner (the first administrator) can grant the administrator role.{% endif %}</div>
+            <div class="form-text">{% if current_user.is_owner %}The limit of {{ max_admins }} administrators is reached.{% else %}Only the owner (the first administrator) can grant the administrator role.{% endif %}</div>
             {% endif %}
           </div>
 

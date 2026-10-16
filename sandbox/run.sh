@@ -5,7 +5,7 @@
 #
 #   sandbox/run.sh              build EdgeShell from this checkout, test, tear down
 #   sandbox/run.sh --keep       same, but leave everything running afterwards
-#   EDGESHELL_IMAGE=devprincekumar/edgeshell:1.10.0 sandbox/run.sh   test a published image
+#   EDGESHELL_IMAGE=devprincekumar/edgeshell:1.11.0 sandbox/run.sh   test a published image
 #
 # Needs Docker with Compose v2, curl and Python 3. Exit code 0 = all passed.
 set -euo pipefail
@@ -121,7 +121,22 @@ if r.status_code == 200 and 'already signed in' in r.text:
 assert r.status_code == 302, f'sign-in failed: {r.status_code}'
 node = s.get(B + '/api/v1/nodes', headers={'Accept': 'application/json'}).json()['nodes'][0]
 cookie = '; '.join(f'{k}={v}' for k, v in s.cookies.items())
-ws = simple_websocket.Client(f'ws://127.0.0.1:5000/ws/nodes/{node["id"]}/shell?cols=120&rows=30',
+# Without a ticket the terminal refuses (a Node-RED page on this origin cannot get one, ADR 0014)
+bare = simple_websocket.Client(f'ws://127.0.0.1:5000/ws/nodes/{node["id"]}/shell?cols=120&rows=30',
+                               headers={'Cookie': cookie, 'Origin': B})
+said = ''
+for _ in range(5):
+    try:
+        said += bare.receive(timeout=1) or ''
+    except Exception:
+        break
+assert 'open the terminal from the node card' in said, said
+print('  PASS  a terminal WebSocket without a ticket is refused')
+meta = re.search(r'name="csrf-token" content="([^"]+)"', s.get(B + '/nodes/').text).group(1)
+t = s.post(B + f'/nodes/{node["id"]}/shell-ticket', headers={'X-CSRFToken': meta, 'Referer': B + '/nodes/'})
+assert t.status_code == 200, t.status_code
+ticket = t.json()['ticket']
+ws = simple_websocket.Client(f'ws://127.0.0.1:5000/ws/nodes/{node["id"]}/shell?cols=120&rows=30&ticket={ticket}',
                              headers={'Cookie': cookie, 'Origin': B})
 out, deadline = '', time.time() + 20
 while time.time() < deadline and '$' not in out:

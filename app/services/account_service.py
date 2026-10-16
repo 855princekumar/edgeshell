@@ -1,15 +1,15 @@
 """Account governance rules, in one place so routes cannot drift.
 
-  - At most MAX_ADMINS (3) administrators.
+  - At most MAX_ADMINS (5) administrators.
   - The owner (the first, primary administrator) has full control: grants
     and removes the administrator role, and changes, resets, signs out,
     disables or deletes any other account, administrators included.
   - Other administrators manage monitors and operators only; they cannot
     change another administrator, and nobody can change the owner.
-    Administrators also leave the role themselves, confirming with their
-    password and a 2FA code.
-  - When the owner steps down, ownership passes to the longest-serving
-    remaining administrator. The last administrator cannot step down.
+    Other administrators may leave the role themselves, confirming with
+    their password and a 2FA code.
+  - The owner is permanent: it cannot step down, be demoted, disabled,
+    deleted or replaced, and ownership never moves to anyone else.
   - An administrator reset of a user's password also removes that user's 2FA,
     which must be set up again at the next sign-in.
 """
@@ -80,6 +80,9 @@ def step_down(user, new_role):
     """The user leaves the administrator role. Returns (ok, message, successor)."""
     if not user.is_admin():
         return False, 'You are not an administrator.', None
+    if user.is_owner:
+        return False, ('You are the primary administrator. This role is permanent: '
+                       'it cannot be given up or handed over.'), None
     if new_role not in ('operator', 'monitor'):
         return False, 'Choose operator or monitor as your new role.', None
     others = [a for a in admins() if a.id != user.id]

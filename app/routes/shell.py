@@ -20,8 +20,9 @@ import time
 from datetime import datetime, timedelta
 from urllib.parse import urlparse
 
-from flask import request, session
+from flask import current_app, request, session
 from flask_login import current_user
+from itsdangerous import BadSignature, URLSafeTimedSerializer
 
 from app import db, sock
 from app.services import collector, ssh_service
@@ -66,11 +67,36 @@ def _signed_in(sid):
     return not idle or datetime.utcnow() - last <= timedelta(seconds=idle + warn)
 
 
+TICKET_SECONDS = 60
+
+
+def _tickets():
+    return URLSafeTimedSerializer(current_app.config['SECRET_KEY'], salt='edgeshell-shell-ticket')
+
+
+def make_ticket(user_id, node_id, sid):
+    """A short-lived pass for one terminal. Only EdgeShell's own pages can ask for
+    one (a CSRF-checked POST that Node-RED pages are refused, ADR 0014): the
+    WebSocket itself cannot tell an EdgeShell page from a Node-RED page."""
+    return _tickets().dumps({'u': user_id, 'n': node_id, 's': sid})
+
+
+def ticket_ok(ticket, user_id, node_id, sid):
+    try:
+        data = _tickets().loads(ticket or '', max_age=TICKET_SECONDS)
+    except BadSignature:
+        return False
+    return data == {'u': user_id, 'n': node_id, 's': sid}
+
+
 @sock.route('/ws/nodes/<int:node_id>/shell')
 def node_shell(ws, node_id):
     from app.models.node import Node
     if not current_user.is_authenticated or not current_user.can_execute() or not _same_origin():
         ws.send('\r\n\x1b[31mNot allowed: operators and administrators only.\x1b[0m\r\n')
+        return
+    if not ticket_ok(request.args.get('ticket'), current_user.id, node_id, session.get('sid')):
+        ws.send('\r\n\x1b[31mNot allowed: open the terminal from the node card.\x1b[0m\r\n')
         return
     node = db.session.get(Node, node_id)
     if not node or not node.is_active:

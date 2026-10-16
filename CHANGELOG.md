@@ -2,6 +2,19 @@
 
 All notable changes are documented here. Format loosely follows Keep a Changelog.
 
+## [1.11.0] - 2026-10-16
+
+### Added
+- **Node-RED through EdgeShell** at `https://<domain>/nodered/<node name>/`: the Node-RED button now opens the node's editor through EdgeShell's own address, behind its sign-in and roles (operators and administrators). The node's IP is never shown and no VPN is needed on the user's side; every opening is in the activity log ([ADR 0014](docs/adr/0014-nodered-through-edgeshell.md)).
+
+### Security
+- Node-RED pages share EdgeShell's address, so EdgeShell now refuses browser requests made by a Node-RED page or by a script without a `Referer`, is never shown in a frame (`frame-ancestors 'none'`), gives Node-RED pages a different opener policy, and keeps its cookies away from Node-RED. The SenseHive gate refuses the same requests, one node's Node-RED page cannot drive another's, and no service worker can be installed under `/nodered/`.
+- The node terminal needs a short-lived signed ticket (60 seconds, one user, node and session) that only EdgeShell's own pages can get; a WebSocket without it is refused.
+
+### Changed
+- **Up to 5 administrators** (was 3).
+- **The primary administrator is permanent**: the first administrator (owner, super administrator) can no longer step down, and ownership never passes to anyone else. Other administrators can still step down.
+
 ## [1.10.0] - 2026-10-16
 
 ### Added

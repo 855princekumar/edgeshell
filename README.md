@@ -184,7 +184,7 @@ flowchart LR
 | **Long-term history** | One sample per node per minute in every state (so uptime is measured, not guessed), rolled up hourly and kept for good |
 | **VPN status** | Live Tailscale state of the server and every tailnet peer: status, OS, direct or relayed link, last seen, traffic. Filter by status, OS, link and last seen; sort any column |
 | **Remote desktop** | One-click [OpenRemoteGUI](https://github.com/855princekumar/OpenRemoteGUI) per node, with detection and a guided install: safety checks first (OS, disk, network, desktop session, sudo), then `git clone`, `cd`, `sudo bash install.sh`, with live progress; fleet installs stop at the first failure |
-| **Node-RED access** | Open each node's own Node-RED editor at its real address and port |
+| **Node-RED access** | Each node's Node-RED editor at `https://<your domain>/nodered/<node name>/`, behind EdgeShell's sign-in and roles (operators and administrators), with the node's address hidden and no VPN needed; every opening logged ([ADR 0014](docs/adr/0014-nodered-through-edgeshell.md)) |
 | **File deployment** | Upload files to many nodes at once, with per-node results and history |
 | **Log browser** | Browse, fetch and download log files from any node |
 | **Fleet setup** | Scan the fleet for Docker, Node-RED and OpenRemoteGUI; install on every node missing them |
@@ -377,7 +377,7 @@ Change [`sandbox/fleet.json`](sandbox/fleet.json) to test any mix, up to 20 node
 
 ```bash
 bash sandbox/run.sh                                                 # build from source, test, tear down
-EDGESHELL_IMAGE=devprincekumar/edgeshell:1.10.0 bash sandbox/run.sh  # test a published image
+EDGESHELL_IMAGE=devprincekumar/edgeshell:1.11.0 bash sandbox/run.sh  # test a published image
 ```
 
 **Your own workflow:** run a change (command, playbook, file rollout) against
@@ -786,7 +786,7 @@ Ideas and feature requests are welcome in
 | **Discovering usernames** | Every failure shows the same message, and unknown usernames take the same time to answer as real ones |
 | **Stolen or guessed password** | **Two-factor authentication is mandatory.** A 6-digit code from an authenticator app (or a one-time backup code) is required after the password; nothing is signed in before it, and failed codes count toward the lockout |
 | **Weak or default passwords** | Passwords are bcrypt-hashed, at least 10 characters, and the seeded `admin` must change its password, set up 2FA and add a personal email on first sign-in |
-| **Admin takeover** | At most 3 administrators; only the owner grants or removes the role; other administrators cannot change an administrator and nobody can change the owner; stepping down needs password + 2FA |
+| **Admin takeover** | At most 5 administrators; the first one is the permanent primary administrator; only the owner grants or removes the role; other administrators cannot change an administrator and nobody can change the owner; stepping down needs password + 2FA |
 | **Forgotten password** | Users: reset by an admin, which also resets their 2FA. Admins: single-use emailed link (30 minutes, built from `PUBLIC_URL`, never the Host header) or a backup code |
 
 ### Session protection
