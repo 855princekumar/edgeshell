@@ -245,7 +245,7 @@ services:
   # administrators open it at /sensehive/ through nginx, after EdgeShell checks
   # they are signed in as an administrator. Change its own login on first use.
   sensehive:
-    image: devprincekumar/sense-hive:${SENSEHIVE_TAG:-1.4.0}
+    image: devprincekumar/sense-hive:${SENSEHIVE_TAG:-1.4.1}
     restart: unless-stopped
     environment:
       DB_PATH: /app/data/iot_dashboard.db
