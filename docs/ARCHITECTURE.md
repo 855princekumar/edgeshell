@@ -41,7 +41,7 @@ EdgeShell is the control plane of five projects that work as one system:
 | Part | Where it runs | Job |
 |---|---|---|
 | EdgeShell | the server (Docker) | users, roles, 2FA, SSH and Ansible to nodes, monitoring, SLA, API |
-| SenseHive | the server, next to EdgeShell | verifies node heartbeats and serves their state; MQTT data logger for admins |
+| SenseHive | the server, next to EdgeShell | verifies node heartbeats and serves their state; MQTT logging dashboard for admins |
 | MQTT heartbeat agent | every node (systemd) | encrypted heartbeat every 10 s and a last will, over a public broker |
 | OpenRemoteGUI | nodes that need it | browser remote desktop behind the **Remote** button |
 | Pi Fleet Emulator | CI and your lab | an emulated Pi fleet every release is tested against |

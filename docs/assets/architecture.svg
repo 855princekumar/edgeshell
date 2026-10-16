@@ -70,7 +70,7 @@
   <text x="284" y="414" class="t">SenseHive (administrators only)</text>
   <text x="284" y="432" class="lbl">heartbeat receiver: verifies, tracks online / offline / silent</text>
   <text x="284" y="448" class="lbl">read-only heartbeat API for EdgeShell (bearer token, internal)</text>
-  <text x="284" y="464" class="lbl">MQTT data logger and dashboard; own sign-in, lockout, CSP</text>
+  <text x="284" y="464" class="lbl">MQTT logging and dashboard; own sign-in, lockout, CSP</text>
   <text x="284" y="480" class="lbl">SQLite in its own volume; holds the fleet master key</text>
 
   <!-- SenseHive API to background services -->
