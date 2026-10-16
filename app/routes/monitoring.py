@@ -3,7 +3,7 @@ from flask_login import current_user, login_required
 from app.utils.timeutil import iso_utc
 from app.services import categories as _categories
 from app.models.node import Node
-from app.models import SystemMetrics
+from app.models import MetricsHourly, SystemMetrics
 
 monitoring_bp = Blueprint('monitoring', __name__, url_prefix='/monitoring')
 
@@ -156,13 +156,33 @@ def fleet_summary():
     })
 
 
+HISTORY_SPANS = {'1h': 3600, '6h': 6 * 3600, '1d': 86400, '7d': 7 * 86400, '30d': 30 * 86400}
+
+
 @monitoring_bp.route('/history/<int:node_id>')
 @login_required
 def history(node_id):
-    rows = SystemMetrics.query.filter_by(node_id=node_id)\
-               .order_by(SystemMetrics.timestamp.desc()).limit(60).all()
-    return jsonify([{
-        'timestamp': iso_utc(m.timestamp),
-        'cpu': m.cpu_percent, 'mem': m.ram_percent, 'disk': m.disk_percent,
-        'load_1': m.load_avg_1, 'load_5': m.load_avg_5, 'load_15': m.load_avg_15,
-    } for m in reversed(rows)])
+    """A node's metrics over a period: every sample up to a day, hourly rollups beyond."""
+    from datetime import datetime, timedelta
+    node = Node.query.filter(Node.id == node_id, Node.is_deleted.isnot(True)).first_or_404()
+    rng = request.args.get('range', '1h')
+    if rng not in HISTORY_SPANS:
+        return jsonify({'success': False, 'message': 'Unknown period'}), 400
+    since = datetime.utcnow() - timedelta(seconds=HISTORY_SPANS[rng])
+    if HISTORY_SPANS[rng] <= 86400:
+        rows = SystemMetrics.query.filter(SystemMetrics.node_id == node.id, SystemMetrics.timestamp >= since)\
+            .order_by(SystemMetrics.timestamp).limit(5000).all()
+        points = [{'t': iso_utc(m.timestamp), 'cpu': m.cpu_percent, 'mem': m.ram_percent, 'disk': m.disk_percent,
+                   'temp': m.temperature, 'load1': m.load_avg_1,
+                   'up': (m.status in (None, 'online')) or bool(m.heartbeat)} for m in rows]
+        kind = 'samples'
+    else:
+        rows = MetricsHourly.query.filter(MetricsHourly.node_id == node.id, MetricsHourly.hour >= since)\
+            .order_by(MetricsHourly.hour).all()
+        points = [{'t': iso_utc(h.hour), 'cpu': h.cpu_avg, 'mem': h.ram_avg, 'disk': h.disk_avg, 'temp': h.temp_avg,
+                   'load1': h.load1_avg,
+                   'uptime': round(100.0 * ((h.online or 0) + (h.heartbeat_only or 0)) / h.samples, 1) if h.samples else None}
+                  for h in rows]
+        kind = 'hours'
+    return jsonify({'success': True, 'node': node.name, 'range': rng, 'kind': kind, 'since': iso_utc(since),
+                    'points': points})

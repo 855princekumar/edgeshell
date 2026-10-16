@@ -2,6 +2,16 @@
 
 All notable changes are documented here. Format loosely follows Keep a Changelog.
 
+## [1.10.0] - 2026-10-16
+
+### Added
+- **Heartbeat history on every node**: click the heartbeat badge for a chart of the last minute, hour, day, 7 or 30 days (gaps between heartbeats, breaks, last wills; hourly uptime for 7 and 30 days), with uptime, longest break, breaks list and delivery delay. Every role.
+- **Heartbeat CSV export**: from the history (one node, every role) or **Export heartbeats** in the Node Fleet bulk-action bar (selected nodes, operators and administrators): every heartbeat, online minutes or status changes. Exports are in the activity log.
+- **SenseHive 1.5.0** in the stack (`SENSEHIVE_TAG`): heartbeat history, dashboard view cards, dialogs that fit the screen, hostile-input hardening.
+
+### Fixed
+- **Monitoring, History showed "No history available yet" for every node.** The page and the server disagreed on the data format, so stored samples were never drawn. The history now has periods (1 hour, 6 hours, 1 day from every sample; 7 and 30 days from the hourly rollups), CPU, memory, disk and temperature lines, down minutes shaded red and hourly uptime bars, and the dialog fits the screen.
+
 ## [1.9.2] - 2026-10-16
 
 ### Changed

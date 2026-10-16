@@ -1,18 +1,18 @@
 {# MQTT heartbeat on a node card (every role). online: verified heartbeats;
    offline: the node's last will arrived; silent: no heartbeat and no will
-   (broker or internet path). ADR 0013. #}
+   (broker or internet path). ADR 0013. Click: heartbeat history (hb_history.js). #}
 {% if node.hb_status == 'online' %}
-<span class="badge hb-badge" style="background:#dcfce7;color:#166534"
+<span class="badge hb-badge" role="button" tabindex="0" data-hb-node="{{ node.id }}" data-hb-name="{{ node.name }}" style="background:#dcfce7;color:#166534;cursor:pointer"
       title="MQTT heartbeat: online{% if node.hb_last_seen %}, last {{ node.hb_last_seen|localtime('%H:%M:%S') }}{% endif %}{% if node.hb_agent_version %}, agent {{ node.hb_agent_version }}{% endif %}">
   <i class="bi bi-heart-pulse-fill"></i> heartbeat
 </span>
 {% elif node.hb_status == 'offline' %}
-<span class="badge hb-badge" style="background:#fee2e2;color:#991b1b"
+<span class="badge hb-badge" role="button" tabindex="0" data-hb-node="{{ node.id }}" data-hb-name="{{ node.name }}" style="background:#fee2e2;color:#991b1b;cursor:pointer"
       title="MQTT heartbeat: last will received{% if node.hb_lwt_at %} at {{ node.hb_lwt_at|localtime('%d %b %H:%M:%S') }}{% endif %}: the agent's connection dropped">
   <i class="bi bi-heartbreak-fill"></i> LWT offline
 </span>
 {% elif node.hb_status == 'silent' %}
-<span class="badge hb-badge" style="background:#fef3c7;color:#92400e"
+<span class="badge hb-badge" role="button" tabindex="0" data-hb-node="{{ node.id }}" data-hb-name="{{ node.name }}" style="background:#fef3c7;color:#92400e;cursor:pointer"
       title="MQTT heartbeat: none recently and no last will: usually the broker or the internet path, not the node">
   <i class="bi bi-heart"></i> heartbeat silent
 </span>

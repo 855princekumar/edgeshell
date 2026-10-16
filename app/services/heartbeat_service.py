@@ -236,6 +236,44 @@ def fetch_nodes():
     return r.json()
 
 
+HISTORY_RANGES = ('1m', '1h', '1d', '7d', '30d')
+EXPORT_KINDS = ('beats', 'minutes', 'events')
+EXPORT_PERIODS = {'1h': 3600, '1d': 86400, '7d': 7 * 86400, '30d': 30 * 86400}
+
+
+def _sensehive(path, params, timeout=15):
+    """GET from SenseHive's read-only heartbeat API with EdgeShell's token. The
+    address is EdgeShell's own setting, never anything a user sends."""
+    import requests
+    cfg = current_app.config
+    return requests.get(cfg['SENSEHIVE_URL'].rstrip('/') + path, params=params, timeout=timeout,
+                        headers={'Authorization': f"Bearer {cfg['SENSEHIVE_API_TOKEN']}"})
+
+
+def fetch_history(name, rng):
+    """Chart data for one node from SenseHive (1m to 30d), or None if it is not reachable.
+    Raises LookupError when SenseHive does not know the node."""
+    r = _sensehive('/api/heartbeat/history', {'node': name, 'range': rng})
+    if r.status_code == 404:
+        raise LookupError(name)
+    r.raise_for_status()
+    d = r.json()
+    keep = ('node', 'range', 'since', 'until', 'kind', 'points', 'interval', 'breaks', 'received', 'lag_ms',
+            'longest_break', 'events', 'uptime')
+    return {k: d[k] for k in keep if k in d}
+
+
+def fetch_export(names, what, seconds):
+    """CSV text from SenseHive for some node names over the last `seconds`."""
+    now = int(time.time())
+    r = _sensehive('/api/heartbeat/export.csv', {'nodes': ','.join(names), 'what': what,
+                                                   'since': now - seconds, 'until': now}, timeout=60)
+    if r.status_code == 404:
+        raise LookupError(','.join(names))
+    r.raise_for_status()
+    return r.text
+
+
 def _dt(ts):
     return datetime.utcfromtimestamp(ts) if ts else None
 

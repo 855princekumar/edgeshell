@@ -413,10 +413,28 @@ def main():
     out = (res.get(hb_node['name']) or {}).get('stdout', '')
     check('the agent hot reloaded the pushed settings without a restart', out.split()[:2] == ['1', '1'], out[-200:])
 
+    # Heartbeat history and CSV through EdgeShell (SenseHive 1.5+ keeps every heartbeat)
+    st, _, body = admin.request('GET', f"/nodes/{hb_node['id']}/heartbeat/history?range=1h")
+    hist = json.loads(body) if st == 200 else {}
+    check('heartbeat history through EdgeShell: every heartbeat of the last hour',
+          hist.get('success') and hist.get('kind') == 'beats' and hist.get('received', 0) >= 3, (st, body[:300]))
+    check('heartbeat history: the usual interval is measured', 5 <= (hist.get('interval') or 0) <= 12, hist.get('interval'))
+    st, h, body = admin.request('GET', f"/nodes/heartbeat/export.csv?ids={hb_node['id']}&what=beats&period=1h")
+    lines = body.strip().splitlines() if st == 200 else []
+    check('heartbeat CSV through EdgeShell: one row per heartbeat',
+          st == 200 and lines[:1] == ['node,time_utc,unix_time,kind,delay_ms']
+          and len([x for x in lines[1:] if x.startswith(hb_node['name'] + ',')]) >= 3, (st, body[:200]))
+
     status, res, _ = admin.fleet_exec([hb_node['id']], 'sudo pkill -9 -f /opt/edgeshell-heartbeat/heartbeat_agent.py; echo killed')
     row = hb_state(hb_node['name'], 'offline', seconds=120)
     check('agent killed: the broker delivers its signed last will (node card: LWT offline)',
           bool(row and row.get('heartbeat_lwt_at')), row)
+    st, _, body = admin.request('GET', f"/nodes/{hb_node['id']}/heartbeat/history?range=1h")
+    hist = json.loads(body) if st == 200 else {}
+    check('heartbeat history records the last will',
+          any(p[1] == 2 for p in hist.get('points', [])), str(hist.get('points', [])[-3:]))
+    st, _, body = admin.request('GET', f"/nodes/heartbeat/export.csv?ids={hb_node['id']}&what=events&period=1h")
+    check('status changes export as CSV (offline included)', st == 200 and ',offline' in body, body[-200:])
 
     # ── SenseHive gate (through the production nginx) ──────────────────────
     section('SenseHive gate: administrators, a 2FA code or the admin panel, isolated cookies')
