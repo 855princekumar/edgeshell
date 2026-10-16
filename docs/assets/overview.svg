@@ -60,7 +60,7 @@
 
   <rect x="318" y="152" width="264" height="40" rx="8" fill="#eff6ff" stroke="#bfdbfe"/>
   <text x="332" y="170" class="t" font-size="12">Nginx + Let's Encrypt</text>
-  <text x="332" y="185" class="lbl" font-size="10">TLS, HSTS, 2FA gate in front of SenseHive</text>
+  <text x="332" y="185" class="lbl" font-size="10">TLS, HSTS, SenseHive 2FA gate, node apps by name</text>
 
   <rect x="318" y="198" width="264" height="40" rx="8" fill="#f0fdf4" stroke="#bbf7d0"/>
   <text x="332" y="216" class="t" font-size="12">EdgeShell (Gunicorn + Flask)</text>
@@ -81,7 +81,7 @@
   <rect x="660" y="100" width="220" height="210" rx="12" fill="#fff" stroke="#059669" stroke-width="1.5"/>
   <rect x="660" y="100" width="220" height="34" rx="12" fill="url(#mesh)"/>
   <rect x="660" y="122" width="220" height="12" fill="#172033"/>
-  <text x="770" y="122" font-size="12" font-weight="700" fill="#fff" text-anchor="middle">Tailscale mesh · SSH / Ansible</text>
+  <text x="770" y="122" font-size="12" font-weight="700" fill="#fff" text-anchor="middle">Tailscale mesh · SSH, Ansible, apps</text>
 
   <g>
     <rect x="676" y="146" width="90" height="70" rx="8" fill="#f0fdf4" stroke="#86efac"/>
