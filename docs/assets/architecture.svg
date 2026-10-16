@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 650" font-family="Segoe UI,Roboto,Helvetica,Arial,sans-serif" role="img" aria-labelledby="title desc">
   <title id="title">EdgeShell architecture</title>
-  <desc id="desc">Operators reach nginx over HTTPS. nginx serves EdgeShell and, for administrators behind EdgeShell's sign-in and 2FA gate, SenseHive. EdgeShell manages nodes over SSH through a private mesh. Each node's heartbeat agent sends encrypted heartbeats over a public MQTT broker to SenseHive, whose read-only API EdgeShell reads for heartbeat status, uptime and SLA.</desc>
+  <desc id="desc">Operators reach nginx over HTTPS. nginx serves EdgeShell and, for administrators behind EdgeShell's sign-in and 2FA gate, SenseHive. EdgeShell manages nodes over SSH through a private mesh. Each node's heartbeat agent sends encrypted heartbeats over a public MQTT broker to SenseHive, whose read-only API EdgeShell reads for heartbeat status, uptime and SLA. Node-RED and the remote desktop of each node open through nginx at /nodered/ and /remoteGUI/ under the node name: EdgeShell checks the sign-in and role on every request and hands nginx the node address, which the browser never sees.</desc>
   <defs>
     <linearGradient id="hdr" x1="0" y1="0" x2="1" y2="1">
       <stop offset="0" stop-color="#1a56db"/><stop offset="1" stop-color="#0f172a"/>
@@ -43,7 +43,7 @@
 
   <rect x="270" y="124" width="360" height="52" rx="8" fill="#f1f5f9" stroke="#cbd5e1"/>
   <text x="284" y="146" class="t">nginx</text>
-  <text x="284" y="164" class="lbl">only public port: TLS; /sensehive/ behind the 2FA gate</text>
+  <text x="284" y="164" class="lbl">TLS only; /sensehive/ 2FA gate; /nodered/, /remoteGUI/</text>
 
   <rect x="270" y="186" width="360" height="52" rx="8" fill="#eff6ff" stroke="#bfdbfe"/>
   <text x="284" y="208" class="t">EdgeShell: Flask + Gunicorn</text>
@@ -86,7 +86,7 @@
   <!-- host to mesh -->
   <line x1="650" y1="130" x2="699" y2="130" stroke="#0f172a" stroke-width="2" marker-end="url(#a)"/>
   <text x="675" y="122" class="lbl" text-anchor="middle">SSH</text>
-  <text x="675" y="148" class="mut" text-anchor="middle">pooled</text>
+  <text x="675" y="148" class="mut" text-anchor="middle">+ apps</text>
 
   <!-- Mesh -->
   <rect x="700" y="90" width="270" height="70" rx="10" fill="#0f172a"/>
@@ -103,7 +103,7 @@
   <rect x="740" y="188" width="230" height="88" rx="10" fill="#fff" stroke="#059669" stroke-width="1.5"/>
   <text x="755" y="212" class="t">Raspberry Pi node</text>
   <text x="755" y="230" class="lbl">SSH, metrics, Node-RED :1880</text>
-  <text x="755" y="246" class="lbl">OpenRemoteGUI :6080</text>
+  <text x="755" y="246" class="lbl">remote desktop :6080 (tailnet only)</text>
   <text x="755" y="262" class="lbl">heartbeat agent (systemd, own user)</text>
 
   <rect x="740" y="294" width="230" height="72" rx="10" fill="#fff" stroke="#059669" stroke-width="1.5"/>
