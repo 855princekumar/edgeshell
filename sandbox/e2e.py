@@ -539,6 +539,23 @@ def main():
     check("EdgeShell pages forbid framing (CSP frame-ancestors 'none')",
           "frame-ancestors 'none'" in h.get('Content-Security-Policy', ''), h.get('Content-Security-Policy'))
 
+    section('Remote desktop at /remoteGUI/<node>/: no address, keyboard only with a ticket')
+    st, h, _ = admin.request('GET', NGINX + f'/nodes/{nr_id}/remotegui')
+    loc = h.get('Location', '')
+    check('the Remote button goes to /remoteGUI/<node name>/vnc.html with a desktop ticket',
+          st == 302 and f'/remoteGUI/{nr_name}/vnc.html' in loc and 'ticket' in urllib.parse.unquote(loc), (st, loc))
+    check('no node address or port in the remote desktop address', node_ip not in urllib.parse.unquote(loc) and ':6080' not in loc, loc)
+    st, h, _ = Client('E2E-anon-rg').request('GET', NGINX + f'/remoteGUI/{nr_name}/vnc.html')
+    check('signed out: the remote desktop asks to sign in first', st == 302 and '/login' in h.get('Location', ''), (st, h.get('Location')))
+    st, _, _ = admin.request('GET', NGINX + f'/remoteGUI/{nr_name}/websockify',
+                             headers={'Upgrade': 'websocket', 'Connection': 'Upgrade', 'Sec-WebSocket-Version': '13',
+                                      'Sec-WebSocket-Key': base64.b64encode(os.urandom(16)).decode()})
+    check('the desktop WebSocket without a ticket is refused before it reaches the node', st == 403, st)
+    st, _, _ = admin.request('GET', NGINX + '/users/', headers={'Referer': NGINX + f'/remoteGUI/{nr_name}/vnc.html',
+                                                                 'Sec-Fetch-Site': 'same-origin', 'Sec-Fetch-Mode': 'cors',
+                                                                 'Sec-Fetch-Dest': 'empty'})
+    check('EdgeShell refuses requests made by a remote desktop page', st == 403, st)
+
     # ── Login and session security ─────────────────────────────────────────
     section('Two-factor checks')
     probe = Client('Firefox/130.0 (Linux) E2E-2fa-probe')

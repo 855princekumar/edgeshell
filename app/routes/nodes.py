@@ -421,9 +421,9 @@ def credentials(node_id):
 def orgui_status(node_id):
     node = Node.query.get_or_404(node_id)
     installed, signal = orgui_service.persist_check(node)
-    url = f"http://{node.ip_address}:{node.orgui_port or current_app.config['ORGUI_DEFAULT_PORT']}"
+    # through EdgeShell (ADR 0014): never the node's address and port
     return jsonify({'success': True, 'installed': installed,
-                    'signal': signal, 'url': url})
+                    'signal': signal, 'url': url_for('nodered.open_remotegui', node_id=node.id)})
 
 
 @nodes_bp.route('/<int:node_id>/orgui/install', methods=['POST'])

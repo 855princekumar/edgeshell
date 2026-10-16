@@ -250,8 +250,8 @@
                 <i class="bi bi-terminal"></i>
             </button>
             <button class="btn btn-outline btn-xs orgui-btn" id="orgui-{{ node.id }}"
-                    title="Open Remote Desktop (OpenRemoteGUI)"
-                    data-ip="{{ node.ip_address }}" data-port="{{ node.orgui_port or ORGUI_DEFAULT_PORT }}"
+                    title="Open Remote Desktop (OpenRemoteGUI, through EdgeShell)"
+                    data-name="{{ node.name }}" data-port="{{ node.orgui_port or ORGUI_DEFAULT_PORT }}"
                     data-installed="{{ 'yes' if node.orgui_installed else ('no' if node.orgui_installed == false else 'unknown') }}"
                     onclick="openRemoteGui({{ node.id }})">
                 <i class="bi bi-display"></i> Remote
@@ -652,38 +652,41 @@ function restartSelected() {
 
 // ── OpenRemoteGUI ────────────────────────────────────────────────────────────
 const CAN_INSTALL = {{ 'true' if current_user.is_admin() else 'false' }};   // installs: administrators only
+// The remote desktop opens through EdgeShell at /remoteGUI/<node>/ (ADR 0014):
+// no IP or port in the address bar, and its WebSocket needs the ticket the
+// Remote route issues.
 function openRemoteGui(id) {
     const btn = document.getElementById('orgui-' + id);
-    const ip = btn.dataset.ip, port = btn.dataset.port;
+    const name = btn.dataset.name;
     const installed = btn.dataset.installed;
-    if (installed === 'yes') { window.open(`http://${ip}:${port}`, '_blank'); return; }
+    if (installed === 'yes') { window.open(`/nodes/${id}/remotegui`, '_blank', 'noopener'); return; }
     // Check live before deciding.
-    showToast('Checking OpenRemoteGUI on ' + ip + '...', 'info');
+    showToast('Checking OpenRemoteGUI on ' + name + '...', 'info');
     fetch(`/nodes/${id}/orgui/status`, { method: 'POST' })
         .then(r => r.json()).then(d => {
             if (d.installed) {
                 btn.dataset.installed = 'yes';
-                window.open(d.url, '_blank');
+                window.open(d.url, '_blank', 'noopener');
             } else if (!CAN_INSTALL) {
-                showToast(`OpenRemoteGUI is not running on ${ip}. Installing software on nodes is for administrators: ask one to install it.`, 'warning');
+                showToast(`OpenRemoteGUI is not running on ${name}. Installing software on nodes is for administrators: ask one to install it.`, 'warning');
             } else {
                 const why = d.signal === 'STOPPED' ? 'is installed but not running'
                           : d.signal === 'PORT_OTHER' ? 'is not installed (another program uses its port)'
                           : 'is not installed';
-                if (confirm(`OpenRemoteGUI ${why} on ${ip}.\n\nInstall it now? EdgeShell will:\n`
+                if (confirm(`OpenRemoteGUI ${why} on ${name}.\n\nInstall it now? EdgeShell will:\n`
                     + `  1. check the OS, disk space, network, desktop session and sudo (and stop if anything is unsafe)\n`
                     + `  2. git clone https://github.com/855princekumar/OpenRemoteGUI.git\n`
                     + `  3. cd OpenRemoteGUI and run sudo bash install.sh\n`
                     + `  4. check that its page answers on port ${btn.dataset.port}\n\n`
                     + `Note: the installer turns off Raspberry Pi Connect's own VNC on that node, as OpenRemoteGUI replaces it.\n`
                     + `You can follow every step live.`)) {
-                    installOrgui(id, ip);
+                    installOrgui(id, name);
                 }
             }
         }).catch(e => showToast('Check failed: ' + e.message, 'danger'));
 }
 
-function installOrgui(id, ip) {
+function installOrgui(id, name) {
     fetch(`/nodes/${id}/orgui/install`, { method: 'POST' })
         .then(r => r.json()).then(d => {
             if (d.job_id) esJobWindow(d.job_id);

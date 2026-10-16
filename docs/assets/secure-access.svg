@@ -1,0 +1,116 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 640" font-family="Segoe UI,Roboto,Helvetica,Arial,sans-serif" role="img" aria-labelledby="title desc">
+  <title id="title">Secure access: one domain, one open port, no node addresses</title>
+  <desc id="desc">Users reach one domain over HTTPS on port 443. nginx is the only public listener; it routes paths to EdgeShell, to SenseHive behind a 2FA gate, and to each node's Node-RED and remote desktop behind EdgeShell's sign-in. Nodes are reachable only from the server over the private mesh; they expose no port to the internet. Heartbeats leave the nodes outbound to a TLS MQTT broker.</desc>
+  <defs>
+    <marker id="a" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0,0 L7,3 L0,6 Z" fill="#334155"/></marker>
+    <marker id="b" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0,0 L7,3 L0,6 Z" fill="#1a56db"/></marker>
+    <marker id="g" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0,0 L7,3 L0,6 Z" fill="#059669"/></marker>
+    <marker id="o" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0,0 L7,3 L0,6 Z" fill="#d97706"/></marker>
+    <style>
+      .tt{font-size:15px;font-weight:700;fill:#0f172a}
+      .t{font-size:12.5px;font-weight:700;fill:#0f172a}
+      .lbl{font-size:11px;fill:#475569}
+      .mut{font-size:11px;fill:#64748b}
+      .mono{font-size:11px;fill:#0f172a;font-family:Consolas,Menlo,monospace}
+      .hd{font-size:13px;font-weight:700;fill:#fff}
+    </style>
+  </defs>
+  <rect width="1000" height="640" fill="#f8fafc"/>
+  <text x="30" y="34" class="tt" font-size="18">Secure access: one domain, one open port, no node addresses</text>
+  <text x="30" y="54" class="mut">Example values (example.com, 203.0.113.10) stand in for your own. Nothing below is a real address.</text>
+
+  <!-- DNS -->
+  <rect x="30" y="72" width="940" height="44" rx="10" fill="#fff" stroke="#cbd5e1"/>
+  <text x="46" y="99" class="t">DNS</text>
+  <text x="90" y="99" class="mono">A fleet.example.com -&gt; 203.0.113.10 (static IP)</text>
+  <text x="440" y="99" class="mono">CAA example.com 0 issue "letsencrypt.org"</text>
+  <text x="790" y="99" class="lbl">no wildcard, no node names</text>
+
+  <!-- users -->
+  <rect x="30" y="140" width="170" height="150" rx="12" fill="#fff" stroke="#cbd5e1" stroke-width="1.5"/>
+  <text x="115" y="168" class="tt" text-anchor="middle">Users</text>
+  <text x="115" y="190" class="lbl" text-anchor="middle">any browser, anywhere</text>
+  <text x="115" y="208" class="lbl" text-anchor="middle">no VPN account</text>
+  <text x="115" y="226" class="lbl" text-anchor="middle">password + 2FA</text>
+  <text x="115" y="244" class="lbl" text-anchor="middle">roles decide paths</text>
+  <text x="115" y="270" class="mono" text-anchor="middle">https://fleet.example.com</text>
+  <line x1="200" y1="215" x2="248" y2="215" stroke="#1a56db" stroke-width="2.5" marker-end="url(#b)"/>
+  <text x="224" y="206" class="lbl" text-anchor="middle" font-weight="700">443</text>
+
+  <!-- server -->
+  <rect x="250" y="140" width="430" height="440" rx="14" fill="#fff" stroke="#1a56db" stroke-width="2"/>
+  <path d="M264,140 H666 A14,14 0 0 1 680,154 V176 H250 V154 A14,14 0 0 1 264,140 Z" fill="#1a56db"/>
+  <text x="266" y="163" class="hd">Cloud server: inbound 443 (and 80 for certificates) only</text>
+
+  <rect x="268" y="190" width="394" height="58" rx="8" fill="#f1f5f9" stroke="#cbd5e1"/>
+  <text x="282" y="211" class="t">nginx: the only public listener</text>
+  <text x="282" y="228" class="lbl">TLS 1.2/1.3, HSTS, the IP redirects to the domain,</text>
+  <text x="282" y="243" class="lbl">each path checked with EdgeShell before it is served</text>
+
+  <text x="268" y="270" class="t">Path</text><text x="452" y="270" class="t">Who</text>
+  <g font-size="11">
+    <rect x="268" y="278" width="394" height="26" rx="6" fill="#eff6ff"/>
+    <text x="280" y="295" class="mono">/</text><text x="452" y="295" class="lbl">EdgeShell: sign-in, 2FA, roles</text>
+    <rect x="268" y="308" width="394" height="26" rx="6" fill="#fffbeb"/>
+    <text x="280" y="325" class="mono">/sensehive/</text><text x="452" y="325" class="lbl">administrators + fresh 2FA</text>
+    <rect x="268" y="338" width="394" height="26" rx="6" fill="#ecfdf5"/>
+    <text x="280" y="355" class="mono">/nodered/&lt;node&gt;/</text><text x="452" y="355" class="lbl">operators, administrators</text>
+    <rect x="268" y="368" width="394" height="26" rx="6" fill="#ecfdf5"/>
+    <text x="280" y="385" class="mono">/remoteGUI/&lt;node&gt;/</text><text x="452" y="385" class="lbl">operators + desktop ticket</text>
+    <rect x="268" y="398" width="394" height="26" rx="6" fill="#f8fafc"/>
+    <text x="280" y="415" class="mono">/api/v1/</text><text x="452" y="415" class="lbl">API keys (scoped, expiring)</text>
+    <rect x="268" y="428" width="394" height="26" rx="6" fill="#fef2f2"/>
+    <text x="280" y="445" class="mono">/internal/</text><text x="452" y="445" class="lbl" style="fill:#b91c1c">never from outside (404)</text>
+  </g>
+
+  <rect x="268" y="468" width="394" height="96" rx="8" fill="#f8fafc" stroke="#e2e8f0"/>
+  <text x="282" y="489" class="t">Behind nginx, on private networks only</text>
+  <text x="282" y="507" class="lbl">EdgeShell, SenseHive, MariaDB hot + lake, privacyIDEA</text>
+  <text x="282" y="523" class="lbl">no published ports; secrets in .env (0600), never in git</text>
+  <text x="282" y="539" class="lbl">node apps get no EdgeShell cookies; their pages cannot</text>
+  <text x="282" y="555" class="lbl">use the EdgeShell session (ADR 0014)</text>
+
+  <!-- mesh -->
+  <line x1="680" y1="250" x2="728" y2="250" stroke="#059669" stroke-width="2.5" marker-end="url(#g)"/>
+  <text x="704" y="241" class="lbl" text-anchor="middle">mesh</text>
+  <rect x="730" y="140" width="240" height="320" rx="14" fill="#fff" stroke="#059669" stroke-width="1.5"/>
+  <path d="M744,140 H956 A14,14 0 0 1 970,154 V176 H730 V154 A14,14 0 0 1 744,140 Z" fill="#0f172a"/>
+  <text x="746" y="163" class="hd">Private mesh (Tailscale)</text>
+  <text x="746" y="200" class="lbl">only the server reaches nodes:</text>
+  <text x="746" y="218" class="mono">:22   SSH (EdgeShell)</text>
+  <text x="746" y="236" class="mono">:1880 Node-RED</text>
+  <text x="746" y="254" class="mono">:6080 remote desktop</text>
+  <rect x="746" y="272" width="208" height="70" rx="8" fill="#ecfdf5" stroke="#86efac"/>
+  <text x="760" y="294" class="t">Nodes</text>
+  <text x="760" y="312" class="lbl">no port open to the internet</text>
+  <text x="760" y="328" class="lbl">addresses never reach a browser</text>
+  <text x="746" y="368" class="lbl">ACL: server tag -&gt; fleet tag on</text>
+  <text x="746" y="384" class="lbl">22, 1880, 6080; users need no</text>
+  <text x="746" y="400" class="lbl">mesh access at all</text>
+  <text x="746" y="428" class="lbl">VNC itself stays on the node's</text>
+  <text x="746" y="444" class="lbl">loopback (127.0.0.1:5900)</text>
+
+  <!-- heartbeats -->
+  <rect x="730" y="490" width="240" height="90" rx="12" fill="#fffbeb" stroke="#d97706" stroke-width="1.5"/>
+  <text x="746" y="514" class="t">MQTT broker (TLS 8883)</text>
+  <text x="746" y="532" class="lbl">nodes and SenseHive connect</text>
+  <text x="746" y="548" class="lbl">outbound only; messages are</text>
+  <text x="746" y="564" class="lbl">AES-256-GCM, topics rotate</text>
+  <line x1="850" y1="462" x2="850" y2="486" stroke="#d97706" stroke-width="2" marker-end="url(#o)"/>
+  <path d="M730,540 H700 V520 H682" fill="none" stroke="#d97706" stroke-width="2" marker-end="url(#o)"/>
+
+  <rect x="30" y="310" width="200" height="270" rx="12" fill="#0f172a"/>
+  <text x="46" y="336" font-size="13" font-weight="700" fill="#fff">Hidden from the internet</text>
+  <g font-size="11" fill="#e2e8f0">
+    <text x="46" y="360">node IPs and ports</text>
+    <text x="46" y="380">Node-RED and VNC ports</text>
+    <text x="46" y="400">databases and 2FA server</text>
+    <text x="46" y="420">SenseHive's own port</text>
+    <text x="46" y="440">/internal/ checks</text>
+    <text x="46" y="460">the software version</text>
+    <text x="46" y="490" font-weight="700" fill="#fff">Visible</text>
+    <text x="46" y="512">one domain on 443</text>
+    <text x="46" y="532">the sign-in page</text>
+    <text x="46" y="552">/api/v1/health</text>
+  </g>
+</svg>

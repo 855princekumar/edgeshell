@@ -160,6 +160,58 @@ location ~ ^/nodered/(?<nr_node>[A-Za-z0-9._-]+)(?<nr_rest>/.*)$ {
     proxy_buffering off;
 }
 
+# Remote desktop (OpenRemoteGUI: noVNC + websockify) of every node at
+# /remoteGUI/<node>/, same model as Node-RED above. The desktop WebSocket
+# (keyboard and mouse) also needs a ticket from EdgeShell's Remote button, so
+# the check sees whether the request is a WebSocket upgrade.
+location = /_edgeshell_remotegui_check {
+    internal;
+    proxy_pass http://edgeshell/internal/remotegui-check;
+    proxy_pass_request_body off;
+    proxy_set_header Content-Length "";
+    proxy_set_header Cookie $http_cookie;
+    proxy_set_header X-Original-URI $request_uri;
+    proxy_set_header X-Original-Upgrade $http_upgrade;
+    include /etc/nginx/edgeshell-proxy.conf;
+}
+location @remotegui_denied {
+    default_type text/plain;
+    return 403 "The remote desktop through EdgeShell is for operators and administrators, from EdgeShell's Remote button.\n";
+}
+location ~ ^/remoteGUI/(?<rg_node>[A-Za-z0-9._-]+)$ {
+    return 301 /remoteGUI/$rg_node/vnc.html;
+}
+location ~ ^/remoteGUI/(?<rg_node>[A-Za-z0-9._-]+)(?<rg_rest>/.*)$ {
+    set $rg_path $rg_rest;
+    set $rg_name $rg_node;
+    if ($http_service_worker) {
+        return 403;
+    }
+    auth_request /_edgeshell_remotegui_check;
+    auth_request_set $rg_upstream $upstream_http_x_node_upstream;
+    error_page 401 = @nodered_signin;
+    error_page 403 = @remotegui_denied;
+    resolver 127.0.0.11 valid=30s ipv6=off;
+    proxy_pass http://$rg_upstream$rg_path$is_args$args;
+    proxy_redirect ~^https?://[^/]+/(.*)$ /remoteGUI/$rg_name/$1;
+    proxy_redirect ~^/(.*)$ /remoteGUI/$rg_name/$1;
+    proxy_http_version 1.1;
+    proxy_set_header Host $rg_upstream;
+    proxy_set_header Upgrade $http_upgrade;
+    proxy_set_header Connection $nodered_connection;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $remote_addr;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_set_header Cookie "";
+    proxy_hide_header Set-Cookie;
+    proxy_hide_header Server;
+    proxy_hide_header X-Powered-By;
+    proxy_connect_timeout 10s;
+    proxy_read_timeout 3600s;
+    proxy_send_timeout 3600s;
+    proxy_buffering off;
+}
+
 location ~ ^/(login|recover|forgot|signup|reset/) {
     limit_req zone=edgeshell_auth burst=20 nodelay;
     proxy_pass http://edgeshell;
@@ -212,10 +264,11 @@ map $request_method $edgeshell_post {
 }
 limit_req_zone $edgeshell_post zone=edgeshell_auth:10m rate=10r/m;
 limit_req_status 429;
-# Node-RED pages (/nodered/, ADR 0014) get a different opener policy from
+# Node app pages (/nodered/, /remoteGUI/, ADR 0014) get a different opener policy from
 # EdgeShell's, so a window a Node-RED page opens is cut off from EdgeShell.
 map $uri $edgeshell_coop {
     ~^/nodered/ "unsafe-none";
+    ~^/remoteGUI/ "unsafe-none";
     default     "same-origin";
 }
 map $http_upgrade $nodered_connection {

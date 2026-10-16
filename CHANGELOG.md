@@ -2,6 +2,15 @@
 
 All notable changes are documented here. Format loosely follows Keep a Changelog.
 
+## [1.12.0] - 2026-10-16
+
+### Added
+- **Remote desktop through EdgeShell** at `https://<domain>/remoteGUI/<node name>/`: the Remote button opens the node's OpenRemoteGUI (noVNC) through EdgeShell's own address, behind its sign-in and roles, with no IP or port shown and no VPN needed on the user's side. The desktop WebSocket (keyboard and mouse) needs a 2-minute ticket from the Remote button; every opening is logged ([ADR 0014](docs/adr/0014-nodered-through-edgeshell.md)).
+
+### Security
+- The same-origin isolation now covers remote desktop pages too: EdgeShell refuses their requests, and neither node app can drive the other or another node's.
+- The OpenRemoteGUI status check and the node page no longer contain the node's address.
+
 ## [1.11.0] - 2026-10-16
 
 ### Added

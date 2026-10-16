@@ -1,6 +1,6 @@
-# 0014: Node-RED through EdgeShell, on EdgeShell's own address
+# 0014: Node-RED and the remote desktop through EdgeShell, on EdgeShell's own address
 
-- **Status:** Accepted (1.11.0)
+- **Status:** Accepted (1.11.0; remote desktop added in 1.12.0)
 - **Date:** 2026-10-16
 
 ## Context
@@ -29,7 +29,17 @@ must be a plain host or IP. The browser never sees it and needs no VPN. Names
 that are not URL-safe use `node-<id>`. The button goes through
 `/nodes/<id>/nodered`, which writes the opening to the activity log.
 
-**Isolation of the same origin.**
+**Remote desktop (1.12.0).** The Remote button works the same way at
+`/remoteGUI/<node>/` (OpenRemoteGUI: noVNC and websockify, port 6080 by default),
+checked by `/internal/remotegui-check`. It opens `vnc.html` with its WebSocket
+on the same path. Because that WebSocket carries keyboard and mouse to the
+node's screen, it also needs a **desktop ticket**: signed, 2 minutes, for this
+user, node and session, issued only by the Remote button route
+(`/nodes/<id>/remotegui`, logged). nginx tells the check when a request is a
+WebSocket upgrade, and the check refuses an upgrade without a valid ticket
+before it reaches the node.
+
+**Isolation of the same origin** (for both apps, `/nodered/` and `/remoteGUI/`).
 
 | Threat from a Node-RED page | Defence |
 | --- | --- |
@@ -39,7 +49,8 @@ that are not URL-safe use `node-<id>`. The button goes through
 | Opening an EdgeShell window and reading it | Node-RED pages get a different `Cross-Origin-Opener-Policy` from EdgeShell's (`unsafe-none` versus `same-origin`), so the browser cuts the window handle |
 | Opening the node terminal (WebSockets carry no telling headers) | The terminal needs a ticket: signed, 60 seconds, for this user, node and session, issued only by a CSRF-checked POST that Node-RED pages are refused |
 | Reaching SenseHive with the admin's pass | The SenseHive gate refuses the same requests |
-| Driving another node's Node-RED (deploying flows elsewhere) | The check refuses `/nodered/<a>/` requests whose `Referer` is a `/nodered/<b>/` page |
+| Driving another node's Node-RED (deploying flows elsewhere), or one app driving the other | The checks refuse requests whose `Referer` is a page of another node or of the other app |
+| Taking over a node's screen from a hostile page | The desktop WebSocket needs the desktop ticket only the Remote button issues |
 | A service worker taking over pages | nginx refuses service-worker script requests under `/nodered/` |
 
 The rules apply only to browsers (requests with Fetch Metadata,
@@ -52,7 +63,7 @@ affected.
   2FA and roles, with every opening logged; no VPN needed on the user's side.
 - Residual risk, smaller than with a separate origin but not zero: a hostile
   page can still open a WebSocket to another node's Node-RED (live comms, not
-  deploys), and a browser that does not send `Referer` or Fetch Metadata
+  deploys; the remote desktop needs its ticket), and a browser that does not send `Referer` or Fetch Metadata
   weakens the request rules. Node-RED's own login (`adminAuth`) remains
   recommended on every node.
 - Browser storage (`localStorage`) is shared by all nodes' Node-RED editors on
