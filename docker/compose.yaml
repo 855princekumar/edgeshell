@@ -26,7 +26,7 @@ name: edgeshell
 services:
   # One-shot: the app runs as uid 10001, so give it the host data folders.
   init-data:
-    image: devprincekumar/edgeshell:${EDGESHELL_TAG:-1.9.1}
+    image: devprincekumar/edgeshell:${EDGESHELL_TAG:-1.9.2}
     user: "0:0"
     entrypoint: ["sh", "-c", "mkdir -p /data/instance /data/uploads /data/privacyidea && chown -R 10001:10001 /data/instance /data/uploads && chown -R 65532:65532 /data/privacyidea && chmod 700 /data/privacyidea"]
     volumes:
@@ -164,7 +164,7 @@ services:
       - backend
 
   edgeshell:
-    image: devprincekumar/edgeshell:${EDGESHELL_TAG:-1.9.1}
+    image: devprincekumar/edgeshell:${EDGESHELL_TAG:-1.9.2}
     restart: unless-stopped
     depends_on:
       init-data:
@@ -245,7 +245,7 @@ services:
   # administrators open it at /sensehive/ through nginx, after EdgeShell checks
   # they are signed in as an administrator. Change its own login on first use.
   sensehive:
-    image: devprincekumar/sense-hive:${SENSEHIVE_TAG:-1.3.0}
+    image: devprincekumar/sense-hive:${SENSEHIVE_TAG:-1.4.0}
     restart: unless-stopped
     environment:
       DB_PATH: /app/data/iot_dashboard.db

@@ -444,7 +444,8 @@ def main():
           'es_sensehive=' in cookie and 'HttpOnly' in cookie and 'SameSite=Strict' in cookie
           and 'Path=/sensehive/' in cookie, cookie[:160])
     st, _, body = admin.request('GET', NGINX + '/sensehive/login')
-    check("SenseHive's own login page appears", st == 200 and 'sense-hive' in body.lower() and 'password' in body.lower(), st)
+    page = body.lower().replace('-', '')
+    check("SenseHive's own login page appears", st == 200 and 'sensehive' in page and 'static/login.js' in page, st)
 
     for c in list(admin.jar):                      # back to no pass: the admin panel route
         if c.name == 'es_sensehive':
