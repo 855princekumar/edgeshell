@@ -433,6 +433,10 @@ def main():
     hist = json.loads(body) if st == 200 else {}
     check('heartbeat history records the last will',
           any(p[1] == 2 for p in hist.get('points', [])), str(hist.get('points', [])[-3:]))
+    cur = hist.get('current_break') or {}
+    check('heartbeat history: the outage still going on, from the last heartbeat, with its last will',
+          cur.get('status') == 'offline' and cur.get('to') is None and cur.get('lwt_at', 0) >= cur.get('from', 1)
+          and (hist.get('breaks') or [{}])[-1] == cur, cur)
     st, _, body = admin.request('GET', f"/nodes/heartbeat/export.csv?ids={hb_node['id']}&what=events&period=1h")
     check('status changes export as CSV (offline included)', st == 200 and ',offline' in body, body[-200:])
 

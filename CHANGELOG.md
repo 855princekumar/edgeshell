@@ -2,6 +2,14 @@
 
 All notable changes are documented here. Format loosely follows Keep a Changelog.
 
+## [1.12.1] - 2026-10-16
+
+### Fixed
+- **Heartbeat history always shows an outage that is still going on**, with SenseHive 1.6.1: an offline or silent node shows how long it has been down since its last heartbeat (and when its last will arrived), also when it went down before the chosen range or before heartbeat history was kept, and on the 7 and 30 day views. A last will inside an outage no longer splits it into two breaks.
+
+### Changed
+- SenseHive 1.6.1 by default (`SENSEHIVE_TAG`): in-app guides, status filters and the history fix above.
+
 ## [1.12.0] - 2026-10-16
 
 ### Added

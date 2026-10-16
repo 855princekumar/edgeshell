@@ -36,7 +36,8 @@ def sensehive(monkeypatch):
                 return Resp(404, {'error': 'Unknown node'})
             return Resp(200, {'node': params['node'], 'range': params['range'], 'kind': 'beats', 'since': 1, 'until': 2,
                               'points': [[1.5, 1, 0.2]], 'interval': 10, 'breaks': [], 'received': 1, 'lag_ms': 200,
-                              'longest_break': 0, 'events': [], 'uptime': 99.5, 'secret_field': 'dropped'})
+                              'longest_break': 0, 'events': [], 'uptime': 99.5, 'secret_field': 'dropped',
+                              'current_break': {'from': 0.5, 'to': None, 'seconds': 1.5, 'status': 'offline', 'lwt_at': 0.9}})
         if url.endswith('/api/heartbeat/export.csv'):
             rows = ''.join(f'{n},2026-10-16T10:00:00Z,1760608800.000,hb,210\n' for n in params['nodes'].split(','))
             return Resp(200, text='node,time_utc,unix_time,kind,delay_ms\n' + rows)
@@ -56,6 +57,7 @@ def test_history_comes_from_sensehive_with_the_token(app, sensehive):  # noqa: F
     d = r.get_json()
     assert r.status_code == 200 and d['success'] and d['uptime'] == 99.5 and d['range'] == '1d'
     assert 'secret_field' not in d                             # only the known fields pass through
+    assert d['current_break']['status'] == 'offline'           # the outage still going on reaches the page
     call = sensehive[-1]
     assert call['url'] == 'http://sensehive:5000/api/heartbeat/history'
     assert call['params'] == {'node': 'pi-00', 'range': '1d'}
