@@ -183,7 +183,7 @@ flowchart LR
 | **Stats export** | Uptime, CPU, memory, disk, temperature, load, reboots and network traffic per node for the last 24 hours, week, month, quarter, semester or year; all categories or one; per hour, per day or per node. Built in the background with a progress bar, then downloaded as CSV for reports or a data lake |
 | **Long-term history** | One sample per node per minute in every state (so uptime is measured, not guessed), rolled up hourly and kept for good |
 | **VPN status** | Live Tailscale state of the server and every tailnet peer: status, OS, direct or relayed link, last seen, traffic. Filter by status, OS, link and last seen; sort any column |
-| **Remote desktop** | One-click [OpenRemoteGUI](https://github.com/855princekumar/OpenRemoteGUI) per node, with detection and a guided install: safety checks first (OS, disk, network, desktop session, sudo), then `git clone`, `cd`, `sudo bash install.sh`, with live progress; fleet installs stop at the first failure |
+| **Remote desktop** | One-click [OpenRemoteGUI](https://github.com/855princekumar/OpenRemoteGUI) per node at `https://<your domain>/remoteGUI/<node name>/`, through EdgeShell with no IP or port shown and no VPN needed (keyboard and mouse only with a ticket from the Remote button), with detection and a guided install: safety checks first (OS, disk, network, desktop session, sudo), then `git clone`, `cd`, `sudo bash install.sh`, with live progress; fleet installs stop at the first failure |
 | **Node-RED access** | Each node's Node-RED editor at `https://<your domain>/nodered/<node name>/`, behind EdgeShell's sign-in and roles (operators and administrators), with the node's address hidden and no VPN needed; every opening logged ([ADR 0014](docs/adr/0014-nodered-through-edgeshell.md)) |
 | **File deployment** | Upload files to many nodes at once, with per-node results and history |
 | **Log browser** | Browse, fetch and download log files from any node |
@@ -377,7 +377,7 @@ Change [`sandbox/fleet.json`](sandbox/fleet.json) to test any mix, up to 20 node
 
 ```bash
 bash sandbox/run.sh                                                 # build from source, test, tear down
-EDGESHELL_IMAGE=devprincekumar/edgeshell:1.11.0 bash sandbox/run.sh  # test a published image
+EDGESHELL_IMAGE=devprincekumar/edgeshell:1.12.0 bash sandbox/run.sh  # test a published image
 ```
 
 **Your own workflow:** run a change (command, playbook, file rollout) against
@@ -536,7 +536,7 @@ shutdown) and shown on the Activity Log page.
 | Login fails with "CSRF session token is missing" | You are on plain HTTP at a non-localhost address. Use HTTPS, or set `SESSION_COOKIE_SECURE=false` for HTTP testing |
 | Health check warning at the end of install | `journalctl -u edgeshell -n 100 --no-pager` |
 
-Full guide: [docs/DEPLOY-EC2.md](docs/DEPLOY-EC2.md).
+Full guide: [docs/DEPLOY-EC2.md](docs/DEPLOY-EC2.md). How access is locked down (DNS, TLS, one open port, node addresses hidden, Node-RED and the remote desktop through EdgeShell): [docs/SECURE-ACCESS.md](docs/SECURE-ACCESS.md).
 
 ## Architecture
 

@@ -128,3 +128,54 @@ def test_the_terminal_needs_a_fresh_ticket_from_edgeshell(app):  # noqa: F811
         assert not shell.ticket_ok(ticket, uid, node_id, 'another-session')       # for that session only
         assert not shell.ticket_ok('forged', uid, node_id, sid)
         assert not shell.ticket_ok(None, uid, node_id, sid)
+
+
+# ── Remote desktop (OpenRemoteGUI) at /remoteGUI/<node>/ ─────────────────────
+def rcheck(client, path, **headers):
+    return client.get('/internal/remotegui-check', headers={'X-Original-URI': path, **headers})
+
+
+def test_the_remote_button_opens_novnc_on_the_named_address_with_a_ticket(app):  # noqa: F811
+    from urllib.parse import parse_qs, unquote, urlsplit
+    c = login(app)
+    r = c.get(f'/nodes/{nid(app, "pi-00")}/remotegui')
+    loc = r.headers['Location']
+    assert r.status_code == 302 and urlsplit(loc).path == '/remoteGUI/pi-00/vnc.html'
+    q = parse_qs(urlsplit(loc).query)
+    assert q['autoconnect'] == ['true'] and q['path'][0].startswith('remoteGUI/pi-00/websockify?ticket=')
+    assert '10.0.0.1' not in unquote(loc) and '6080' not in loc
+    with app.app_context():
+        assert ActivityLog.query.filter_by(action='Open remote desktop', node='pi-00').count() == 1
+    page = c.get('/nodes/').get_data(as_text=True)
+    assert 'data-ip=' not in page and '${ip}' not in page
+
+
+def test_remote_desktop_check_and_its_websocket_ticket(app, monitor):  # noqa: F811
+    from urllib.parse import parse_qs, urlsplit
+    c = login(app)
+    r = rcheck(c, '/remoteGUI/pi-00/vnc.html')
+    assert r.status_code == 204 and r.headers['X-Node-Upstream'] == '10.0.0.1:6080'
+    assert rcheck(app.test_client(), '/remoteGUI/pi-00/vnc.html').status_code == 401
+    assert rcheck(monitor, '/remoteGUI/pi-00/vnc.html').status_code == 403
+    ws = {'X-Original-Upgrade': 'websocket'}
+    assert rcheck(c, '/remoteGUI/pi-00/websockify', **ws).status_code == 403          # keyboard needs a ticket
+    loc = c.get(f'/nodes/{nid(app, "pi-00")}/remotegui').headers['Location']
+    ticket = parse_qs(parse_qs(urlsplit(loc).query)['path'][0].split('?', 1)[1])['ticket'][0]
+    assert rcheck(c, f'/remoteGUI/pi-00/websockify?ticket={ticket}', **ws).status_code == 204
+    assert rcheck(c, f'/remoteGUI/pi-01/websockify?ticket={ticket}', **ws).status_code == 403   # that node only
+    assert rcheck(c, '/remoteGUI/pi-00/websockify?ticket=forged', **ws).status_code == 403
+
+
+def test_node_apps_cannot_reach_each_other_or_edgeshell(app):  # noqa: F811
+    c = login(app)
+    assert rcheck(c, '/remoteGUI/pi-00/vnc.html', Referer='https://fleet.test/nodered/pi-00/').status_code == 403
+    assert check(c, '/nodered/pi-00/', Referer='https://fleet.test/remoteGUI/pi-00/vnc.html').status_code == 403
+    assert rcheck(c, '/remoteGUI/pi-00/app/ui.js', Referer='https://fleet.test/remoteGUI/pi-00/vnc.html').status_code == 204
+    assert c.get('/users/', headers={'Referer': 'https://fleet.test/remoteGUI/pi-00/vnc.html'}).status_code == 403
+
+
+def test_the_status_check_never_returns_the_node_address(app, monkeypatch):  # noqa: F811
+    from app.services import orgui_service
+    monkeypatch.setattr(orgui_service, 'persist_check', lambda node: (True, 'RUNNING'))
+    d = login(app).post(f'/nodes/{nid(app, "pi-00")}/orgui/status').get_json()
+    assert d['installed'] and d['url'] == f'/nodes/{nid(app, "pi-00")}/remotegui'
