@@ -1,4 +1,6 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 510" font-family="Segoe UI,Roboto,Helvetica,Arial,sans-serif">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 650" font-family="Segoe UI,Roboto,Helvetica,Arial,sans-serif" role="img" aria-labelledby="title desc">
+  <title id="title">EdgeShell architecture</title>
+  <desc id="desc">Operators reach nginx over HTTPS. nginx serves EdgeShell and, for administrators behind EdgeShell's sign-in and 2FA gate, SenseHive. EdgeShell manages nodes over SSH through a private mesh. Each node's heartbeat agent sends encrypted heartbeats over a public MQTT broker to SenseHive, whose read-only API EdgeShell reads for heartbeat status, uptime and SLA.</desc>
   <defs>
     <linearGradient id="hdr" x1="0" y1="0" x2="1" y2="1">
       <stop offset="0" stop-color="#1a56db"/><stop offset="1" stop-color="#0f172a"/>
@@ -9,6 +11,9 @@
     <marker id="g" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto">
       <path d="M0,0 L7,3 L0,6 Z" fill="#059669"/>
     </marker>
+    <marker id="o" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto">
+      <path d="M0,0 L7,3 L0,6 Z" fill="#d97706"/>
+    </marker>
     <style>
       .t{font-size:13px;fill:#0f172a;font-weight:700}
       .tt{font-size:15px;font-weight:700;fill:#0f172a}
@@ -16,81 +21,111 @@
       .lbl{font-size:11px;fill:#475569}
     </style>
   </defs>
-  <rect width="960" height="510" fill="#f8fafc"/>
+  <rect width="1000" height="650" fill="#f8fafc"/>
   <text x="30" y="34" class="tt" font-size="18">EdgeShell Control Plane</text>
-  <text x="30" y="52" class="mut">Self-hosted fleet management for edge nodes over a private mesh</text>
+  <text x="30" y="52" class="mut">Self-hosted fleet management for edge nodes: SSH over a private mesh, plus VPN-independent heartbeats through SenseHive</text>
 
   <!-- Operators -->
-  <rect x="30" y="92" width="170" height="96" rx="10" fill="#fff" stroke="#cbd5e1" stroke-width="1.5"/>
-  <text x="115" y="120" class="tt" text-anchor="middle">Operators</text>
-  <text x="115" y="142" class="mut" text-anchor="middle">Browser, phone or desktop</text>
-  <text x="115" y="160" class="mut" text-anchor="middle">password + 2FA</text>
-  <text x="115" y="176" class="mut" text-anchor="middle">roles, device limits</text>
+  <rect x="30" y="92" width="180" height="110" rx="10" fill="#fff" stroke="#cbd5e1" stroke-width="1.5"/>
+  <text x="120" y="120" class="tt" text-anchor="middle">Operators</text>
+  <text x="120" y="142" class="mut" text-anchor="middle">Browser, phone or desktop</text>
+  <text x="120" y="160" class="mut" text-anchor="middle">password + 2FA</text>
+  <text x="120" y="176" class="mut" text-anchor="middle">roles, device limits</text>
+  <text x="120" y="192" class="mut" text-anchor="middle">admins also open SenseHive</text>
 
-  <line x1="200" y1="150" x2="269" y2="150" stroke="#1a56db" stroke-width="2" marker-end="url(#a)"/>
-  <text x="234" y="142" class="lbl" text-anchor="middle">HTTPS</text>
+  <line x1="210" y1="150" x2="249" y2="150" stroke="#1a56db" stroke-width="2" marker-end="url(#a)"/>
+  <text x="230" y="142" class="lbl" text-anchor="middle">HTTPS</text>
 
   <!-- EdgeShell host -->
-  <rect x="270" y="70" width="340" height="420" rx="12" fill="#fff" stroke="#1a56db" stroke-width="2"/>
-  <path d="M282,70 H598 A12,12 0 0 1 610,82 V110 H270 V82 A12,12 0 0 1 282,70 Z" fill="url(#hdr)"/>
-  <text x="440" y="96" class="tt" text-anchor="middle" fill="#fff" style="fill:#fff">EdgeShell host (Docker, on the tailnet)</text>
+  <rect x="250" y="70" width="400" height="560" rx="12" fill="#fff" stroke="#1a56db" stroke-width="2"/>
+  <path d="M262,70 H638 A12,12 0 0 1 650,82 V110 H250 V82 A12,12 0 0 1 262,70 Z" fill="url(#hdr)"/>
+  <text x="450" y="96" class="tt" text-anchor="middle" style="fill:#fff">EdgeShell host (Docker, on the tailnet)</text>
 
-  <rect x="290" y="124" width="300" height="52" rx="8" fill="#f1f5f9" stroke="#cbd5e1"/>
-  <text x="304" y="146" class="t">nginx</text>
-  <text x="304" y="164" class="lbl">only public port: TLS (Let's Encrypt), reverse proxy</text>
+  <rect x="270" y="124" width="360" height="52" rx="8" fill="#f1f5f9" stroke="#cbd5e1"/>
+  <text x="284" y="146" class="t">nginx</text>
+  <text x="284" y="164" class="lbl">only public port: TLS; /sensehive/ behind the 2FA gate</text>
 
-  <rect x="290" y="186" width="300" height="52" rx="8" fill="#eff6ff" stroke="#bfdbfe"/>
-  <text x="304" y="208" class="t">Flask + Gunicorn</text>
-  <text x="304" y="226" class="lbl">pages, API, WebSocket terminals, CSRF, sessions</text>
+  <rect x="270" y="186" width="360" height="52" rx="8" fill="#eff6ff" stroke="#bfdbfe"/>
+  <text x="284" y="208" class="t">EdgeShell: Flask + Gunicorn</text>
+  <text x="284" y="226" class="lbl">pages, API, WebSocket terminals, CSRF, sessions, RBAC</text>
 
-  <rect x="290" y="248" width="300" height="68" rx="8" fill="#f0fdf4" stroke="#bbf7d0"/>
-  <text x="304" y="270" class="t">Background services</text>
-  <text x="304" y="288" class="lbl">metrics collector: every node every 30 s</text>
-  <text x="304" y="304" class="lbl">login policy, jobs, exports, hourly history</text>
+  <rect x="270" y="248" width="360" height="68" rx="8" fill="#f0fdf4" stroke="#bbf7d0"/>
+  <text x="284" y="270" class="t">Background services</text>
+  <text x="284" y="288" class="lbl">metrics collector: every node every 30 s over SSH</text>
+  <text x="284" y="304" class="lbl">heartbeat sync from SenseHive: badges, uptime, SLA; jobs, exports</text>
 
-  <rect x="290" y="326" width="145" height="56" rx="8" fill="#fff7ed" stroke="#fed7aa"/>
-  <text x="304" y="348" class="t">MariaDB</text>
-  <text x="304" y="366" class="lbl">nodes, history, audit</text>
+  <rect x="270" y="326" width="115" height="56" rx="8" fill="#fff7ed" stroke="#fed7aa"/>
+  <text x="284" y="348" class="t">MariaDB</text>
+  <text x="284" y="366" class="lbl">hot: nodes, audit</text>
 
-  <rect x="445" y="326" width="145" height="56" rx="8" fill="#faf5ff" stroke="#e9d5ff"/>
-  <text x="459" y="348" class="t">privacyIDEA</text>
-  <text x="459" y="366" class="lbl">2FA, internal only</text>
+  <rect x="393" y="326" width="115" height="56" rx="8" fill="#fff7ed" stroke="#fed7aa"/>
+  <text x="407" y="348" class="t">Data lake</text>
+  <text x="407" y="366" class="lbl">replica, kept for good</text>
 
-  <rect x="290" y="392" width="300" height="82" rx="8" fill="#f8fafc" stroke="#e2e8f0"/>
-  <text x="304" y="414" class="t">Operations</text>
-  <text x="304" y="432" class="lbl">certbot renewal, health checks, auto restart</text>
-  <text x="304" y="448" class="lbl">fail2ban and key-only SSH on the host</text>
-  <text x="304" y="464" class="lbl">one Compose file, amd64 and arm64 image</text>
+  <rect x="516" y="326" width="114" height="56" rx="8" fill="#faf5ff" stroke="#e9d5ff"/>
+  <text x="530" y="348" class="t">privacyIDEA</text>
+  <text x="530" y="366" class="lbl">2FA, internal only</text>
+
+  <rect x="270" y="392" width="360" height="104" rx="8" fill="#fffbeb" stroke="#fcd34d" stroke-width="1.5"/>
+  <text x="284" y="414" class="t">SenseHive (administrators only)</text>
+  <text x="284" y="432" class="lbl">heartbeat receiver: verifies, tracks online / offline / silent</text>
+  <text x="284" y="448" class="lbl">read-only heartbeat API for EdgeShell (bearer token, internal)</text>
+  <text x="284" y="464" class="lbl">MQTT logging and dashboard; own sign-in, lockout, CSP</text>
+  <text x="284" y="480" class="lbl">SQLite in its own volume; holds the fleet master key</text>
+
+  <!-- SenseHive API to background services -->
+  <path d="M270,444 H259 V282 H266" fill="none" stroke="#d97706" stroke-width="1.8" stroke-dasharray="5 3" marker-end="url(#o)"/>
+
+  <rect x="270" y="506" width="360" height="104" rx="8" fill="#f8fafc" stroke="#e2e8f0"/>
+  <text x="284" y="528" class="t">Operations</text>
+  <text x="284" y="546" class="lbl">certbot renewal, health checks, auto restart</text>
+  <text x="284" y="562" class="lbl">fail2ban and key-only SSH on the host</text>
+  <text x="284" y="578" class="lbl">one Compose file, amd64 and arm64 images</text>
+  <text x="284" y="594" class="lbl">every release tested on an emulated Pi fleet in CI</text>
 
   <!-- host to mesh -->
-  <line x1="610" y1="130" x2="689" y2="130" stroke="#0f172a" stroke-width="2" marker-end="url(#a)"/>
-  <text x="650" y="122" class="lbl" text-anchor="middle">SSH</text>
-  <text x="650" y="148" class="mut" text-anchor="middle">pooled</text>
+  <line x1="650" y1="130" x2="699" y2="130" stroke="#0f172a" stroke-width="2" marker-end="url(#a)"/>
+  <text x="675" y="122" class="lbl" text-anchor="middle">SSH</text>
+  <text x="675" y="148" class="mut" text-anchor="middle">pooled</text>
 
   <!-- Mesh -->
-  <rect x="690" y="90" width="240" height="80" rx="10" fill="#0f172a"/>
-  <text x="810" y="122" text-anchor="middle" font-weight="700" font-size="14" fill="#fff">Private mesh</text>
-  <text x="810" y="146" text-anchor="middle" font-size="11" fill="#94a3b8">Tailscale now, WireGuard later</text>
+  <rect x="700" y="90" width="270" height="70" rx="10" fill="#0f172a"/>
+  <text x="835" y="120" text-anchor="middle" font-weight="700" font-size="14" fill="#fff">Private mesh</text>
+  <text x="835" y="142" text-anchor="middle" font-size="11" fill="#94a3b8">Tailscale now, WireGuard later</text>
 
-  <!-- connector: a bus beside the nodes, one branch into each box -->
-  <line x1="710" y1="170" x2="710" y2="416" stroke="#059669" stroke-width="2"/>
-  <line x1="710" y1="236" x2="729" y2="236" stroke="#059669" stroke-width="2" marker-end="url(#g)"/>
-  <line x1="710" y1="326" x2="729" y2="326" stroke="#059669" stroke-width="2" marker-end="url(#g)"/>
-  <line x1="710" y1="416" x2="729" y2="416" stroke="#059669" stroke-width="2" marker-end="url(#g)"/>
+  <!-- bus beside the nodes -->
+  <line x1="720" y1="160" x2="720" y2="416" stroke="#059669" stroke-width="2"/>
+  <line x1="720" y1="232" x2="739" y2="232" stroke="#059669" stroke-width="2" marker-end="url(#g)"/>
+  <line x1="720" y1="330" x2="739" y2="330" stroke="#059669" stroke-width="2" marker-end="url(#g)"/>
+  <line x1="720" y1="416" x2="739" y2="416" stroke="#059669" stroke-width="2" marker-end="url(#g)"/>
 
   <!-- Nodes -->
-  <rect x="730" y="200" width="200" height="72" rx="10" fill="#fff" stroke="#059669" stroke-width="1.5"/>
-  <text x="745" y="224" class="t">Raspberry Pi node</text>
-  <text x="745" y="242" class="lbl">SSH, metrics, Node-RED :1880</text>
-  <text x="745" y="258" class="lbl">OpenRemoteGUI :6080</text>
+  <rect x="740" y="188" width="230" height="88" rx="10" fill="#fff" stroke="#059669" stroke-width="1.5"/>
+  <text x="755" y="212" class="t">Raspberry Pi node</text>
+  <text x="755" y="230" class="lbl">SSH, metrics, Node-RED :1880</text>
+  <text x="755" y="246" class="lbl">OpenRemoteGUI :6080</text>
+  <text x="755" y="262" class="lbl">heartbeat agent (systemd, own user)</text>
 
-  <rect x="730" y="290" width="200" height="72" rx="10" fill="#fff" stroke="#059669" stroke-width="1.5"/>
-  <text x="745" y="314" class="t">Edge gateway</text>
-  <text x="745" y="332" class="lbl">Docker, sensors, PLC</text>
-  <text x="745" y="348" class="lbl">checked every 30 s</text>
+  <rect x="740" y="294" width="230" height="72" rx="10" fill="#fff" stroke="#059669" stroke-width="1.5"/>
+  <text x="755" y="318" class="t">Edge gateway</text>
+  <text x="755" y="336" class="lbl">Docker, sensors, PLC</text>
+  <text x="755" y="352" class="lbl">heartbeat agent</text>
 
-  <rect x="730" y="380" width="200" height="72" rx="10" fill="#fff" stroke="#94a3b8" stroke-width="1.5" stroke-dasharray="4 3"/>
-  <text x="745" y="404" class="t">... N nodes</text>
-  <text x="745" y="422" class="lbl">CSV import, bulk login update</text>
-  <text x="745" y="438" class="lbl">categories, fleet operations</text>
+  <rect x="740" y="384" width="230" height="64" rx="10" fill="#fff" stroke="#94a3b8" stroke-width="1.5" stroke-dasharray="4 3"/>
+  <text x="755" y="408" class="t">... N nodes</text>
+  <text x="755" y="426" class="lbl">CSV import, categories, Fleet Setup</text>
+
+  <!-- Heartbeat path -->
+  <line x1="950" y1="450" x2="950" y2="519" stroke="#d97706" stroke-width="2" marker-end="url(#o)"/>
+  <text x="942" y="478" class="lbl" text-anchor="end">heartbeat every 10 s</text>
+  <text x="942" y="494" class="lbl" text-anchor="end">+ last will (MQTT, TLS)</text>
+
+  <rect x="700" y="520" width="270" height="90" rx="10" fill="#fffbeb" stroke="#d97706" stroke-width="1.5"/>
+  <text x="715" y="544" class="t">Public MQTT broker (TLS 8883)</text>
+  <text x="715" y="562" class="lbl">AES-256-GCM, a key per node</text>
+  <text x="715" y="578" class="lbl">topics rotate every 10 minutes</text>
+  <text x="715" y="594" class="lbl">works when the VPN is down</text>
+
+  <path d="M700,565 H668 V444 H634" fill="none" stroke="#d97706" stroke-width="2" marker-end="url(#o)"/>
+  <text x="676" y="512" class="lbl" text-anchor="middle" transform="rotate(-90 676 512)">verified heartbeats</text>
 </svg>

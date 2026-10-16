@@ -129,21 +129,42 @@ nodes for the terminals. Regenerate them with
 
 ## The ecosystem
 
-EdgeShell is one of three open-source projects that work together. Each has its
-own repository and releases.
+EdgeShell is one of five open-source projects that work together as one system.
+Each has its own repository and releases.
 
 | Project | Role | Images |
 |---|---|---|
 | **EdgeShell** (this repo) | The control plane: monitoring, commands, deployments, users and roles | [`devprincekumar/edgeshell`](https://hub.docker.com/r/devprincekumar/edgeshell) |
 | **[Pi Fleet Emulator](https://github.com/855princekumar/pi-fleet-emulator)** | Spawns a realistic Raspberry Pi fleet in Docker (real SSH and Node-RED, 32/64-bit, Buster to Bookworm). EdgeShell's CI tests every change against it | [`pi-fleet-spawner`](https://hub.docker.com/r/devprincekumar/pi-fleet-spawner), [`pi-fleet-node`](https://hub.docker.com/r/devprincekumar/pi-fleet-node) |
 | **[OpenRemoteGUI](https://github.com/855princekumar/OpenRemoteGUI)** | Browser-based remote desktop for Debian and Raspberry Pi. Powers the **Remote** button on every node | installed on nodes by EdgeShell |
+| **[SenseHive](https://github.com/855princekumar/sense-hive)** | MQTT logging and dashboard. In the EdgeShell stack it is the **heartbeat receiver**: it verifies encrypted heartbeats from every node and serves their state to EdgeShell (badges, uptime, SLA). Administrators open it at `/sensehive/` behind EdgeShell's sign-in and 2FA | [`devprincekumar/sense-hive`](https://hub.docker.com/r/devprincekumar/sense-hive), runs next to EdgeShell |
+| **[MQTT heartbeat agent](https://github.com/855princekumar/mqtt-heartbeat-service)** | A small service on each node: an encrypted heartbeat every 10 s and an MQTT last will, over a public broker, so node status does not depend on the VPN | installed on nodes by EdgeShell (Fleet Setup) |
 
 ```mermaid
 flowchart LR
     PFE[Pi Fleet Emulator<br/>sandbox fleet] -- "1. validate changes" --> ES[EdgeShell]
-    ES -- "2. same commands and playbooks" --> REAL[Real fleet]
+    ES -- "2. same commands and playbooks<br/>SSH over the mesh" --> REAL[Real fleet]
     ES -- "remote desktop" --> ORG[OpenRemoteGUI<br/>on each node]
+    ES -- "3. Fleet Setup installs" --> HB[Heartbeat agent<br/>on each node]
+    HB -- "encrypted heartbeats + last will<br/>public MQTT broker, TLS" --> SH[SenseHive<br/>heartbeat receiver]
+    SH -- "read-only API:<br/>status, uptime, SLA" --> ES
 ```
+
+### Recommended setup
+
+1. **Prove changes on the emulator.** Every EdgeShell release is tested in CI
+   against a Pi Fleet Emulator fleet; do the same with your own playbooks.
+2. **Run EdgeShell and SenseHive together** from the one Compose file
+   (`docker/compose.yaml`): nginx, EdgeShell, MariaDB (hot and lake),
+   privacyIDEA and SenseHive. Only nginx is public.
+3. **Join the host to your mesh** (Tailscale) and import your nodes; EdgeShell
+   manages them over SSH.
+4. **Install the heartbeat agent** from **Fleet Setup** (a test group first,
+   then the fleet). Each node gets its own key; the fleet master key stays on
+   the server.
+5. **Watch both paths:** SSH metrics every 30 s through the mesh, and
+   heartbeats every 10 s through the broker. A node that is `online` by
+   heartbeat but unreachable over SSH points at the VPN, not the node.
 
 ## Features
 
@@ -356,7 +377,7 @@ Change [`sandbox/fleet.json`](sandbox/fleet.json) to test any mix, up to 20 node
 
 ```bash
 bash sandbox/run.sh                                                 # build from source, test, tear down
-EDGESHELL_IMAGE=devprincekumar/edgeshell:1.9.1 bash sandbox/run.sh  # test a published image
+EDGESHELL_IMAGE=devprincekumar/edgeshell:1.9.2 bash sandbox/run.sh  # test a published image
 ```
 
 **Your own workflow:** run a change (command, playbook, file rollout) against
@@ -405,8 +426,12 @@ it again any time to apply an update.
 flowchart LR
     U[Users] -->|HTTPS 443| N[Nginx + Let's Encrypt]
     N -->|127.0.0.1:5000| G[Gunicorn / EdgeShell]
+    N -->|/sensehive/ admins, after the 2FA gate| SH[SenseHive]
     G --> M[(MariaDB)]
+    G -->|heartbeat API, token| SH
     G -->|SSH / Ansible over Tailscale| F[Edge fleet]
+    F -->|heartbeats, MQTT over TLS| B[Public MQTT broker]
+    B --> SH
     T[Tailnet devices] -->|Tailscale IP :8080| P[phpMyAdmin]
     P --> M
 ```

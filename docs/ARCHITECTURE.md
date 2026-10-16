@@ -26,9 +26,36 @@ flowchart TB
         APP --> DB[(MariaDB / SQLite WAL)]
         SD[systemd: app, watchdog, heartbeat timer] -.-> G
         FW[ufw: ssh, 80, 443, tailscale only] -.-> PX
+        PX -->|/sensehive/, admins after the 2FA gate| SH[SenseHive<br/>heartbeat receiver + MQTT logger]
+        SV --> HBS[heartbeat sync] -->|read-only API, bearer token| SH
     end
-    SSH -->|SSH / Ansible over Tailscale| NODES[(Fleet of edge nodes)]
+    SSH -->|SSH / Ansible over Tailscale| NODES[(Fleet of edge nodes<br/>heartbeat agent on each)]
+    NODES -->|AES-256-GCM heartbeats + last will| BRK[Public MQTT broker, TLS]
+    BRK --> SH
 ```
+
+## The whole system
+
+EdgeShell is the control plane of five projects that work as one system:
+
+| Part | Where it runs | Job |
+|---|---|---|
+| EdgeShell | the server (Docker) | users, roles, 2FA, SSH and Ansible to nodes, monitoring, SLA, API |
+| SenseHive | the server, next to EdgeShell | verifies node heartbeats and serves their state; MQTT logging dashboard for admins |
+| MQTT heartbeat agent | every node (systemd) | encrypted heartbeat every 10 s and a last will, over a public broker |
+| OpenRemoteGUI | nodes that need it | browser remote desktop behind the **Remote** button |
+| Pi Fleet Emulator | CI and your lab | an emulated Pi fleet every release is tested against |
+
+Two independent paths report on each node:
+
+| Path | Through | Every | Tells you |
+|---|---|---|---|
+| SSH metrics | the private mesh (Tailscale) | 30 s | CPU, memory, disk, temperature, services; needs the VPN |
+| Heartbeats | a public MQTT broker over TLS | 10 s | online, offline (last will) or silent; works when the VPN is down |
+
+Together they separate a node problem from a VPN problem: `online` by heartbeat
+but unreachable over SSH means the mesh path is down, not the node. Details:
+[HEARTBEAT.md](HEARTBEAT.md) and [ADR 0013](adr/0013-mqtt-heartbeat.md).
 
 ## Data model
 

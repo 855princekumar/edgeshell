@@ -2,6 +2,12 @@
 
 All notable changes are documented here. Format loosely follows Keep a Changelog.
 
+## [1.9.2] - 2026-10-16
+
+### Changed
+- **SenseHive 1.4.1** in the stack (`SENSEHIVE_TAG`): EdgeShell's look (light by default), a layout that fits phones to desktops at 67 to 200 percent zoom, and no CDN: its browser code is served by SenseHive itself under a strict Content Security Policy (`script-src 'self'`). It also refuses topics that could break its SQL, and never sends exception text to the browser.
+- nginx sends one copy of each security header on `/sensehive/` and keeps SenseHive's CSP.
+
 ## [1.9.1] - 2026-10-16
 
 ### Fixed

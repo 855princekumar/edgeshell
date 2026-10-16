@@ -105,7 +105,7 @@ services:
       - sandbox
 
   sensehive:
-    image: ${SENSEHIVE_IMAGE:-devprincekumar/sense-hive:1.3.0}
+    image: ${SENSEHIVE_IMAGE:-devprincekumar/sense-hive:1.4.1}
     container_name: edgeshell-sandbox-sensehive
     environment:
       HEARTBEAT_MASTER_KEY: ${SANDBOX_HB_MASTER:?run sandbox/run.sh}

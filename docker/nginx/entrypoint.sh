@@ -98,6 +98,11 @@ location ^~ /sensehive/ {
     # SenseHive gets its own cookie only: never EdgeShell's session or pass.
     proxy_set_header Cookie "sensehive_session=$cookie_sensehive_session";
     proxy_buffering off;                    # live updates (server-sent events; keepalive every 30 s)
+    # one copy of each header: these come from the server block; SenseHive's
+    # own Content-Security-Policy passes through unchanged
+    proxy_hide_header X-Content-Type-Options;
+    proxy_hide_header X-Frame-Options;
+    proxy_hide_header Referrer-Policy;
 }
 
 location ~ ^/(login|recover|forgot|signup|reset/) {
