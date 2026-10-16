@@ -85,6 +85,20 @@
                 <button type="button" class="btn btn-sm btn-primary" id="bulkInstallBtn"><i class="bi bi-cloud-download"></i> Install on selected</button>
             </span>
             {% endif %}
+            <span style="display:flex;flex-wrap:wrap;gap:4px;align-items:center;min-width:0">
+                <select class="form-select form-select-sm" id="bulkHbWhat" style="width:auto" aria-label="Heartbeat data">
+                    <option value="beats">Every heartbeat</option>
+                    <option value="minutes">Online minutes</option>
+                    <option value="events">Status changes</option>
+                </select>
+                <select class="form-select form-select-sm" id="bulkHbPeriod" style="width:auto" aria-label="Period">
+                    <option value="1h">last hour</option>
+                    <option value="1d" selected>last day</option>
+                    <option value="7d">last 7 days</option>
+                    <option value="30d">last 30 days</option>
+                </select>
+                <button type="button" class="btn btn-sm btn-outline" id="bulkHbExportBtn"><i class="bi bi-heart-pulse"></i> Export heartbeats</button>
+            </span>
             <button type="button" class="btn btn-sm btn-outline" id="bulkLoginBtn"><i class="bi bi-key"></i> Edit login</button>
             <button type="button" class="btn btn-sm btn-danger" id="bulkDeleteBtn"><i class="bi bi-trash"></i> Delete</button>
             <button type="button" class="btn btn-sm btn-outline" id="bulkClearBtn">Clear</button>
@@ -399,6 +413,20 @@
 function visibleCards() {
     return [...document.querySelectorAll('.node-card')].filter(c => c.style.display !== 'none');
 }
+// Heartbeat CSV for the ticked nodes (from SenseHive, hb_history.js)
+document.addEventListener('DOMContentLoaded', function () {
+    const b = document.getElementById('bulkHbExportBtn');
+    if (!b) return;
+    b.addEventListener('click', function () {
+        const ids = selectedIds(); if (!ids.length) return;
+        const label = b.innerHTML;
+        b.disabled = true; b.textContent = 'Exporting...';
+        esHeartbeatExport(ids, document.getElementById('bulkHbWhat').value, document.getElementById('bulkHbPeriod').value,
+            function (text, bad) { if (bad) alert(text); })
+            .finally(function () { b.disabled = false; b.innerHTML = label; });
+    });
+});
+
 function selectedIds() {
     return visibleCards().map(c => c.querySelector('.node-checkbox')).filter(cb => cb && cb.checked)
         .map(cb => parseInt(cb.value));

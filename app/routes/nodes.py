@@ -556,6 +556,63 @@ def heartbeat_refresh():
                     'message': None if matched is not None else 'SenseHive is not reachable or not configured'})
 
 
+@nodes_bp.route('/<int:node_id>/heartbeat/history')
+@login_required
+def heartbeat_history(node_id):
+    """One node's heartbeat history from SenseHive (every role): 1m, 1h, 1d, 7d or 30d."""
+    from app.services import heartbeat_service as hb
+    node = Node.query.filter(Node.id == node_id, Node.is_deleted.isnot(True)).first_or_404()
+    rng = request.args.get('range', '1h')
+    if rng not in hb.HISTORY_RANGES:
+        return jsonify({'success': False, 'message': 'Unknown period'}), 400
+    if not hb.sensehive_configured():
+        return jsonify({'success': False, 'message': 'SenseHive is not configured'}), 503
+    try:
+        data = hb.fetch_history(node.name, rng)
+    except LookupError:
+        return jsonify({'success': False, 'message': 'No heartbeats from this node yet'}), 404
+    except Exception:
+        current_app.logger.warning('Heartbeat history from SenseHive failed', exc_info=True)
+        return jsonify({'success': False, 'message': 'SenseHive is not reachable right now'}), 503
+    return jsonify({'success': True, 'node_id': node.id, **data})
+
+
+@nodes_bp.route('/heartbeat/export.csv')
+@login_required
+def heartbeat_export():
+    """CSV of heartbeats for ids=1,2,... (one node: every role; several: operators and administrators)."""
+    from flask import Response
+    from app.services import heartbeat_service as hb
+    try:
+        ids = [int(x) for x in request.args.get('ids', '').split(',') if x.strip()][:2000]
+    except ValueError:
+        return jsonify({'success': False, 'message': 'Bad node list'}), 400
+    what, period = request.args.get('what', 'beats'), request.args.get('period', '1d')
+    if not ids or what not in hb.EXPORT_KINDS or period not in hb.EXPORT_PERIODS:
+        return jsonify({'success': False, 'message': 'Choose nodes, what and a period'}), 400
+    if len(ids) > 1 and not current_user.can_execute():
+        return jsonify({'success': False, 'message': 'Exporting several nodes needs the operator role'}), 403
+    nodes = Node.query.filter(Node.id.in_(ids), Node.is_deleted.isnot(True)).all()
+    if not nodes:
+        return jsonify({'success': False, 'message': 'No such nodes'}), 404
+    if not hb.sensehive_configured():
+        return jsonify({'success': False, 'message': 'SenseHive is not configured'}), 503
+    try:
+        body = hb.fetch_export([n.name for n in nodes], what, hb.EXPORT_PERIODS[period])
+    except LookupError:
+        return jsonify({'success': False, 'message': 'No heartbeats from these nodes yet'}), 404
+    except Exception:
+        current_app.logger.warning('Heartbeat export from SenseHive failed', exc_info=True)
+        return jsonify({'success': False, 'message': 'SenseHive is not reachable right now'}), 503
+    label = nodes[0].name if len(nodes) == 1 else f'{len(nodes)}-nodes'
+    safe = ''.join(ch if ch.isalnum() or ch in '-_.' else '_' for ch in label)[:60]
+    log_activity('Export heartbeats', node=label, status='success',
+                 command=f'{what}, last {period}, {len(nodes)} node(s)')
+    return Response(body, mimetype='text/csv', headers={
+        'Content-Disposition': f'attachment; filename=heartbeats-{what}-{safe}-{period}.csv',
+        'Cache-Control': 'no-store'})
+
+
 @nodes_bp.route('/heartbeat/settings')
 @login_required
 @admin_required

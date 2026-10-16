@@ -55,7 +55,14 @@ LAYOUT_JS = r"""
     out.push('page scrolls sideways: content ' + document.documentElement.scrollWidth + 'px wide in a ' + vw
       + 'px window, widened by ' + wide.slice(0, 3).map(el => name(el) + ' (' + Math.round(el.getBoundingClientRect().width) + 'px)').join(', '));
   }
-  const boxes = [...document.querySelectorAll('.card, .node-card, .stat-card, .cat-card, .topbar, .sidebar, #esCredsOverlay > *, #catEditor > *, #esJobWin > *, .es-shell > *')]
+  const vh = document.documentElement.clientHeight;
+  for (const m of document.querySelectorAll('.modal.show .modal-content, #esHbBox')) {
+    if (!vis(m)) continue;
+    const r = m.getBoundingClientRect();
+    if (r.top < -1 || r.bottom > vh + 1 || r.left < -1 || r.right > vw + 1)
+      out.push(name(m) + ' does not fit the screen: ' + Math.round(r.top) + ' to ' + Math.round(r.bottom) + ' px in a ' + vh + ' px window');
+  }
+  const boxes = [...document.querySelectorAll('.card, .node-card, .stat-card, .cat-card, .topbar, .sidebar, #esCredsOverlay > *, #catEditor > *, #esJobWin > *, #esHbBox, .es-shell > *')]
     .filter(vis);
   for (const el of document.querySelectorAll('.card, .term-main, .term-nodes, .node-card, .stat-card, .cat-card'))
     if (vis(el) && el.getBoundingClientRect().width < 64)
@@ -148,8 +155,11 @@ def seed(app, nodes, ssh):
             real_id = n.id
         db.session.commit()
         from datetime import datetime
-        for n in Node.query.filter_by(status='online').limit(400):
+        for i, n in enumerate(Node.query.filter_by(status='online').limit(400)):
             n.last_seen = datetime.utcnow()
+            n.hb_installed = True
+            n.hb_status = ('online', 'online', 'silent', 'offline')[i % 4]
+            n.hb_last_seen = datetime.utcnow()
         # two hours of per-minute history, sampled every 10 minutes, for the export
         from datetime import timedelta
         from app.models import SystemMetrics
@@ -385,6 +395,40 @@ def run_interactions(pw, base, rep, total, real_id, label, w, h, scale):
     page.goto(base + '/account/api')
     rep.check(f'{label}: the key is not shown again', page.locator('#newKey').count() == 0
               and f'ui-test-{label}' in page.inner_text('#api'), '', page)
+
+    # Monitoring history: a chart for every period, inside the screen
+    page.goto(base + '/monitoring/')
+    page.wait_for_selector('button[title="History"]')
+    page.locator('button[title="History"]').first.click()
+    page.wait_for_selector('#historyModal.show #hist-chart canvas, #historyModal.show #historyCharts p', timeout=15000)
+    page.wait_for_timeout(600)
+    rep.check(f'{label}: monitoring history shows a chart', page.locator('#historyModal #hist-chart canvas').count() >= 1,
+              page.inner_text('#historyCharts')[:120], page)
+    issues = page.evaluate(LAYOUT_JS)
+    rep.check(f'{label}: monitoring history fits the screen', not issues, '; '.join(issues[:4]), page)
+    for rng in ('6h', '1d', '7d', '30d'):
+        page.click(f'#historyRanges [data-range="{rng}"]')
+        page.wait_for_selector('#historyModal #hist-chart canvas, #historyModal #historyCharts p', timeout=15000)
+        page.wait_for_timeout(400)
+        shown = page.locator('#historyModal #hist-chart canvas').count() or 'No samples' in page.inner_text('#historyCharts')
+        rep.check(f'{label}: monitoring history {rng} answers', bool(shown), page.inner_text('#historyCharts')[:120], page)
+    page.keyboard.press('Escape')
+    page.wait_for_timeout(500)
+
+    # Heartbeat history from a node's badge (no SenseHive in this test: a clear message)
+    page.goto(base + '/nodes/')
+    page.wait_for_selector('[data-hb-node]')
+    page.locator('[data-hb-node]').first.click()
+    page.wait_for_selector('#esHbBox')
+    page.wait_for_timeout(1500)                  # the request to /nodes/<id>/heartbeat/history answers
+    msg = page.inner_text('#esHbMsg')
+    rep.check(f'{label}: heartbeat history opens from the badge', page.locator('#esHbBox [data-range]').count() == 5,
+              msg, page)
+    rep.check(f'{label}: heartbeat history explains a missing SenseHive', 'SenseHive' in msg, msg, page)
+    issues = page.evaluate(LAYOUT_JS)
+    rep.check(f'{label}: heartbeat history fits the screen', not issues, '; '.join(issues[:4]), page)
+    page.keyboard.press('Escape')
+    rep.check(f'{label}: heartbeat history closes', page.locator('#esHbBox').count() == 0, '', page)
 
     # Monitoring "Auto" stays as the user set it: other pages, sign-out, sign-in
     page.goto(base + '/monitoring/')

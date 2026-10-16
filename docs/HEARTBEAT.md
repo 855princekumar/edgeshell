@@ -49,6 +49,35 @@ Every change of heartbeat state is an event in the event feed
 (`GET /api/v1/events`, kind `heartbeat_changed`). Administrators also get a
 **SenseHive** link in the sidebar (new tab) with the full heartbeat page.
 
+### Heartbeat history
+
+Click a node's heartbeat badge (every role) for its history, read from
+SenseHive by EdgeShell's server with its token (the browser never talks to
+SenseHive):
+
+| Period | Chart |
+|---|---|
+| 1 minute, 1 hour, 1 day | seconds between consecutive heartbeats; breaks shaded red, last wills marked, the usual interval dashed |
+| 7 days, 30 days | uptime per hour |
+
+Under the chart: uptime, heartbeats received, the usual interval, the longest
+break, the number of breaks, the median delivery delay and the list of breaks.
+A break is a gap longer than 2.5 times the node's usual interval.
+
+**CSV export**: **Export CSV** in the history (that node and period; every
+role), or tick nodes on Node Fleet and use **Export heartbeats** in the
+bulk-action bar (operators and administrators): every heartbeat, online
+minutes or status changes, for the last hour, day, 7 or 30 days. Every export
+is in the activity log.
+
+| Endpoint (signed-in session) | Returns |
+|---|---|
+| `GET /nodes/<id>/heartbeat/history?range=1m\|1h\|1d\|7d\|30d` | chart data and figures for one node |
+| `GET /nodes/heartbeat/export.csv?ids=1,2&what=beats\|minutes\|events&period=1h\|1d\|7d\|30d` | CSV for one or several nodes |
+
+Needs SenseHive 1.5 or newer (`SENSEHIVE_TAG`), which keeps every heartbeat for
+48 hours and online minutes for 30 days.
+
 ## Set it up
 
 Docker stack, on the host, in the folder with `compose.yaml` (1.9.0 or later):
