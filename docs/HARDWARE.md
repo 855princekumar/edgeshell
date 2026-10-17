@@ -10,6 +10,17 @@ software reports and listens through the API and webhooks.
 
 Design decisions: [ADR 0015](adr/0015-hardware-lifecycle.md).
 
+## Field guide
+
+Site technicians and operators learn all of this from the **field guide**, an
+animated tour inside EdgeShell: the **(i)** button in the top bar of every page,
+**Field guide** in the sidebar, or the button on the Hardware page. Each scene
+has one short headline and a phone that taps through the real screens. It plays
+by itself, moves with swipes, scrolling or the arrow keys, has a topic menu,
+fits any screen and zoom, and the close button returns to the page it was
+opened from. Direct links open one topic: `/guide/#find` (report a problem),
+`#startjob`, `#close`, `#swap`, `#newpi`, `#signs`, `#rules`.
+
 ## Contents
 
 1. [A node is a position, a device is hardware](#a-node-is-a-position-a-device-is-hardware)

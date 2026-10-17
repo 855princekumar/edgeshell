@@ -203,7 +203,7 @@ jobs:
       - name: Every page on every screen size and zoom, plus interactions
         env:
           FLASK_ENV: testing
-        run: python -W ignore tools/ui_test.py --nodes 1500 --ssh 127.0.0.1:2299 --out ui-report --min-checks 500
+        run: python -W ignore tools/ui_test.py --nodes 1500 --ssh 127.0.0.1:2299 --out ui-report --min-checks 550
       - name: Screenshots of failures
         if: failure()
         uses: actions/upload-artifact@v4
