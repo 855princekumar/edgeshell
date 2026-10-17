@@ -471,3 +471,24 @@ def test_cards_show_hardware_state_and_the_page_opens_for_everyone(app):
         r = c.get('/hardware/')
         assert r.status_code == 200 and 'hwReportBtn' in r.get_data(as_text=True)
     assert mon.get('/hardware/api/stats').get_json()['open'] == 1
+
+
+def test_errors_are_fixed_texts_never_an_exception_s_own_text(app):
+    import re
+    from pathlib import Path
+    from app.services import hw_errors
+    root = Path(__file__).resolve().parents[1] / 'app'
+    codes = set()
+    for f in ('services/hardware_service.py', 'services/webhook_service.py'):
+        src = (root / f).read_text(encoding='utf-8')
+        codes |= set(re.findall(r"raise HardwareError\('([a-z_]+)'\)", src))
+        assert not re.search(r'raise (HardwareError|ValueError)\(f?["\'][A-Z]', src), f   # texts live in hw_errors
+    assert codes and codes <= set(hw_errors.MESSAGES), codes - set(hw_errors.MESSAGES)
+    for f in ('routes/hardware.py',):
+        assert 'str(e)' not in (root / f).read_text(encoding='utf-8')
+    op = browser(app, 'op')
+    with app.app_context():
+        nid = node('gate-1').id
+    r = op.post('/hardware/api/report', json={'node_ids': [nid], 'component': 'power', 'symptom': ''})
+    assert r.status_code == 400 and r.get_json()['message'] == hw_errors.MESSAGES['symptom']
+    assert hw_errors.public_message(ValueError('/etc/secret path')) == hw_errors.DEFAULT

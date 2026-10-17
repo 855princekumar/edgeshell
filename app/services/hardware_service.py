@@ -31,6 +31,7 @@ from app.models.hardware import (CHANGE_REASONS, DETECTED_KINDS, FAULT_SEVERITIE
                                  HardwareChange, HardwareComponent, HardwareEvent, HardwareFault)
 from app.models.node import Node
 from app.services import hw_identity, webhook_service
+from app.services.hw_errors import HardwareError, public_message  # noqa: F401  (public_message: for the routes)
 
 CATEGORIES_KEY = 'hardware_categories'
 DEFAULT_CATEGORIES = [('power', 'Power supply'), ('storage', 'SD card or storage'), ('board', 'Board'),
@@ -45,8 +46,6 @@ PROMPT_WINDOW = timedelta(days=7)
 MAX_LINEAGE = 20
 
 
-class HardwareError(ValueError):
-    """A request that cannot be carried out; the message is safe to show."""
 
 
 # ------------------------------------------------------------------ categories
@@ -89,15 +88,15 @@ def save_categories(items):
         key = str((item or {}).get('key', '')).strip().lower()
         label = re.sub(r'[<>]', '', str(item.get('label', '')).strip())[:48]
         if not CATEGORY_RE.match(key) or key in seen:
-            raise HardwareError(f'"{key}" is not a valid category key (a-z, 0-9, _).')
+            raise HardwareError('category_key')
         if not label:
-            raise HardwareError(f'Give the category "{key}" a name.')
+            raise HardwareError('category_name')
         seen.add(key)
         clean.append({'key': key, 'label': label, 'hidden': bool(item.get('hidden'))})
     missing = {k for k, _ in DEFAULT_CATEGORIES} - seen
     clean += [{'key': k, 'label': lbl, 'hidden': False} for k, lbl in DEFAULT_CATEGORIES if k in missing]
     if len(clean) > MAX_CATEGORIES:
-        raise HardwareError(f'At most {MAX_CATEGORIES} categories.')
+        raise HardwareError('too_many_categories')
     row = Settings.query.filter_by(key=CATEGORIES_KEY).first() or Settings(key=CATEGORIES_KEY)
     row.value = json.dumps(clean)
     db.session.add(row)
@@ -247,7 +246,7 @@ def _change_payload(change, node=None):
 def decide_change(change, decision, user, reason=None, fault_id=None, note=''):
     """confirm: the parts on record become the new ones; reject: keep the record, mark the node."""
     if change.status != 'pending':
-        raise HardwareError('This change was already decided.')
+        raise HardwareError('decided')
     node = db.session.get(Node, change.node_id)
     now = datetime.utcnow()
     note = (note or '').strip()[:500]
@@ -264,9 +263,9 @@ def decide_change(change, decision, user, reason=None, fault_id=None, note=''):
         webhook_service.emit('hardware.change_rejected', _change_payload(change, node))
         return change
     if decision != 'confirm':
-        raise HardwareError('Decide confirm or reject.')
+        raise HardwareError('decision')
     if reason not in CHANGE_REASONS:
-        raise HardwareError('Choose why the hardware was changed: ' + ', '.join(CHANGE_REASONS) + '.')
+        raise HardwareError('reason')
     change.status, change.reason = 'confirmed', reason
     for item in change.items():
         old = HardwareComponent.query.filter_by(node_id=change.node_id, kind=item['kind'], removed_at=None).first()
@@ -292,7 +291,7 @@ def decide_change(change, decision, user, reason=None, fault_id=None, note=''):
         if fault_id:
             fault = HardwareFault.query.filter_by(id=fault_id, node_id=change.node_id).first()
             if not fault or fault.status == 'resolved':
-                raise HardwareError('Pick an open fault of this node, or none.')
+                raise HardwareError('fault_pick')
             _resolve(fault, 'replaced', user, note or change.summary, change.items()[0]['new'], now)
         else:                                             # record the failure, so the numbers count it
             fault = HardwareFault(node_id=change.node_id, node_name=change.node_name,
@@ -330,28 +329,28 @@ def _parse_time(value):
     try:
         v = datetime.fromisoformat(str(value).replace('Z', '+00:00'))
     except ValueError:
-        raise HardwareError('"started_at" must be a date and time, e.g. 2026-10-14T08:00:00Z.')
+        raise HardwareError('started_format')
     return v.replace(tzinfo=None) - (v.utcoffset() or timedelta(0)) if v.tzinfo else v
 
 
 def report_fault(nodes, component, symptom, user, description='', severity='normal', started_at=None, via='web'):
     """One fault per node. Anyone signed in may report."""
     if not nodes:
-        raise HardwareError('Choose at least one node.')
+        raise HardwareError('no_nodes')
     if len(nodes) > 500:
-        raise HardwareError('At most 500 nodes in one report.')
+        raise HardwareError('too_many_nodes')
     if component not in category_keys():
-        raise HardwareError('Choose a component from the list.')
+        raise HardwareError('component')
     symptom = re.sub(r'[<>]', '', (symptom or '').strip())[:160]
     if not symptom:
-        raise HardwareError('Describe the symptom in a few words.')
+        raise HardwareError('symptom')
     description = (description or '').strip()[:2000]
     if severity not in FAULT_SEVERITIES:
-        raise HardwareError('Severity must be one of: ' + ', '.join(FAULT_SEVERITIES) + '.')
+        raise HardwareError('severity')
     now = datetime.utcnow()
     started = _parse_time(started_at)
     if started and (started > now + timedelta(minutes=5) or started < now - timedelta(days=366)):
-        raise HardwareError('"started_at" must be within the last year and not in the future.')
+        raise HardwareError('started_range')
     faults = []
     for n in nodes:
         hint = component == 'power' and bool(n.hw_undervoltage_at and n.hw_undervoltage_at >= now - UNDERVOLTAGE_HINT_WINDOW)
@@ -373,7 +372,7 @@ def report_fault(nodes, component, symptom, user, description='', severity='norm
 
 def _resolve(f, resolution, user, note, new_serial, now):
     if resolution not in RESOLUTIONS:
-        raise HardwareError('Resolution must be one of: ' + ', '.join(RESOLUTIONS) + '.')
+        raise HardwareError('resolution')
     f.status, f.resolution, f.resolved_at, f.resolved_by = 'resolved', resolution, now, user
     f.resolution_note = (note or '').strip()[:500] or None
     f.new_serial = hw_identity.clean(new_serial) or None
@@ -399,27 +398,27 @@ def update_fault(f, action, user, resolution=None, note='', new_serial=None):
     event = 'hardware.fault_updated'
     if action == 'progress':
         if f.status != 'open':
-            raise HardwareError('Only an open fault can be marked in progress.')
+            raise HardwareError('not_open')
         f.status = 'in_progress'
         _event(f.node_id, f.node_name, 'fault_in_progress', 'Work started' + (f': {note}' if note else ''),
                user=user, fault_id=f.id)
     elif action == 'note':
         if not note:
-            raise HardwareError('Write a note.')
+            raise HardwareError('note')
         _event(f.node_id, f.node_name, 'fault_note', note, user=user, fault_id=f.id)
     elif action == 'resolve':
         if f.status == 'resolved':
-            raise HardwareError('This fault is already resolved.')
+            raise HardwareError('resolved')
         _resolve(f, resolution, user, note, new_serial, now)
         event = 'hardware.fault_resolved'
     elif action == 'reopen':
         if f.status != 'resolved':
-            raise HardwareError('Only a resolved fault can be reopened.')
+            raise HardwareError('not_resolved')
         f.status, f.resolved_at, f.resolved_by, f.resolution, f.downtime_min = 'open', None, None, None, None
         _event(f.node_id, f.node_name, 'fault_reopened', 'Reopened' + (f': {note}' if note else ''),
                user=user, fault_id=f.id)
     else:
-        raise HardwareError('Unknown action.')
+        raise HardwareError('action')
     f.updated_at = now
     db.session.commit()
     webhook_service.emit(event, fault_payload(f))
@@ -503,15 +502,15 @@ def candidates(node, limit=5):
 def link_replacement(new, old, user, failed=(), note=''):
     """`new` takes over from `old`: old is retired (kept with its history)."""
     if new.id == old.id:
-        raise HardwareError('A node cannot replace itself.')
+        raise HardwareError('self')
     if old.retired_at or old.replaced_by_id:
-        raise HardwareError(f'{old.name} was already replaced.')
+        raise HardwareError('already_replaced')
     if new.retired_at or new.replaced_by_id:
-        raise HardwareError(f'{new.name} is retired and cannot replace a node.')
+        raise HardwareError('retired')
     if new.replaces_id:
-        raise HardwareError(f'{new.name} already replaces another node.')
+        raise HardwareError('replaces_other')
     if new.id in {n.id for n in lineage(old)}:
-        raise HardwareError('That would make a loop.')
+        raise HardwareError('loop')
     keys = category_keys()
     failed = [f for f in dict.fromkeys(failed or []) if f in keys]
     note = re.sub(r'[<>]', '', (note or '').strip())[:500]
@@ -739,7 +738,7 @@ def export_csv(what, days=365):
         rows = [c.to_dict() for c in HardwareChange.query.filter(HardwareChange.detected_at >= since)
                 .order_by(HardwareChange.detected_at.desc())]
     else:
-        raise HardwareError('Export faults, components or changes.')
+        raise HardwareError('export')
     w.writerow(cols)
     for r in rows:
         w.writerow([csv_cell(r.get(c)) for c in cols])

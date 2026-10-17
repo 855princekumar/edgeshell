@@ -735,7 +735,8 @@ REPLACES = {
 
 
 def _hw_error(e):
-    return api_auth.api_error(400 if not isinstance(e, LookupError) else 404, 'invalid', str(e))
+    from app.services.hw_errors import public_message
+    return api_auth.api_error(400, 'invalid', public_message(e))
 
 
 @endpoint('GET', '/hardware/faults', 'List hardware faults', 'read', tag='Hardware',

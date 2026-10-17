@@ -2,6 +2,11 @@
 
 All notable changes are documented here. Format loosely follows Keep a Changelog.
 
+## [1.14.1] - 2026-10-17
+
+### Security
+- Hardware and webhook errors shown to people and API clients are fixed texts looked up by a code, never an exception's own text, as everywhere else in EdgeShell (two CodeQL stack-trace-exposure alerts from 1.13.0). Messages no longer repeat node names. A test checks every code has its text and that no route returns `str(e)`.
+
 ## [1.14.0] - 2026-10-17
 
 ### Added
