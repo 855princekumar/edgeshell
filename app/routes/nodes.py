@@ -36,9 +36,15 @@ def index():
     categories = cats.load()
     for n in nodes:
         n.category = cats.category_of(n.node_type, categories)
+    from datetime import timedelta
+    from app.services import hardware_service
+    linked = {i for n in nodes for i in (n.replaces_id, n.replaced_by_id) if i}
+    hw_names = dict(Node.query.filter(Node.id.in_(linked)).with_entities(Node.id, Node.name).all()) if linked else {}
     return render_template('nodes/index.html', nodes=nodes, deleted=deleted,
                            categories=categories,
-                           has_other=any(n.category == 'Other' for n in nodes))
+                           has_other=any(n.category == 'Other' for n in nodes),
+                           hwinfo=hardware_service.card_info([n.id for n in nodes]), hw_names=hw_names,
+                           hw_recent=datetime.utcnow() - timedelta(hours=24))
 
 
 @nodes_bp.route('/add', methods=['GET', 'POST'])
@@ -93,6 +99,11 @@ def add():
         log_activity('Add Node', node=name, status='success')
         flash(f'Node "{name}" added. Its SSH login is being checked in the background; '
               'the card updates in a few seconds.', 'success')
+        from app.services import hardware_service
+        if hardware_service.candidates(node):           # maybe new hardware for a broken node (ADR 0015)
+            node.hw_replace_prompt = 'pending'
+            db.session.commit()
+            return redirect(url_for('nodes.index', ask_replace=node.id))
         return redirect(url_for('nodes.index'))
     return render_template('nodes/add.html')
 

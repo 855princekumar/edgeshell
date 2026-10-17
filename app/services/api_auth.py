@@ -10,6 +10,7 @@ comparison is constant-time. A request authenticates with
 
 Permissions are the user's role intersected with the credential's scopes:
   read     monitor and above: read nodes, metrics, events, jobs
+  report   monitor and above: report hardware faults (ADR 0015), nothing else
   write    operator and above: add, edit, delete nodes, bulk changes, exports
   control  operator and above: run commands on nodes (also needs API_ALLOW_COMMANDS)
   admin    administrators: users and every key
@@ -29,9 +30,9 @@ from flask_login import current_user
 from app import db
 
 PREFIX = {'challenge': 'esc', 'session': 'est', 'key': 'esk'}
-SCOPES = ('read', 'write', 'control', 'admin')
-ROLE_SCOPES = {'monitor': {'read'}, 'operator': {'read', 'write', 'control'},
-               'administrator': {'read', 'write', 'control', 'admin'}}
+SCOPES = ('read', 'report', 'write', 'control', 'admin')
+ROLE_SCOPES = {'monitor': {'read', 'report'}, 'operator': {'read', 'report', 'write', 'control'},
+               'administrator': {'read', 'report', 'write', 'control', 'admin'}}
 MAX_KEYS_PER_USER = 10
 MAX_SESSIONS_PER_USER = 5
 CHALLENGE_TTL = timedelta(minutes=5)
@@ -39,7 +40,7 @@ CHALLENGE_ATTEMPTS = 3
 
 
 POLICY_KEY = 'api_policy'
-DEFAULT_POLICY = {'enabled': True, 'scopes': ['read', 'write', 'control'], 'keys': True}
+DEFAULT_POLICY = {'enabled': True, 'scopes': ['read', 'report', 'write', 'control'], 'keys': True}
 
 
 def policy():
@@ -52,6 +53,8 @@ def policy():
         if row and row.value:
             saved = json.loads(row.value)
             p.update({k: saved[k] for k in DEFAULT_POLICY if k in saved})
+            if saved.get('v', 1) < 2 and 'read' in (p.get('scopes') or []):
+                p['scopes'] = list(p['scopes']) + ['report']     # new in 1.13: on unless turned off
     except ValueError:
         pass
     p['scopes'] = [s for s in SCOPES if s in (p.get('scopes') or [])]
@@ -61,7 +64,8 @@ def policy():
 def save_policy(enabled, scopes, keys):
     import json
     from app.models import Settings
-    value = json.dumps({'enabled': bool(enabled), 'scopes': [s for s in SCOPES if s in scopes], 'keys': bool(keys)})
+    value = json.dumps({'v': 2, 'enabled': bool(enabled), 'scopes': [s for s in SCOPES if s in scopes],
+                        'keys': bool(keys)})
     row = Settings.query.filter_by(key=POLICY_KEY).first()
     if row:
         row.value = value

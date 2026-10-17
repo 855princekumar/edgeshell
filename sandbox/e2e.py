@@ -336,6 +336,42 @@ def main():
     check('Node-RED detected on every node', rows and all(x.get('nodered') for x in rows),
           [(x['name'], x.get('nodered')) for x in rows])
 
+    # ── Hardware lifecycle (ADR 0015) ─────────────────────────────────────
+    section('Hardware lifecycle: inventory over SSH, a detected reinstall, faults')
+    st, _, b = admin.request('GET', '/hardware/api/inventory')
+    parts = json.loads(b).get('components', []) if st == 200 else []
+    named = {c['node_name'] for c in parts}
+    check('every node has its hardware recorded (read with the metrics)', set(by_name) <= named,
+          sorted(set(by_name) - named)[:5])
+    check('the network adapter is read on every node', all(any(c['node_name'] == n and c['kind'] == 'network'
+                                                               for c in parts) for n in by_name), len(parts))
+    hw_node = nodes[0]
+    for mid in ('a' * 32, 'b' * 32):                     # a first readable ID, then a "reinstall"
+        # not "echo | sudo tee": the sudo password arrives on stdin and would be what gets written
+        admin.fleet_exec([hw_node['id']], f"sudo sh -c 'echo {mid} > /etc/machine-id'; cat /etc/machine-id")
+        admin.post_json('/monitoring/poll', {'node_ids': [hw_node['id']]})
+    st, _, b = admin.request('GET', '/hardware/api/changes?status=pending')
+    pending = [c for c in (json.loads(b).get('changes', []) if st == 200 else []) if c['node_id'] == hw_node['id']]
+    check('a new machine ID is detected as an OS reinstall, waiting for a decision',
+          len(pending) == 1 and 'reinstalled' in pending[0]['summary'], pending)
+    if pending:
+        st, r = admin.post_json(f"/hardware/api/changes/{pending[0]['id']}", {'decision': 'confirm',
+                                                                             'reason': 'maintenance'})
+        check('an administrator confirms the change', r.get('success') and r['change']['status'] == 'confirmed', r)
+    st, r = admin.post_json('/hardware/api/report', {'node_ids': [hw_node['id']], 'component': 'power',
+                                                    'symptom': 'Reboots at random', 'severity': 'high'})
+    fid = (r.get('faults') or [None])[0]
+    check('a fault is reported on a node', bool(fid), r)
+    if fid:
+        st, r = admin.post_json(f'/hardware/api/faults/{fid}', {'action': 'resolve', 'resolution': 'replaced',
+                                                               'new_serial': 'PSU-SANDBOX-1'})
+        check('the fault is resolved and its downtime measured',
+              r.get('success') and r['fault']['status'] == 'resolved' and r['fault']['downtime_min'] is not None, r)
+    st, _, b = admin.request('GET', '/hardware/api/stats?days=30')
+    stats = json.loads(b) if st == 200 else {}
+    check('the fleet numbers count the fault and the replacement',
+          stats.get('faults', 0) >= 1 and stats.get('replacements', 0) >= 1, {k: stats.get(k) for k in ('faults', 'replacements')})
+
     # ── Push / pull data ───────────────────────────────────────────────────
     section('Data push and pull')
     token = secrets.token_hex(8)

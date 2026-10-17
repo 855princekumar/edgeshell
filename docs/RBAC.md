@@ -13,6 +13,12 @@ not interfere. Roles decide what each person may do, enforced centrally in
 | operator | 1 | Everything monitor can, plus node CRUD, terminal, remote desktop (opening it where it runs), file deploy, bulk import |
 | administrator | 2 | Everything operator can, plus user management, VPN config, platform settings, the activity log (audit trail), and installing software on nodes (Fleet Setup, Install on Fleet, OpenRemoteGUI install, the MQTT heartbeat agent and its settings), and opening SenseHive |
 
+**Hardware** ([HARDWARE.md](HARDWARE.md)): every role sees the hardware history,
+faults, parts and numbers and **reports** issues (also through the API with the
+`report` permission). Operators and administrators move faults on, resolve
+them, confirm or reject detected hardware changes and link replacement nodes.
+Administrators edit the fault categories and manage webhooks.
+
 The activity log is the audit trail, so only administrators see it: the page, its
 sidebar link, the Recent Activity and Recent Errors panels on the dashboard, and
 `GET /api/v1/activity` (403 for other roles). Operators and monitors still read

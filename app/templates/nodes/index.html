@@ -99,6 +99,7 @@
                 </select>
                 <button type="button" class="btn btn-sm btn-outline" id="bulkHbExportBtn"><i class="bi bi-heart-pulse"></i> Export heartbeats</button>
             </span>
+            <button type="button" class="btn btn-sm btn-outline" id="bulkReportBtn"><i class="bi bi-exclamation-triangle"></i> Report issue</button>
             <button type="button" class="btn btn-sm btn-outline" id="bulkLoginBtn"><i class="bi bi-key"></i> Edit login</button>
             <button type="button" class="btn btn-sm btn-danger" id="bulkDeleteBtn"><i class="bi bi-trash"></i> Delete</button>
             <button type="button" class="btn btn-sm btn-outline" id="bulkClearBtn">Clear</button>
@@ -132,6 +133,7 @@
                 <option>online</option>
                 <option>offline</option>
                 <option value="auth_failed">login failed</option>
+                <option value="retired">retired</option>
                 <option>warning</option>
                 <option>unknown</option>
             </select>
@@ -225,6 +227,52 @@
             {% if node.last_seen %}
             <span class="text-xs text-muted" style="margin-left:auto;white-space:nowrap" title="Last seen">{{ node.last_seen|localtime('%d %b %H:%M') }}</span>
             {% endif %}
+        </div>
+
+        {% set hi = hwinfo.get(node.id, {}) %}
+        <div class="flex gap-2 mt-3 es-hw-row" style="flex-wrap:wrap;row-gap:6px;align-items:center">
+            {% if node.retired_at %}
+            <span class="badge" style="background:#f3f4f6;color:#374151" title="Kept with its history; no longer checked">
+                <i class="bi bi-archive"></i> Retired{% if hw_names.get(node.replaced_by_id) %}: replaced by {{ hw_names[node.replaced_by_id] }}{% endif %}
+            </span>
+            {% endif %}
+            {% if hw_names.get(node.replaces_id) %}
+            <span class="node-tag" title="This node replaced another; their histories are joined"><i class="bi bi-arrow-repeat"></i> replaces {{ hw_names[node.replaces_id] }}</span>
+            {% endif %}
+            {% if hi.pending %}
+            <button type="button" class="badge es-hw-history" style="border:0;background:#fef3c7;color:#92400e;cursor:pointer"
+                    data-id="{{ node.id }}" data-name="{{ node.name }}" title="{{ hi.pending.summary }}">
+                <i class="bi bi-cpu"></i> Hardware changed
+            </button>
+            {% endif %}
+            {% if node.hw_alert %}
+            <span class="badge" style="background:#fee2e2;color:#991b1b" title="A hardware change was rejected as unexpected">
+                <i class="bi bi-shield-exclamation"></i> Unexpected hardware
+            </span>
+            {% endif %}
+            {% if node.hw_undervoltage_at and node.hw_undervoltage_at > hw_recent %}
+            <span class="badge" style="background:#fef3c7;color:#92400e" title="The board reported low power (under-voltage): check the power supply and cable">
+                <i class="bi bi-lightning-charge"></i> Low power
+            </span>
+            {% endif %}
+            {% if hi.open_faults %}
+            <button type="button" class="badge es-hw-history" style="border:0;background:#fee2e2;color:#991b1b;cursor:pointer"
+                    data-id="{{ node.id }}" data-name="{{ node.name }}">
+                <i class="bi bi-exclamation-triangle"></i> {{ hi.open_faults }} open fault{{ 's' if hi.open_faults != 1 }}
+            </button>
+            {% endif %}
+            {% if node.hw_replace_prompt == 'pending' and current_user.can_execute() %}
+            <button type="button" class="btn btn-primary btn-xs es-hw-replace" data-id="{{ node.id }}" data-name="{{ node.name }}"
+                    title="Is this new hardware a replacement for an existing node?"><i class="bi bi-arrow-repeat"></i> Replacement?</button>
+            {% endif %}
+            <span style="margin-left:auto;display:flex;gap:6px;flex-wrap:wrap">
+                <button type="button" class="btn btn-outline btn-xs es-hw-history" data-id="{{ node.id }}" data-name="{{ node.name }}"
+                        title="Hardware history: parts, replacements, faults"><i class="bi bi-cpu"></i> Hardware</button>
+                {% if not node.retired_at %}
+                <button type="button" class="btn btn-outline btn-xs es-hw-report" data-id="{{ node.id }}" data-name="{{ node.name }}"
+                        title="Report a hardware issue"><i class="bi bi-exclamation-triangle"></i> Report issue</button>
+                {% endif %}
+            </span>
         </div>
 
         {% if node.location or node.tags %}
@@ -552,8 +600,33 @@ function bulkLogin() {
         });
     });
 }
+// Hardware lifecycle (hardware.js): history, report issue, replacement prompt
+document.addEventListener('click', e => {
+    const b = e.target.closest && e.target.closest('.es-hw-history, .es-hw-report, .es-hw-replace');
+    if (!b) return;
+    const id = parseInt(b.dataset.id), name = b.dataset.name;
+    if (b.classList.contains('es-hw-report')) esReportIssue([id], [name]);
+    else if (b.classList.contains('es-hw-replace')) esReplacePrompt(id, name);
+    else esHardwareHistory(id, name);
+});
+window.esHwRefresh = () => setTimeout(() => location.reload(), 900);
+function bulkReport() {
+    const ids = selectedIds();
+    const names = ids.map(id => { const c = document.getElementById('node-' + id); return c ? c.querySelector('.node-name').textContent.trim() : String(id); });
+    esReportIssue(ids, names);
+}
+document.addEventListener('DOMContentLoaded', () => {
+    const ask = parseInt(new URLSearchParams(location.search).get('ask_replace') || '0');
+    if (ask && window.ES_HW_CAN_RESOLVE) {
+        fetch('/hardware/api/node/' + ask + '/candidates', {credentials: 'same-origin'}).then(r => r.json()).then(d => {
+            const card = document.getElementById('node-' + ask);
+            if (d.candidates && d.candidates.length && card) esReplacePrompt(ask, card.querySelector('.node-name').textContent.trim());
+        }).catch(() => {});
+    }
+});
 document.addEventListener('DOMContentLoaded', () => {
     const on = (id, fn) => { const b = document.getElementById(id); if (b) b.addEventListener('click', fn); };
+    on('bulkReportBtn', bulkReport);
     on('bulkDeleteBtn', bulkDelete);
     on('bulkInstallBtn', bulkInstall);
     on('bulkLoginBtn', bulkLogin);

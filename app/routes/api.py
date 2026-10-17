@@ -546,11 +546,12 @@ def _history(r, n, start, end, args):
           params=[Param('since_id', 'integer', 'Return events after this id (the cursor)', minimum=0,
                         maximum=10 ** 12, default=0),
                   Param('kind', 'string', 'Only this kind',
-                        enum=('status_changed', 'login_paused', 'login_resumed')),
+                        enum=('status_changed', 'login_paused', 'login_resumed', 'hardware_fault',
+                              'hardware_changed', 'node_replaced')),
                   Param('node_id', 'integer', 'Only this node', minimum=1, maximum=10 ** 9),
                   Param('limit', 'integer', 'At most this many', minimum=1, maximum=1000, default=200)],
-          description='Status changes (online, offline, login failed) and paused or resumed logins, oldest '
-                      'first. Keep the last `id` you saw and pass it as `since_id` next time; nothing is '
+          description='Status changes (online, offline, login failed), paused or resumed logins, hardware '
+                      'faults, detected hardware changes and node replacements, oldest first. Keep the last `id` you saw and pass it as `since_id` next time; nothing is '
                       'missed or repeated.')
 def events(args, data):
     from app.models.api import NodeEvent
@@ -692,6 +693,196 @@ def nodes_bulk_credentials(args, data):
     audit('Bulk login update', response=', '.join(sorted(k for k in data if k not in ('node_ids', 'password')))
           + (' and password' if 'password' in data else '') + f' on {len(nodes)} node(s)')
     return jsonify({'job_id': jid, 'count': len(nodes)}), 202
+
+
+# ------------------------------------------------------------- hardware
+
+FAULT_REPORT = {
+    'type': 'object', 'additionalProperties': False, 'required': ['component', 'symptom'],
+    'properties': {
+        'node_id': {'type': 'integer', 'minimum': 1},
+        'node_name': {'type': 'string', 'pattern': NAME_RE},
+        'component': {'type': 'string', 'pattern': r'^[a-z0-9_]{1,32}$'},
+        'symptom': {'type': 'string', 'minLength': 1, 'maxLength': 160},
+        'description': {'type': 'string', 'maxLength': 2000},
+        'severity': {'type': 'string', 'enum': ['low', 'normal', 'high', 'critical']},
+        'started_at': {'type': 'string', 'maxLength': 40},
+    }}
+FAULT_UPDATE = {
+    'type': 'object', 'additionalProperties': False, 'required': ['action'],
+    'properties': {
+        'action': {'type': 'string', 'enum': ['progress', 'note', 'resolve', 'reopen']},
+        'resolution': {'type': 'string', 'enum': ['replaced', 'repaired', 'reseated', 'no_fault_found', 'other']},
+        'note': {'type': 'string', 'maxLength': 500},
+        'new_serial': {'type': 'string', 'maxLength': 128},
+    }}
+CHANGE_DECISION = {
+    'type': 'object', 'additionalProperties': False, 'required': ['decision'],
+    'properties': {
+        'decision': {'type': 'string', 'enum': ['confirm', 'reject']},
+        'reason': {'type': 'string', 'enum': ['fault', 'upgrade', 'maintenance', 'other']},
+        'fault_id': {'type': 'integer', 'minimum': 1},
+        'note': {'type': 'string', 'maxLength': 500},
+    }}
+REPLACES = {
+    'type': 'object', 'additionalProperties': False, 'required': ['replaces_node_id'],
+    'properties': {
+        'replaces_node_id': {'type': 'integer', 'minimum': 1},
+        'failed': {'type': 'array', 'maxItems': 30, 'uniqueItems': True,
+                   'items': {'type': 'string', 'pattern': r'^[a-z0-9_]{1,32}$'}},
+        'note': {'type': 'string', 'maxLength': 500},
+    }}
+
+
+def _hw_error(e):
+    return api_auth.api_error(400 if not isinstance(e, LookupError) else 404, 'invalid', str(e))
+
+
+@endpoint('GET', '/hardware/faults', 'List hardware faults', 'read', tag='Hardware',
+          params=PAGE + [Param('status', 'string', 'Only this status',
+                               enum=('open', 'in_progress', 'resolved', 'unresolved')),
+                         Param('component', 'string', 'Only this component category', max_length=32,
+                               pattern=r'^[a-z0-9_]{1,32}$'),
+                         Param('node_id', 'integer', 'Only this node', minimum=1, maximum=10 ** 9),
+                         Param('since', 'datetime', 'Reported at or after')],
+          description='Newest first. `hours_to_fix` and `downtime_min` are filled in when a fault is resolved.')
+def hardware_faults(args, data):
+    from app.services import hardware_service as hw
+    items, page = page_of(hw.faults_query(args.get('status'), args.get('component'), args.get('node_id'),
+                                          since=args.get('since')), args)
+    return jsonify({'faults': [hw.fault_payload(f) for f in items], 'pagination': page})
+
+
+@endpoint('POST', '/hardware/faults', 'Report a hardware fault', 'report', body=FAULT_REPORT, tag='Hardware',
+          rate='60 per minute',
+          description='Any role, with the `report` permission: give `node_id` or `node_name`, a `component` '
+                      'from GET /hardware/categories and the symptom. Operators and administrators resolve '
+                      'faults; reporters can only report and read.')
+def hardware_fault_report(args, data):
+    from app.services import hardware_service as hw
+    q = hw.fleet_nodes()
+    if data.get('node_id'):
+        n = q.filter(Node.id == data['node_id']).first()
+    elif data.get('node_name'):
+        n = q.filter(Node.name == data['node_name']).first()
+    else:
+        return api_auth.api_error(400, 'validation_error', 'Give node_id or node_name.')
+    if n is None:
+        return api_auth.api_error(404, 'not_found', 'No such node (or it is retired).')
+    try:
+        f = hw.report_fault([n], data['component'], data['symptom'], current_user.username,
+                            description=data.get('description') or '', severity=data.get('severity') or 'normal',
+                            started_at=data.get('started_at'), via='api')[0]
+    except hw.HardwareError as e:
+        return _hw_error(e)
+    audit('Report hardware fault', node=n.name, response=f'{f.component}: {f.symptom}')
+    return jsonify(hw.fault_payload(f)), 201
+
+
+@endpoint('GET', '/hardware/faults/{fault_id}', 'One hardware fault and its timeline', 'read', tag='Hardware')
+def hardware_fault_get(args, data, fault_id):
+    from app.models.hardware import HardwareFault
+    from app.services import hardware_service as hw
+    f = db.session.get(HardwareFault, fault_id)
+    if f is None:
+        return api_auth.api_error(404, 'not_found', 'No such fault.')
+    return jsonify(hw.fault_detail(f))
+
+
+@endpoint('PATCH', '/hardware/faults/{fault_id}', 'Move a fault on or resolve it', 'write', body=FAULT_UPDATE,
+          tag='Hardware', rate='120 per minute',
+          description='Operators and administrators. `resolve` needs a `resolution`; `replaced` with a '
+                      '`new_serial` also starts the service life of the new part.')
+def hardware_fault_update(args, data, fault_id):
+    from app.models.hardware import HardwareFault
+    from app.services import hardware_service as hw
+    f = db.session.get(HardwareFault, fault_id)
+    if f is None:
+        return api_auth.api_error(404, 'not_found', 'No such fault.')
+    try:
+        hw.update_fault(f, data['action'], current_user.username, resolution=data.get('resolution'),
+                        note=data.get('note') or '', new_serial=data.get('new_serial'))
+    except hw.HardwareError as e:
+        return _hw_error(e)
+    audit('Hardware fault ' + data['action'], node=f.node_name, response=f'fault {f.id}: {f.status}')
+    return jsonify(hw.fault_detail(f))
+
+
+@endpoint('GET', '/hardware/categories', 'Component categories for fault reports', 'read', tag='Hardware')
+def hardware_categories(args, data):
+    from app.services import hardware_service as hw
+    return jsonify({'categories': hw.categories()})
+
+
+@endpoint('GET', '/hardware/stats', 'Fleet hardware numbers', 'read', tag='Hardware',
+          params=[Param('days', 'integer', 'Period in days', minimum=7, maximum=730, default=90)],
+          description='Faults per component and month, faults per 100 nodes, time to fix, downtime, '
+                      'replacements, service life per component, the nodes and locations with most faults. '
+                      'Definitions: docs/HARDWARE.md.')
+def hardware_stats(args, data):
+    from app.services import hardware_service as hw
+    return jsonify(hw.stats(args['days']))
+
+
+@endpoint('GET', '/hardware/changes', 'Detected hardware changes', 'read', tag='Hardware',
+          params=[Param('status', 'string', 'Only this status', default='pending',
+                        enum=('pending', 'confirmed', 'rejected', 'reverted', 'all'))])
+def hardware_changes(args, data):
+    from app.models.hardware import HardwareChange
+    q = HardwareChange.query
+    if args['status'] != 'all':
+        q = q.filter(HardwareChange.status == args['status'])
+    return jsonify({'changes': [c.to_dict() for c in q.order_by(HardwareChange.detected_at.desc()).limit(500)]})
+
+
+@endpoint('POST', '/hardware/changes/{change_id}/decision', 'Confirm or reject a detected hardware change',
+          'write', body=CHANGE_DECISION, tag='Hardware', rate='60 per minute',
+          description='`confirm` (with a `reason`) makes the new parts the record; `fault` also records or '
+                      'resolves a fault. `reject` keeps the record and flags the node as unexpected hardware.')
+def hardware_change_decide(args, data, change_id):
+    from app.models.hardware import HardwareChange
+    from app.services import hardware_service as hw
+    ch = db.session.get(HardwareChange, change_id)
+    if ch is None:
+        return api_auth.api_error(404, 'not_found', 'No such change.')
+    try:
+        hw.decide_change(ch, data['decision'], current_user.username, reason=data.get('reason'),
+                         fault_id=data.get('fault_id'), note=data.get('note') or '')
+    except hw.HardwareError as e:
+        return _hw_error(e)
+    audit('Hardware change ' + ch.status, node=ch.node_name, response=ch.summary)
+    return jsonify(ch.to_dict())
+
+
+@endpoint('GET', '/nodes/{node_id}/hardware', 'Hardware history of a node', 'read', tag='Hardware',
+          description='Its parts and their service periods, detected changes, faults and timeline, including '
+                      'the nodes it replaced (`lineage`).')
+def node_hardware(args, data, node_id):
+    from app.services import hardware_service as hw
+    n = db.session.get(Node, node_id)
+    if n is None:
+        return api_auth.api_error(404, 'not_found', 'No such node.')
+    return jsonify(hw.node_history(n))
+
+
+@endpoint('POST', '/nodes/{node_id}/replaces', 'Mark a node as the replacement of another', 'write',
+          body=REPLACES, tag='Hardware', rate='60 per minute',
+          description='The old node is retired (kept with its history, no longer checked). `failed` lists the '
+                      'component categories that failed, recorded as faults of the old node.')
+def node_replaces(args, data, node_id):
+    from app.services import hardware_service as hw
+    n, err = node_or_404(node_id)
+    if err:
+        return err
+    old, err = node_or_404(data['replaces_node_id'])
+    if err:
+        return err
+    try:
+        hw.link_replacement(n, old, current_user.username, failed=data.get('failed') or [], note=data.get('note') or '')
+    except hw.HardwareError as e:
+        return _hw_error(e)
+    audit('Replace node', node=n.name, response=f'replaces {old.name}')
+    return jsonify(hw.node_history(n))
 
 
 # ------------------------------------------------------- commands and jobs

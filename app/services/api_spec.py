@@ -1,7 +1,7 @@
 """OpenAPI 3.1 document for /api/v1, built from the route declarations in
 app/routes/api.py (so it cannot drift from the code)."""
 
-SCOPE_TEXT = {'read': 'monitor or higher', 'write': 'operator or higher', 'control': 'operator or higher',
+SCOPE_TEXT = {'read': 'monitor or higher', 'report': 'monitor or higher, hardware fault reports only', 'write': 'operator or higher', 'control': 'operator or higher',
               'admin': 'administrator'}
 ERRORS = {
     '400': 'Validation error: `{"error": "validation_error", "details": {field: problem}}`',

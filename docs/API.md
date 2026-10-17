@@ -113,7 +113,8 @@ What a credential may do is its user's role **and** its scopes:
 
 | Scope | Role needed | Allows |
 |---|---|---|
-| `read` | monitor or higher | nodes, categories, metrics, history, events, jobs, own keys; the activity log for administrators only |
+| `read` | monitor or higher | nodes, categories, metrics, history, events, jobs, own keys, hardware; the activity log for administrators only |
+| `report` | monitor or higher | report hardware faults, nothing else (for field forms and ticketing tools) |
 | `write` | operator or higher | add, change, delete nodes; bulk login updates; exports |
 | `control` | operator or higher | run shell commands on nodes (also needs `API_ALLOW_COMMANDS=true` on the server) |
 | `admin` | administrator | every user's keys |
@@ -189,12 +190,29 @@ Node responses never contain the SSH password.
 | `GET /fleet/summary` | read | Totals by status and category, availability percent, SLA targets |
 | `GET /metrics/latest` | read | One current data point per node (filters as `/nodes`, plus `node_ids`) |
 | `GET /metrics/history` | read | Time series of one node: `node_id`, `from`, `to` (ISO 8601 UTC), `interval` = `raw`, `hour` or `day`; at most 10000 points |
-| `GET /events` | read | Status changes and paused or resumed logins, oldest first, with a cursor (`since_id`) |
+| `GET /events` | read | Status changes, paused or resumed logins, hardware faults, detected hardware changes and node replacements, oldest first, with a cursor (`since_id`) |
 | `GET /activity` | read | The audit trail, newest first, paginated; `?user=<username>` for one user. Administrators only (403 for other roles) |
 
 History, events and the activity log are served from the **data lake** when one
 is configured and caught up (`"source": "lake"` in the response), else from the
 hot database (`"source": "hot"`).
+
+### Hardware
+
+Details, the numbers' definitions and webhooks: [HARDWARE.md](HARDWARE.md).
+
+| Method and path | Scope | Purpose |
+|---|---|---|
+| `GET /hardware/faults` | read | Faults; filters `status`, `component`, `node_id`, `since`; paging |
+| `POST /hardware/faults` | report | Report a fault: `node_id` or `node_name`, `component`, `symptom`, optional `description`, `severity`, `started_at` |
+| `GET /hardware/faults/{fault_id}` | read | One fault and its timeline |
+| `PATCH /hardware/faults/{fault_id}` | write | `progress`, `note`, `resolve` (with `resolution`, optional `new_serial`) or `reopen` |
+| `GET /hardware/categories` | read | Component categories |
+| `GET /hardware/stats` | read | Fleet hardware numbers for `days` (7 to 730) |
+| `GET /hardware/changes` | read | Detected hardware changes by `status` |
+| `POST /hardware/changes/{change_id}/decision` | write | `confirm` (with a `reason`) or `reject` |
+| `GET /nodes/{node_id}/hardware` | read | A node's parts, changes, faults, timeline and lineage |
+| `POST /nodes/{node_id}/replaces` | write | Mark a node as the replacement of `replaces_node_id` |
 
 ### Jobs, exports and commands
 

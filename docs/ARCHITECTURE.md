@@ -118,7 +118,18 @@ erDiagram
 Stand-alone tables: `activity_logs` (audit of user actions), `node_logs`,
 `deployments` (per-node results of file deploys), `vpn_status` (heartbeat
 samples), `service_events` (every service start and stop with its reason) and
-`settings` (key/value). On MariaDB, the views `v_activity_local`,
+`settings` (key/value).
+
+Hardware lifecycle ([HARDWARE.md](HARDWARE.md), ADR 0015): `hw_components`
+(each part and its service period on a node), `hw_changes` (detected hardware
+changes and the decision), `hw_faults` (fault reports and their resolution),
+`hw_events` (every node's hardware timeline), `webhooks` and
+`webhook_deliveries`. They refer to nodes by `node_id` without a foreign key and
+keep `node_name`, so the history outlives a node deleted for good; nodes carry
+the replacement lineage (`replaces_id`, `replaced_by_id`, `retired_at`) and the
+last hardware fingerprint.
+
+On MariaDB, the views `v_activity_local`,
 `v_service_events_local` and `v_user_sessions` show timestamps in `DISPLAY_TZ`.
 
 ## Key decisions

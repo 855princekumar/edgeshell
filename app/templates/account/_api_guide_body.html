@@ -13,6 +13,7 @@
 <li><a href="#health">Health</a></li>
 <li><a href="#nodes">Nodes</a></li>
 <li><a href="#data-points-and-events">Data points and events</a></li>
+<li><a href="#hardware">Hardware</a></li>
 <li><a href="#jobs-exports-and-commands">Jobs, exports and commands</a></li>
 </ul>
 </li>
@@ -187,7 +188,12 @@ credential (<code>[API key 3f9a1c2b7d10 (grafana)]</code>).</p>
 <tr>
 <td><code>read</code></td>
 <td>monitor or higher</td>
-<td>nodes, categories, metrics, history, events, jobs, own keys; the activity log for administrators only</td>
+<td>nodes, categories, metrics, history, events, jobs, own keys, hardware; the activity log for administrators only</td>
+</tr>
+<tr>
+<td><code>report</code></td>
+<td>monitor or higher</td>
+<td>report hardware faults, nothing else (for field forms and ticketing tools)</td>
 </tr>
 <tr>
 <td><code>write</code></td>
@@ -414,7 +420,7 @@ over polling everything.</p>
 <tr>
 <td><code>GET /events</code></td>
 <td>read</td>
-<td>Status changes and paused or resumed logins, oldest first, with a cursor (<code>since_id</code>)</td>
+<td>Status changes, paused or resumed logins, hardware faults, detected hardware changes and node replacements, oldest first, with a cursor (<code>since_id</code>)</td>
 </tr>
 <tr>
 <td><code>GET /activity</code></td>
@@ -426,6 +432,69 @@ over polling everything.</p>
 <p>History, events and the activity log are served from the <strong>data lake</strong> when one
 is configured and caught up (<code>"source": "lake"</code> in the response), else from the
 hot database (<code>"source": "hot"</code>).</p>
+<h3 id="hardware">Hardware</h3>
+<p>Details, the numbers' definitions and webhooks: <a href="https://github.com/855princekumar/edgeshell/blob/main/docs/HARDWARE.md" target="_blank" rel="noopener">HARDWARE.md</a>.</p>
+<div class="table-responsive"><table class="table table-sm">
+<thead>
+<tr>
+<th>Method and path</th>
+<th>Scope</th>
+<th>Purpose</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>GET /hardware/faults</code></td>
+<td>read</td>
+<td>Faults; filters <code>status</code>, <code>component</code>, <code>node_id</code>, <code>since</code>; paging</td>
+</tr>
+<tr>
+<td><code>POST /hardware/faults</code></td>
+<td>report</td>
+<td>Report a fault: <code>node_id</code> or <code>node_name</code>, <code>component</code>, <code>symptom</code>, optional <code>description</code>, <code>severity</code>, <code>started_at</code></td>
+</tr>
+<tr>
+<td><code>GET /hardware/faults/{fault_id}</code></td>
+<td>read</td>
+<td>One fault and its timeline</td>
+</tr>
+<tr>
+<td><code>PATCH /hardware/faults/{fault_id}</code></td>
+<td>write</td>
+<td><code>progress</code>, <code>note</code>, <code>resolve</code> (with <code>resolution</code>, optional <code>new_serial</code>) or <code>reopen</code></td>
+</tr>
+<tr>
+<td><code>GET /hardware/categories</code></td>
+<td>read</td>
+<td>Component categories</td>
+</tr>
+<tr>
+<td><code>GET /hardware/stats</code></td>
+<td>read</td>
+<td>Fleet hardware numbers for <code>days</code> (7 to 730)</td>
+</tr>
+<tr>
+<td><code>GET /hardware/changes</code></td>
+<td>read</td>
+<td>Detected hardware changes by <code>status</code></td>
+</tr>
+<tr>
+<td><code>POST /hardware/changes/{change_id}/decision</code></td>
+<td>write</td>
+<td><code>confirm</code> (with a <code>reason</code>) or <code>reject</code></td>
+</tr>
+<tr>
+<td><code>GET /nodes/{node_id}/hardware</code></td>
+<td>read</td>
+<td>A node's parts, changes, faults, timeline and lineage</td>
+</tr>
+<tr>
+<td><code>POST /nodes/{node_id}/replaces</code></td>
+<td>write</td>
+<td>Mark a node as the replacement of <code>replaces_node_id</code></td>
+</tr>
+</tbody>
+</table></div>
 <h3 id="jobs-exports-and-commands">Jobs, exports and commands</h3>
 <div class="table-responsive"><table class="table table-sm">
 <thead>

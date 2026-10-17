@@ -192,6 +192,7 @@ flowchart LR
 | **Public API** | [REST API](docs/API.md) with an OpenAPI document: data points (latest metrics, time series, fleet summary), an event feed with a cursor for alerts and triggers in other systems, node management, exports and (optionally) commands. Sign in with password plus 2FA, or give an integration its own service key with chosen permissions, lifetime and allowed addresses |
 | **Data lake** | A second MariaDB replicates the hot database live and keeps every row for good: metrics, rollups, events, activity and account history. Exports and history queries read from it. An optional hot retention policy (off by default) keeps only the last week, month, quarter, semester or year on the hot database, and never deletes what the lake has not got |
 | **Architecture detection** | 32-bit (ARMv7) and 64-bit (ARM64) detected automatically, shown as badges and filters |
+| **Hardware lifecycle** | Every check also reads each node's board serial, SD card or disk, network adapter and OS install, so a swapped SD card or board shows as **Hardware changed** ("SD card or disk replaced", "Board replaced") for an operator to confirm (with the reason) or reject as unexpected. A new node can be marked as the replacement of a broken one, which is retired with its history kept. **Anyone can report an issue** on a node (power supply, SD card, board...); operators resolve it. A fleet Hardware page shows faults per 100 nodes, time to fix, downtime and how long each kind of part lasts, with CSV, an API with a narrow `report` permission and signed webhooks ([docs](docs/HARDWARE.md)) |
 
 ### Security and access
 | Capability | What it does |
@@ -200,7 +201,7 @@ flowchart LR
 | **Role-based access** | `monitor` (read-only), `operator` (fleet control), `administrator` (users and platform), enforced on every route |
 | **Hardened login** | Account lockout, per-IP rate limiting, forced password change, and login errors that never reveal which usernames exist |
 | **Account recovery** | Users request a reset from an admin (which also resets their 2FA); admins use an emailed link or a backup code |
-| **Admin governance** | At most 3 admins; the owner (primary admin) has full control over every account; other admins manage only monitors and operators; nobody can change the owner |
+| **Admin governance** | At most 5 admins; the owner (primary admin) is permanent and has full control over every account; other admins manage only monitors and operators; nobody can change the owner |
 | **Sign-up approval** | Anyone can request an account; an admin approves it with a role |
 | **Session control** | One device at a time by default, up to 4 per user (set by an admin). Each device is listed by type and can be signed out; idle sessions ask "still there?" and sign out |
 | **Node login policy** | After repeated rejected logins (or one Tailscale SSH browser-check refusal) EdgeShell stops logging in to that node, so it never repeats a rejected password (no guessing, no fail2ban bans on the nodes). The pause survives restarts; nodes resume by themselves when their SSH server changes or the tailnet policy is fixed, or with **Retry paused logins** |
@@ -223,7 +224,7 @@ flowchart LR
 | **Sandbox** | EdgeShell plus a 6-node emulated fleet and a full end-to-end suite in one command |
 | **Issue portal** | Built-in support tickets with threaded replies and optional email via [useSend](https://usesend.com) |
 | **Database portability** | SQLite (WAL) for development, MariaDB in production, PostgreSQL supported; one-command export and import |
-| **Quality gates** | Required CI before every merge: lint, secret scan, Bandit, pip-audit and CodeQL, 170+ unit tests on three Python versions with a coverage floor, 375+ browser checks with 1500 nodes, a data lake test on real MariaDB, then image audit and end-to-end tests (including the API with real 2FA) on amd64 and arm64 |
+| **Quality gates** | Required CI before every merge: lint, secret scan, Bandit, pip-audit and CodeQL, 320+ unit tests on three Python versions with a coverage floor, 500+ browser checks with 1500 nodes, a data lake test on real MariaDB, then image audit and end-to-end tests (including the API with real 2FA) on amd64 and arm64 |
 
 ## Quick start
 
@@ -377,7 +378,7 @@ Change [`sandbox/fleet.json`](sandbox/fleet.json) to test any mix, up to 20 node
 
 ```bash
 bash sandbox/run.sh                                                 # build from source, test, tear down
-EDGESHELL_IMAGE=devprincekumar/edgeshell:1.12.1 bash sandbox/run.sh  # test a published image
+EDGESHELL_IMAGE=devprincekumar/edgeshell:1.13.0 bash sandbox/run.sh  # test a published image
 ```
 
 **Your own workflow:** run a change (command, playbook, file rollout) against
@@ -739,6 +740,7 @@ Dependabot keeps Python packages, the base image and Actions up to date.
 | [Roles and access](docs/RBAC.md) | Roles, enforcement, lockout, sessions |
 | [Wiki](https://github.com/855princekumar/edgeshell/wiki) | All of this documentation as a browsable wiki with a sidebar, generated from these files |
 | [MQTT heartbeat](docs/HEARTBEAT.md) | VPN-independent liveness: encrypted heartbeats over a public broker, SenseHive, SLA |
+| [Hardware lifecycle](docs/HARDWARE.md) | Detected replacements, fault reports, replacement nodes, the fleet hardware numbers, API and signed webhooks |
 | [Email](docs/EMAIL.md) | Verification, password resets and ticket mail; free providers (Resend, Brevo, useSend, Gmail) step by step |
 | [VPN and network](docs/VPN-NETWORK.md) | Tailscale, WireGuard, container networking |
 | [Database migration](docs/MIGRATION.md) | SQLite to MariaDB or PostgreSQL |
