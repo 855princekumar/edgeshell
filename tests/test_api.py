@@ -81,7 +81,7 @@ def test_password_then_2fa_gives_a_token(app):
                                             'code': totp(secret, int(time.time() // 30) + 1)})
     assert r.status_code == 200, r.get_json()
     tok = r.get_json()['token']
-    assert tok.startswith('est_') and r.get_json()['scopes'] == ['control', 'read', 'write']
+    assert tok.startswith('est_') and r.get_json()['scopes'] == ['control', 'read', 'report', 'write']
     # the challenge is single use
     assert c.post('/api/v1/auth/verify', json={'challenge': body['challenge'], 'code': totp(secret)}).status_code == 401
     me = c.get('/api/v1/auth/whoami', headers=H(tok)).get_json()

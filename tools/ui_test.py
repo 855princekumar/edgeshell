@@ -35,7 +35,7 @@ ZOOMS = [('laptop', 1366, 768, z) for z in (0.67, 1.25, 1.5, 2.0)] + \
         [('desktop', 1920, 1080, z) for z in (1.5, 2.0)]
 PAGES = ['/', '/nodes/', '/monitoring/', '/terminal/', '/files/', '/logs/', '/logs/activity',
          '/users/', '/users/add', '/users/api', '/account/', '/account/email', '/account/api', '/account/api/guide', '/tailscale/', '/settings/', '/issues/',
-         '/nodes/add', '/nodes/import']
+         '/nodes/add', '/nodes/import', '/hardware/']
 TYPES = [('pi-node', 0.86, 'site-a-pi-node'), ('gateway', 0.10, 'site-b-gateway'),
          ('mini-pc', 0.02, 'site-c-mini-pc'), ('rtu', 0.02, 'plant-east-gate-sensor-hub-panel')]
 
@@ -56,13 +56,13 @@ LAYOUT_JS = r"""
       + 'px window, widened by ' + wide.slice(0, 3).map(el => name(el) + ' (' + Math.round(el.getBoundingClientRect().width) + 'px)').join(', '));
   }
   const vh = document.documentElement.clientHeight;
-  for (const m of document.querySelectorAll('.modal.show .modal-content, #esHbBox')) {
+  for (const m of document.querySelectorAll('.modal.show .modal-content, #esHbBox, .es-hw-box, #hwGuide')) {
     if (!vis(m)) continue;
     const r = m.getBoundingClientRect();
     if (r.top < -1 || r.bottom > vh + 1 || r.left < -1 || r.right > vw + 1)
       out.push(name(m) + ' does not fit the screen: ' + Math.round(r.top) + ' to ' + Math.round(r.bottom) + ' px in a ' + vh + ' px window');
   }
-  const boxes = [...document.querySelectorAll('.card, .node-card, .stat-card, .cat-card, .topbar, .sidebar, #esCredsOverlay > *, #catEditor > *, #esJobWin > *, #esHbBox, .es-shell > *')]
+  const boxes = [...document.querySelectorAll('.card, .node-card, .stat-card, .cat-card, .topbar, .sidebar, #esCredsOverlay > *, #catEditor > *, #esJobWin > *, #esHbBox, .es-hw-box, #hwGuide, .hw-tile, .es-shell > *')]
     .filter(vis);
   for (const el of document.querySelectorAll('.card, .term-main, .term-nodes, .node-card, .stat-card, .cat-card'))
     if (vis(el) && el.getBoundingClientRect().width < 64)
@@ -173,7 +173,41 @@ def seed(app, nodes, ssh):
                                  ram_percent=random.uniform(10, 90) if up else None, uptime_seconds=3600 + 600 * k))
         db.session.bulk_insert_mappings(SystemMetrics, rows)
         db.session.commit()
-        return made + (1 if ssh else 0), real_id
+        seed_hardware()                          # adds one retired node to the grid
+        return made + 1 + (1 if ssh else 0), real_id
+
+
+def seed_hardware():
+    """Parts, a detected change, low power, faults in every state and a replaced node (ADR 0015)."""
+    from datetime import datetime, timedelta
+    from app import db
+    from app.models.node import Node
+    from app.services import hardware_service as hw
+    first = Node.query.filter(Node.status == 'online', Node.is_deleted.isnot(True)).order_by(Node.id).limit(6).all()
+    t0 = datetime.utcnow() - timedelta(days=120)
+
+    def ident(i, card='c'):
+        return {'model': 'Raspberry Pi 4 Model B Rev 1.4', 'board': f'10000000aa{i:06x}', 'storage': f'{card}{i:030x}',
+                'storage_model': 'SD64G 64 GB', 'network': f'dc:a6:32:00:{i // 256:02x}:{i % 256:02x}', 'iface': 'eth0',
+                'os': f'{i:032x}', 'os_name': 'Debian GNU/Linux 12 (bookworm)', 'throttled': 0}
+    for i, n in enumerate(first):
+        hw.observe(n, ident(i), now=t0)
+    db.session.commit()
+    hw.observe(first[0], dict(ident(0, 'd'), os='f' * 32), now=datetime.utcnow() - timedelta(hours=3))   # card swapped
+    hw.observe(first[1], dict(ident(1), throttled=0x50005))                                           # low power
+    db.session.commit()
+    hw.report_fault([first[1]], 'power', 'Reboots several times a day', 'admin', severity='high')
+    hw.report_fault(first[2:4], 'storage', 'Read-only file system after power loss', 'admin')
+    done = hw.report_fault([first[4]], 'network', 'Ethernet port loose', 'admin')[0]
+    done.created_at = datetime.utcnow() - timedelta(hours=30)
+    db.session.commit()
+    hw.update_fault(done, 'resolve', 'admin', resolution='reseated', note='cable clipped in')
+    old = Node(name='site-z-pi-node-retired', ip_address='10.250.0.9', username='pi', status='offline',
+               node_type='pi-node', location='site-a')
+    old.password = 'x'
+    db.session.add(old)
+    db.session.commit()
+    hw.link_replacement(first[5], old, 'admin', failed=['board'], note='water damage')
 
 
 class Report:
@@ -372,7 +406,7 @@ def run_interactions(pw, base, rep, total, real_id, label, w, h, scale):
     d.save_as(path)
     with open(path, encoding='utf-8') as f:
         lines = f.read().splitlines()
-    rep.check(f'{label}: export CSV has a row per node', len(lines) - 1 == total and 'uptime_percent' in lines[0],
+    rep.check(f'{label}: export CSV has a row per node', len(lines) - 1 == total - 1 and   # not the retired node 'uptime_percent' in lines[0],
               f'{len(lines) - 1} rows', page)
     rep.check(f'{label}: export progress reaches 100%',
               page.get_attribute('#expBar', 'style').replace(' ', '').find('width:100%') >= 0,
@@ -460,6 +494,83 @@ def run_interactions(pw, base, rep, total, real_id, label, w, h, scale):
     rep.check(f'{label}: switching Auto on is saved', click_and_wait(True), '', page)
     page.goto(base + '/monitoring/')
     rep.check(f'{label}: Auto refresh back on when switched on', page.is_checked('#autoRefreshToggle'), '', page)
+
+    # Hardware lifecycle (ADR 0015): history, report, decide a change, resolve a fault, numbers
+    from app.models.hardware import HardwareChange, HardwareFault
+    with _APP.app_context():
+        before = HardwareFault.query.count()
+        changed = HardwareChange.query.filter_by(status='pending').first()
+        changed_node = changed.node_name if changed else None
+    page.goto(base + '/nodes/')
+    page.wait_for_selector('.es-hw-history')
+    if changed_node:
+        page.fill('#nodeSearch', changed_node)
+        page.evaluate("filterNodes()")
+        rep.check(f'{label}: a detected change shows on the card', page.locator(f'#nodeGrid .node-card:visible .es-hw-history', has_text='Hardware changed').count() == 1, '', page)
+    page.locator('.node-card:visible .es-hw-history', has_text='Hardware').last.click()
+    page.wait_for_selector('.es-hw-box')
+    page.wait_for_selector('.es-hw-box table', timeout=10000)
+    txt = page.inner_text('.es-hw-box')
+    rep.check(f'{label}: hardware history lists the parts', 'Parts in service' in txt and 'Board' in txt, txt[:200], page)
+    issues = page.evaluate(LAYOUT_JS)
+    rep.check(f'{label}: hardware history fits the screen', not issues, '; '.join(issues[:4]), page)
+    if changed_node:
+        page.locator('.es-hw-box button', has_text='Review').click()
+        page.wait_for_selector('#esHwChange #esHwConfirm')
+        issues = page.evaluate(LAYOUT_JS)
+        rep.check(f'{label}: the change dialog fits the screen', not issues, '; '.join(issues[:4]), page)
+        page.click('#esHwConfirm')
+        page.wait_for_timeout(1500)
+        with _APP.app_context():
+            st = HardwareChange.query.filter_by(node_name=changed_node).order_by(HardwareChange.id.desc()).first().status
+        rep.check(f'{label}: confirming a change is saved', st == 'confirmed', st, page)
+    page.keyboard.press('Escape')
+    page.goto(base + '/nodes/')
+    page.fill('#nodeSearch', '')
+    page.evaluate("filterNodes()")
+    with _APP.app_context():
+        before = HardwareFault.query.count()        # confirming with "a part failed" recorded one
+    page.locator('.node-card:visible .es-hw-report').first.click()
+    page.wait_for_selector('#esHwSymptom')
+    issues = page.evaluate(LAYOUT_JS)
+    rep.check(f'{label}: the report dialog fits the screen', not issues, '; '.join(issues[:4]), page)
+    page.select_option('#esHwComp', 'enclosure')
+    page.fill('#esHwSymptom', f'Door does not close ({label})')
+    page.click('#esHwReportGo')
+    page.wait_for_timeout(1500)
+    with _APP.app_context():
+        after = HardwareFault.query.count()
+        fid = HardwareFault.query.filter(HardwareFault.symptom.like('Door does not close%')).order_by(HardwareFault.id.desc()).first()
+        fid = fid.id if fid else None
+    rep.check(f'{label}: a fault is reported from the card', after == before + 1, f'{before} -> {after}', page)
+    page.goto(base + '/hardware/')
+    page.wait_for_selector('#faultList table')
+    rep.check(f'{label}: the Hardware page lists open faults', page.locator('#faultList tr').count() >= 4,
+              page.locator('#faultList tr').count(), page)
+    if fid:
+        page.locator('#faultList tr', has_text='Door does not close').first.locator('a', has_text='Open').click()
+        page.wait_for_selector('#esHwResolve')
+        issues = page.evaluate(LAYOUT_JS)
+        rep.check(f'{label}: the fault dialog fits the screen', not issues, '; '.join(issues[:4]), page)
+        page.click('#esHwResolve')
+        page.wait_for_timeout(1500)
+        with _APP.app_context():
+            st = HardwareFault.query.get(fid).status
+        rep.check(f'{label}: resolving a fault is saved', st == 'resolved', st, page)
+        page.keyboard.press('Escape')
+    for tab, sel in (('changes', '#changeList'), ('inventory', '#invList table'), ('numbers', '#numbers table')):
+        page.click(f'.hw-tab[data-tab="{tab}"]')
+        page.wait_for_selector(sel, timeout=10000)
+        issues = page.evaluate(LAYOUT_JS)
+        rep.check(f'{label}: Hardware {tab} tab fits', not issues, '; '.join(issues[:4]), page)
+    rep.check(f'{label}: the numbers show service life', 'Service life of parts' in page.inner_text('#numbers'),
+              page.inner_text('#numbers')[:200], page)
+    page.click('#hwGuideBtn')
+    page.wait_for_selector('#hwGuide')
+    issues = page.evaluate(LAYOUT_JS)
+    rep.check(f'{label}: the hardware guide fits the screen', not issues, '; '.join(issues[:4]), page)
+    page.keyboard.press('Escape')
+    page.click('.hw-tab[data-tab="faults"]')
 
     # Recycle Bin: "Delete all permanently" opened from the side panel must
     # accept typing (the panel used to keep the keyboard focus)

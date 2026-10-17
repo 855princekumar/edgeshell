@@ -43,6 +43,17 @@ class Node(db.Model):
     hb_agent_version = db.Column(db.String(16))
     is_deleted = db.Column(db.Boolean, default=False, index=True)  # recycle bin
     deleted_at = db.Column(db.DateTime)
+    # Hardware lifecycle (ADR 0015): what serves this position, and its lineage
+    hw_fingerprint = db.Column(db.String(64))         # hash of the last hardware identity seen
+    hw_scanned_at = db.Column(db.DateTime)
+    hw_model = db.Column(db.String(128))              # e.g. the board model
+    hw_os = db.Column(db.String(128))
+    hw_undervoltage_at = db.Column(db.DateTime)       # the board last reported low power
+    hw_alert = db.Column(db.Boolean, default=False)   # a hardware change was rejected as unexpected
+    hw_replace_prompt = db.Column(db.String(12))      # pending | dismissed | done (new nodes)
+    replaces_id = db.Column(db.Integer)               # the node this one replaced
+    replaced_by_id = db.Column(db.Integer)
+    retired_at = db.Column(db.DateTime)               # replaced by another node; kept with its history
 
     # Login policy: after failed logins EdgeShell stops logging in to the node
     # (no password guessing, no lockouts) until the cause is fixed. See
@@ -117,6 +128,10 @@ class Node(db.Model):
             'login_paused': self.login_paused_at is not None,
             'login_paused_at': iso_utc(self.login_paused_at),
             'login_pause_reason': self.login_pause_reason,
+            'hardware': {'model': self.hw_model, 'os': self.hw_os, 'scanned_at': iso_utc(self.hw_scanned_at),
+                         'undervoltage_at': iso_utc(self.hw_undervoltage_at), 'alert': bool(self.hw_alert),
+                         'replaces_id': self.replaces_id, 'replaced_by_id': self.replaced_by_id,
+                         'retired_at': iso_utc(self.retired_at)},
             'heartbeat': {'installed': self.hb_installed, 'status': self.hb_status,
                           'last_seen': iso_utc(self.hb_last_seen), 'since': iso_utc(self.hb_since),
                           'lwt_at': iso_utc(self.hb_lwt_at), 'agent_version': self.hb_agent_version},

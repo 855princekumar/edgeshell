@@ -277,6 +277,7 @@
         .dot-warning { background: var(--warning); }
         .dot-failed { background: var(--danger); }
         .dot-unknown { background: var(--gray-300); }
+        .dot-retired { background: var(--gray-200); }
 
         .node-name { font-weight: 600; font-size: 14px; color: var(--gray-900); }
         .node-meta { font-size: 11.5px; color: var(--gray-500); margin-top: 1px; }
@@ -322,6 +323,7 @@
         .dot-auth_failed { background: var(--warning) !important; }
         .status-failed { background: var(--danger-bg); color: var(--danger); }
         .status-unknown { background: var(--gray-100); color: var(--gray-400); }
+        .status-retired { background: var(--gray-100); color: var(--gray-500); }
 
         /* BUTTONS */
         .btn {
@@ -538,6 +540,10 @@
             </a>
             <a href="{{ url_for('monitoring.index') }}" class="nav-item {% if 'monitoring.' in request.endpoint %}active{% endif %}">
                 <i class="bi bi-activity"></i> Monitoring
+            </a>
+            <a href="{{ url_for('hardware.index') }}" class="nav-item {% if 'hardware.' in request.endpoint %}active{% endif %}">
+                <i class="bi bi-cpu"></i> Hardware
+                {% if HW_ALERTS %}<span class="nav-badge" title="Open faults and hardware changes to review">{{ HW_ALERTS }}</span>{% endif %}
             </a>
         </div>
 
@@ -1063,6 +1069,8 @@
     <!-- Apache ECharts -->
     <script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script>
     <script src="{{ url_for('static', filename='js/hb_history.js') }}"></script>
+    <script>window.ES_HW_CAN_RESOLVE = {{ (current_user.is_authenticated and current_user.can_execute())|tojson }};</script>
+    <script src="{{ url_for('static', filename='js/hardware.js') }}"></script>
     {% block scripts %}{% endblock %}
     {% block extra_js %}{% endblock %}
 </body>

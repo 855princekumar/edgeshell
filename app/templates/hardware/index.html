@@ -1,0 +1,384 @@
+{% extends "base.html" %}
+{% block title %}Hardware{% endblock %}
+{% block content %}
+<div class="page-header">
+    <div>
+        <div class="page-title">Hardware</div>
+        <div class="page-subtitle">Faults, replacements and parts across the fleet. Everyone can report an issue; operators and administrators resolve them.</div>
+    </div>
+    <div class="flex gap-2" style="flex-wrap:wrap">
+        <button type="button" class="btn btn-outline" id="hwGuideBtn" title="How the hardware log works"><i class="bi bi-info-circle"></i> Guide</button>
+        <button type="button" class="btn btn-primary" id="hwReportBtn"><i class="bi bi-exclamation-triangle"></i> Report issue</button>
+    </div>
+</div>
+
+<div class="hw-tiles" id="hwTiles">
+    <div class="card hw-tile"><div class="hw-tile-label">Open faults</div><div class="hw-tile-value" id="tOpen">-</div><div class="hw-tile-sub" id="tOpenSub"></div></div>
+    <div class="card hw-tile"><div class="hw-tile-label">Faults per 100 nodes, 30 days</div><div class="hw-tile-value" id="tRate">-</div><div class="hw-tile-sub" id="tRateSub"></div></div>
+    <div class="card hw-tile"><div class="hw-tile-label">Mean time to fix</div><div class="hw-tile-value" id="tFix">-</div><div class="hw-tile-sub" id="tFixSub"></div></div>
+    <div class="card hw-tile"><div class="hw-tile-label">Changes to review</div><div class="hw-tile-value" id="tPending">-</div><div class="hw-tile-sub" id="tPendingSub"></div></div>
+</div>
+
+<div class="card">
+    <div class="card-body" style="padding:12px 16px">
+        <div class="hw-tabs" role="tablist">
+            <button type="button" class="hw-tab active" data-tab="faults" role="tab">Faults</button>
+            <button type="button" class="hw-tab" data-tab="changes" role="tab">Detected changes</button>
+            <button type="button" class="hw-tab" data-tab="inventory" role="tab">Parts in service</button>
+            <button type="button" class="hw-tab" data-tab="numbers" role="tab">Numbers</button>
+            {% if current_user.is_admin() %}<button type="button" class="hw-tab" data-tab="settings" role="tab">Settings</button>{% endif %}
+        </div>
+
+        <section class="hw-pane" id="pane-faults">
+            <div class="flex gap-2 items-center" style="flex-wrap:wrap;margin:12px 0">
+                <select class="form-select form-select-sm" id="fStatus" style="width:auto" aria-label="Status">
+                    <option value="unresolved">Open and in progress</option><option value="open">Open</option>
+                    <option value="in_progress">In progress</option><option value="resolved">Resolved</option><option value="">All</option>
+                </select>
+                <select class="form-select form-select-sm" id="fComp" style="width:auto" aria-label="Component">
+                    <option value="">All components</option>
+                    {% for c in categories %}<option value="{{ c.key }}">{{ c.label }}</option>{% endfor %}
+                </select>
+                <input class="form-control form-control-sm" id="fSearch" placeholder="Search node or symptom" style="max-width:220px" maxlength="64">
+                <a class="btn btn-sm btn-outline" style="margin-left:auto" href="{{ url_for('hardware.export', what='faults') }}"><i class="bi bi-download"></i> Faults CSV</a>
+            </div>
+            <div id="faultList"></div>
+            <div class="flex gap-2 items-center" style="margin-top:8px"><button type="button" class="btn btn-sm btn-outline" id="fMore" style="display:none">Show more</button></div>
+        </section>
+
+        <section class="hw-pane" id="pane-changes" hidden>
+            <div class="flex gap-2 items-center" style="flex-wrap:wrap;margin:12px 0">
+                <select class="form-select form-select-sm" id="cStatus" style="width:auto" aria-label="Status">
+                    <option value="pending">Waiting for a decision</option><option value="confirmed">Confirmed</option>
+                    <option value="rejected">Rejected</option><option value="reverted">Reverted</option><option value="all">All</option>
+                </select>
+                <span class="text-xs text-muted">EdgeShell reads each node's board serial, SD card or disk, network adapter and OS install. A difference opens a change here.</span>
+                <a class="btn btn-sm btn-outline" style="margin-left:auto" href="{{ url_for('hardware.export', what='changes') }}"><i class="bi bi-download"></i> Changes CSV</a>
+            </div>
+            <div id="changeList"></div>
+        </section>
+
+        <section class="hw-pane" id="pane-inventory" hidden>
+            <div class="flex gap-2 items-center" style="flex-wrap:wrap;margin:12px 0">
+                <select class="form-select form-select-sm" id="iKind" style="width:auto" aria-label="Part">
+                    <option value="">All parts</option><option value="board">Boards</option><option value="storage">SD cards and disks</option>
+                    <option value="network">Network adapters</option><option value="os">OS installs</option><option value="power">Power supplies</option>
+                </select>
+                <input class="form-control form-control-sm" id="iSearch" placeholder="Search" style="max-width:200px" maxlength="64">
+                <a class="btn btn-sm btn-outline" style="margin-left:auto" href="{{ url_for('hardware.export', what='components') }}"><i class="bi bi-download"></i> All parts CSV</a>
+            </div>
+            <div id="invList"></div>
+        </section>
+
+        <section class="hw-pane" id="pane-numbers" hidden>
+            <div class="flex gap-2 items-center" style="margin:12px 0">
+                <label class="text-sm" for="nDays">Period</label>
+                <select class="form-select form-select-sm" id="nDays" style="width:auto">
+                    <option value="30">30 days</option><option value="90" selected>90 days</option><option value="365">1 year</option>
+                </select>
+            </div>
+            <div id="numbers"></div>
+        </section>
+
+        {% if current_user.is_admin() %}
+        <section class="hw-pane" id="pane-settings" hidden>
+            <h3 class="hw-h">Fault categories</h3>
+            <p class="text-sm text-muted">The components people choose from when they report. Built-in ones can be renamed or hidden; add your own (batteries, modems, cameras...).</p>
+            <div id="catEditor"></div>
+            <div class="flex gap-2" style="margin:8px 0 20px"><button type="button" class="btn btn-sm btn-outline" id="catAdd">Add category</button>
+                <button type="button" class="btn btn-sm btn-primary" id="catSave">Save categories</button><span id="catMsg" class="text-sm"></span></div>
+            <h3 class="hw-h">Webhooks</h3>
+            <p class="text-sm text-muted">Tell other software (ticketing, chat, maintenance apps) about hardware events. Each delivery is signed with the webhook's secret: see docs/HARDWARE.md for verifying it.</p>
+            <div id="hookList"></div>
+            <div class="card" style="margin-top:10px"><div class="card-body" style="padding:12px 14px">
+                <div class="flex gap-2" style="flex-wrap:wrap">
+                    <input class="form-control form-control-sm" id="hName" placeholder="Name, e.g. tickets" maxlength="80" style="max-width:180px">
+                    <input class="form-control form-control-sm" id="hUrl" placeholder="https://receiver.example.com/hook" maxlength="500" style="flex:1;min-width:220px">
+                </div>
+                <div style="margin:8px 0" id="hEvents">
+                    {% for e in events %}<label class="text-sm" style="margin-right:12px;white-space:nowrap"><input type="checkbox" value="{{ e }}" {{ 'checked' if e in ('hardware.fault_reported', 'hardware.change_detected') }}> {{ e }}</label>{% endfor %}
+                </div>
+                <button type="button" class="btn btn-sm btn-primary" id="hAdd">Add webhook</button> <span id="hMsg" class="text-sm"></span>
+            </div></div>
+        </section>
+        {% endif %}
+    </div>
+</div>
+
+<style>
+.hw-tiles { display:grid; grid-template-columns:repeat(auto-fit, minmax(180px, 1fr)); gap:12px; margin-bottom:16px; }
+.hw-tile { padding:14px 16px; min-width:0; }
+.hw-tile-label { font-size:12.5px; color:var(--gray-500); }
+.hw-tile-value { font-size:26px; font-weight:700; color:var(--gray-900); line-height:1.25; }
+.hw-tile-sub { font-size:12px; color:var(--gray-500); min-height:16px; }
+.hw-tabs { display:flex; gap:4px; flex-wrap:wrap; border-bottom:1px solid var(--gray-200); }
+.hw-tab { border:0; background:none; padding:8px 12px; font-weight:600; color:var(--gray-500); border-bottom:2px solid transparent; cursor:pointer; }
+.hw-tab.active { color:var(--primary); border-bottom-color:var(--primary); }
+.hw-h { font-size:15px; font-weight:700; margin:14px 0 4px; }
+.hw-table { width:100%; border-collapse:collapse; font-size:13.5px; }
+.hw-table th { text-align:left; color:var(--gray-500); font-weight:600; padding:6px 8px; border-bottom:1px solid var(--gray-200); white-space:nowrap; }
+.hw-table td { padding:7px 8px; border-bottom:1px solid var(--gray-100); vertical-align:top; white-space:nowrap; }
+.hw-table td.wrap { white-space:normal; min-width:180px; overflow-wrap:anywhere; }
+.hw-wrap { overflow-x:auto; }
+.hw-bar { height:8px; border-radius:4px; background:var(--primary); min-width:2px; }
+.hw-grid2 { display:grid; grid-template-columns:repeat(auto-fit, minmax(300px, 1fr)); gap:16px; }
+.hw-empty { color:var(--gray-500); padding:16px 4px; }
+.hw-pill { display:inline-block; padding:1px 8px; border-radius:999px; font-size:12px; font-weight:600; }
+</style>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+(function () {
+    'use strict';
+    const NODES = {{ nodes|map('list')|list|tojson }};
+    const CATS = {{ categories|tojson }};
+    const IS_ADMIN = {{ current_user.is_admin()|tojson }};
+    const label = k => (CATS.find(c => c.key === k) || {}).label || k;
+    const when = iso => iso ? new Date(iso).toLocaleString() : '-';
+    const $ = id => document.getElementById(id);
+    function el(tag, text, css) { const e = document.createElement(tag); if (text != null) e.textContent = text; if (css) e.style.cssText = css; return e; }
+    const PILL = {open: ['#fee2e2', '#991b1b'], in_progress: ['#fef3c7', '#92400e'], resolved: ['#dcfce7', '#166534'],
+                  pending: ['#fef3c7', '#92400e'], confirmed: ['#dcfce7', '#166534'], rejected: ['#fee2e2', '#991b1b'],
+                  reverted: ['#f3f4f6', '#374151'], low: ['#f3f4f6', '#374151'], normal: ['#e0e7ff', '#3730a3'],
+                  high: ['#fef3c7', '#92400e'], critical: ['#fee2e2', '#991b1b']};
+    function pill(t) { const c = PILL[t] || ['#f3f4f6', '#374151']; const s = el('span', String(t).replace('_', ' ')); s.className = 'hw-pill'; s.style.background = c[0]; s.style.color = c[1]; return s; }
+    // Cells stay on one line (the table scrolls sideways on small screens); columns in `wrap` may wrap.
+    function table(parent, heads, rows, wrap) {
+        const w = el('div'); w.className = 'hw-wrap';
+        const t = el('table'); t.className = 'hw-table';
+        const h = el('tr'); heads.forEach(x => h.appendChild(el('th', x))); t.appendChild(h);
+        rows.forEach(r => { const tr = el('tr'); r.forEach((c, i) => { const td = el('td'); if ((wrap || []).includes(i)) td.className = 'wrap';
+            if (c instanceof Node) td.appendChild(c); else td.textContent = c == null ? '' : c; tr.appendChild(td); }); t.appendChild(tr); });
+        w.appendChild(t); parent.appendChild(w);
+    }
+    function link(text, fn) { const a = el('a', text, 'cursor:pointer'); a.onclick = fn; return a; }
+    const get = url => fetch(url, {credentials: 'same-origin'}).then(r => r.json());
+    const post = (url, body) => fetch(url, {method: 'POST', headers: {'Content-Type': 'application/json'}, credentials: 'same-origin', body: JSON.stringify(body || {})})
+        .then(r => r.json().then(d => { if (!r.ok || d.success === false) throw new Error(d.message || ('HTTP ' + r.status)); return d; }));
+
+    // ---------------------------------------------------------------- tiles
+    function tiles() {
+        get('/hardware/api/stats?days=90').then(s => {
+            $('tOpen').textContent = s.open + s.in_progress; $('tOpenSub').textContent = s.in_progress + ' in progress';
+            $('tRate').textContent = s.faults_per_100_nodes_30d; $('tRateSub').textContent = s.nodes + ' nodes in the fleet';
+            $('tFix').textContent = s.mean_hours_to_fix == null ? '-' : s.mean_hours_to_fix + ' h';
+            $('tFixSub').textContent = s.median_hours_to_fix == null ? 'no resolved faults yet' : 'median ' + s.median_hours_to_fix + ' h, 90 days';
+            $('tPending').textContent = s.pending_changes; $('tPendingSub').textContent = s.nodes_flagged ? s.nodes_flagged + ' node(s) flagged as unexpected' : '';
+        });
+    }
+
+    // ---------------------------------------------------------------- faults
+    let fPage = 1;
+    function faults(more) {
+        fPage = more ? fPage + 1 : 1;
+        const q = new URLSearchParams({status: $('fStatus').value, component: $('fComp').value, q: $('fSearch').value.trim(), page: fPage});
+        get('/hardware/api/faults?' + q).then(d => {
+            const box = $('faultList');
+            if (!more) box.textContent = '';
+            if (!d.faults.length && !more) { box.appendChild(el('div', 'No faults here.', '')).className = 'hw-empty'; $('fMore').style.display = 'none'; return; }
+            table(box, ['#', 'Node', 'Component', 'Symptom', 'Severity', 'Status', 'Reported', 'By', ''], d.faults.map(f => [
+                f.id, link(f.node_name, () => esHardwareHistory(f.node_id, f.node_name)), label(f.component),
+                f.symptom + (f.undervoltage_hint ? ' (low power seen before)' : ''), pill(f.severity), pill(f.status), when(f.created_at),
+                f.reported_by + (f.reported_via !== 'web' ? ' (' + f.reported_via + ')' : ''), link('Open', () => esFaultDialog(f.id))]), [3]);
+            $('fMore').style.display = d.page < d.pages ? '' : 'none';
+        });
+    }
+
+    // ---------------------------------------------------------------- changes
+    function changes() {
+        get('/hardware/api/changes?status=' + $('cStatus').value).then(d => {
+            const box = $('changeList'); box.textContent = '';
+            if (!d.changes.length) { box.appendChild(el('div', 'Nothing here.')).className = 'hw-empty'; return; }
+            table(box, ['Detected', 'Node', 'What changed', 'Status', 'Decided', ''], d.changes.map(c => [
+                when(c.detected_at), link(c.node_name, () => esHardwareHistory(c.node_id, c.node_name)), c.summary, pill(c.status),
+                c.decided_by ? c.decided_by + ', ' + when(c.decided_at) + (c.reason ? ' (' + c.reason + ')' : '') : '',
+                link(c.status === 'pending' && window.ES_HW_CAN_RESOLVE ? 'Review' : 'Details', () => esDecideChange(c))]), [2]);
+        });
+    }
+
+    // ---------------------------------------------------------------- inventory
+    let inv = [];
+    function inventory() {
+        get('/hardware/api/inventory?kind=' + $('iKind').value).then(d => { inv = d.components; drawInv(); });
+    }
+    function drawInv() {
+        const q = $('iSearch').value.trim().toLowerCase();
+        const rows = inv.filter(c => !q || [c.node_name, c.model, c.identifier].join(' ').toLowerCase().includes(q));
+        const box = $('invList'); box.textContent = '';
+        if (!rows.length) { box.appendChild(el('div', 'No parts recorded yet. They are read with each node\'s next successful check.')).className = 'hw-empty'; return; }
+        table(box, ['Node', 'Part', 'Model', 'Identifier', 'In service since', 'Days'], rows.slice(0, 2000).map(c => [
+            link(c.node_name, () => esHardwareHistory(c.node_id, c.node_name)), c.label, c.model || '', c.identifier || '',
+            (c.installed_known ? '' : 'before ') + when(c.installed_at), c.service_days == null ? '' : Math.round(c.service_days)]));
+    }
+
+    // ---------------------------------------------------------------- numbers
+    function numbers() {
+        get('/hardware/api/stats?days=' + $('nDays').value).then(s => {
+            const box = $('numbers'); box.textContent = '';
+            const g = el('div'); g.className = 'hw-grid2'; box.appendChild(g);
+            const card = title => { const c = el('div'); c.appendChild(el('h3', title)).className = 'hw-h'; g.appendChild(c); return c; };
+            const top = Math.max(1, ...s.by_component.map(x => x.faults));
+            const bar = (v, max) => { const w = el('div', null, 'width:120px'); if (v) { const b = el('div'); b.className = 'hw-bar';
+                b.style.width = Math.round(100 * v / max) + '%'; w.appendChild(b); } return w; };
+            let c = card('Faults by component, ' + s.days + ' days (' + s.faults + ')');
+            if (s.by_component.length) table(c, ['Component', 'Faults', ''], s.by_component.map(x => [x.label, x.faults, bar(x.faults, top)]));
+            else c.appendChild(el('div', 'No faults in this period.')).className = 'hw-empty';
+            const mtop = Math.max(1, ...s.monthly.map(m => m.total));
+            c = card('Faults per month');
+            table(c, ['Month', 'Faults', '', 'Most'], s.monthly.map(m => {
+                const most = Object.entries(m.by_component).sort((a, b) => b[1] - a[1])[0];
+                return [m.month, m.total, bar(m.total, mtop), most ? label(most[0]) + ' (' + most[1] + ')' : ''];
+            }), [3]);
+            c = card('Service life of parts');
+            c.appendChild(el('div', 'Mean days in service until a part failed (d = days). "at least": it was in service before EdgeShell first saw it.', 'font-size:12.5px;color:var(--gray-500);margin-bottom:4px'));
+            if (s.service_life.length) table(c, ['Part', 'Failed', 'Mean life', 'In use', 'Median age'], s.service_life.map(x => [
+                x.label, x.failed, x.mean_days_to_failure == null ? '-' : (x.lower_bound ? 'at least ' : '') + x.mean_days_to_failure + ' d',
+                x.in_service, x.median_age_days == null ? '-' : x.median_age_days + ' d']), [0]);
+            else c.appendChild(el('div', 'No parts recorded yet.')).className = 'hw-empty';
+            c = card('Time to fix and downtime');
+            table(c, ['Measure', 'Value'], [
+                ['Mean time to fix', s.mean_hours_to_fix == null ? '-' : s.mean_hours_to_fix + ' h'],
+                ['Median time to fix', s.median_hours_to_fix == null ? '-' : s.median_hours_to_fix + ' h'],
+                ['Downtime caused (node fully down)', s.downtime_hours + ' h'],
+                ['Replacements', s.replacements + ' (' + s.replacements_per_100_nodes + ' per 100 nodes)'],
+                ['Power faults flagged by low power first', s.power_faults ? s.power_flagged_by_undervoltage + ' of ' + s.power_faults : '-']], [0, 1]);
+            c = card('Nodes with most faults');
+            if (s.top_nodes.length) table(c, ['Node', 'Faults', 'Open'], s.top_nodes.map(r => [link(r.node_name, () => esHardwareHistory(r.node_id, r.node_name)), r.faults, r.open]));
+            else c.appendChild(el('div', 'None.')).className = 'hw-empty';
+            c = card('Locations with most faults');
+            if (s.top_locations.length) table(c, ['Location', 'Faults'], s.top_locations.map(r => [r.location, r.faults]));
+            else c.appendChild(el('div', 'None.')).className = 'hw-empty';
+        });
+    }
+
+    // ---------------------------------------------------------------- settings (administrators)
+    let catRows = [];
+    function catEditor() {
+        get('/hardware/api/categories').then(d => {
+            catRows = d.categories; drawCats();
+        });
+    }
+    function drawCats() {
+        const box = $('catEditor'); box.textContent = '';
+        table(box, ['Key', 'Name', 'Hidden'], catRows.map((c, i) => {
+            const key = el('input'); key.className = 'form-control form-control-sm'; key.value = c.key; key.maxLength = 32; key.disabled = !!c.builtin;
+            key.oninput = () => { c.key = key.value.trim().toLowerCase(); };
+            const name = el('input'); name.className = 'form-control form-control-sm'; name.value = c.label; name.maxLength = 48;
+            name.oninput = () => { c.label = name.value; };
+            const hid = el('input'); hid.type = 'checkbox'; hid.checked = !!c.hidden; hid.onchange = () => { c.hidden = hid.checked; };
+            return [key, name, hid];
+        }));
+    }
+    function hooks() {
+        get('/hardware/api/webhooks').then(d => {
+            const box = $('hookList'); box.textContent = '';
+            if (!d.webhooks.length) { box.appendChild(el('div', 'No webhooks yet.')).className = 'hw-empty'; return; }
+            table(box, ['Name', 'Address', 'Events', 'Last delivery', 'State', ''], d.webhooks.map(h => {
+                const acts = el('span', null, 'display:flex;gap:8px;flex-wrap:wrap');
+                const act = (t, a, confirmText) => acts.appendChild(link(t, () => {
+                    if (confirmText && !confirm(confirmText)) return;
+                    post('/hardware/api/webhooks/' + h.id, {action: a}).then(r => {
+                        if (a === 'test') alert(r.success ? 'Delivered (' + r.delivery.status_code + ').' : 'Failed: ' + ((r.delivery && (r.delivery.error || r.delivery.status_code)) || 'no answer'));
+                        if (a === 'deliveries') alert(r.deliveries.map(x => when(x.at) + '  ' + x.event + '  ' + (x.status_code || x.error) + '  (' + x.attempts + ' tries)').join('\n') || 'None yet.');
+                        hooks();
+                    }).catch(e => alert(e.message));
+                }));
+                act('Test', 'test'); act('Deliveries', 'deliveries'); act(h.active ? 'Disable' : 'Enable', h.active ? 'disable' : 'enable');
+                act('Delete', 'delete', 'Delete the webhook ' + h.name + '?');
+                return [h.name, h.url, h.events.join(', '), h.last_at ? when(h.last_at) + ' (' + (h.last_status || 'error') + ')' : '-',
+                        pill(h.active ? 'active' : 'off'), acts];
+            }));
+        });
+    }
+
+    // ---------------------------------------------------------------- report: pick nodes
+    function pickNodes() {
+        const o = el('div', null, 'position:fixed;inset:0;z-index:99995;background:rgba(15,23,42,.55);display:flex;align-items:center;justify-content:center;padding:12px');
+        const box = el('div', null, 'background:#fff;border-radius:14px;width:100%;max-width:520px;display:flex;flex-direction:column;max-height:calc(100dvh - 24px);overflow:hidden');
+        box.setAttribute('role', 'dialog'); box.setAttribute('aria-modal', 'true'); box.setAttribute('aria-label', 'Choose nodes');
+        box.appendChild(el('div', 'Which nodes have the issue?', 'font-weight:700;font-size:16px;padding:14px 18px;border-bottom:1px solid #e5e7eb'));
+        const search = el('input'); search.className = 'form-control form-control-sm'; search.placeholder = 'Search nodes'; search.style.margin = '10px 18px 0'; search.style.width = 'calc(100% - 36px)';
+        box.appendChild(search);
+        const list = el('div', null, 'overflow:auto;flex:1;min-height:0;padding:8px 18px');
+        const checks = NODES.map(([id, name]) => {
+            const w = el('label', null, 'display:block;padding:3px 0'); const cb = el('input'); cb.type = 'checkbox'; cb.value = id;
+            w.appendChild(cb); w.appendChild(document.createTextNode(' ' + name)); w.dataset.name = name.toLowerCase(); list.appendChild(w);
+            return [cb, name, w];
+        });
+        search.oninput = () => { const q = search.value.trim().toLowerCase(); checks.forEach(([, , w]) => { w.style.display = !q || w.dataset.name.includes(q) ? '' : 'none'; }); };
+        box.appendChild(list);
+        const foot = el('div', null, 'display:flex;gap:8px;justify-content:flex-end;padding:12px 18px;border-top:1px solid #e5e7eb');
+        const cancel = el('button', 'Cancel'); cancel.className = 'btn btn-sm btn-outline'; cancel.onclick = () => o.remove();
+        const next = el('button', 'Next'); next.className = 'btn btn-sm btn-primary'; next.id = 'hwPickNext';
+        next.onclick = () => { const sel = checks.filter(([cb]) => cb.checked); if (!sel.length) return; o.remove();
+            esReportIssue(sel.map(([cb]) => Number(cb.value)), sel.map(([, n]) => n)); };
+        foot.appendChild(cancel); foot.appendChild(next); box.appendChild(foot); o.appendChild(box);
+        o.addEventListener('click', e => { if (e.target === o) o.remove(); });
+        document.body.appendChild(o); search.focus();
+    }
+
+    // ---------------------------------------------------------------- guide
+    function guide() {
+        const steps = [
+            ['Report an issue', 'Anyone signed in: Report issue on a node card, on several selected nodes, here, or through the API. Pick the component and describe the symptom.'],
+            ['Operators resolve', 'Open a fault, mark it in progress, add notes, and resolve it: replaced, repaired, reseated or no fault found. A replaced power supply or peripheral can get the new part\'s serial, which starts its service life.'],
+            ['Replacements are detected', 'Every check reads the board serial, the SD card or disk, the network adapter and the OS install. If one differs, the node shows "Hardware changed": confirm it (why: a fault, an upgrade, maintenance) or reject it as unexpected, which flags the node (a cloned SD card looks like this).'],
+            ['A new node for a broken one', 'When you add a node that looks like the replacement of an existing one (same location, similar name, the old SD card), EdgeShell asks. Yes: the old node is retired, kept with its history, and both histories show together.'],
+            ['Low power', 'Raspberry Pi boards report under-voltage. The card shows "Low power" and a power supply fault reported afterwards is marked, so you can see how often the warning came first.'],
+            ['The numbers', 'Faults per component and month, per 100 nodes, mean time to fix, downtime, replacements, and how long each kind of part lasts. Export everything as CSV.']];
+        const o = el('div', null, 'position:fixed;inset:0;z-index:99995;background:rgba(15,23,42,.55);display:flex;align-items:center;justify-content:center;padding:12px');
+        const box = el('div', null, 'background:#fff;border-radius:14px;width:100%;max-width:620px;display:flex;flex-direction:column;max-height:calc(100dvh - 24px);overflow:hidden');
+        box.setAttribute('role', 'dialog'); box.setAttribute('aria-modal', 'true'); box.setAttribute('aria-label', 'Hardware guide'); box.id = 'hwGuide';
+        box.appendChild(el('div', 'How the hardware log works', 'font-weight:700;font-size:16px;padding:14px 18px;border-bottom:1px solid #e5e7eb'));
+        const body = el('ol', null, 'overflow:auto;flex:1;min-height:0;padding:12px 18px 12px 36px;margin:0');
+        steps.forEach(([h, t]) => { const li = el('li', null, 'margin-bottom:10px'); li.appendChild(el('b', h + '. ')); li.appendChild(document.createTextNode(t)); body.appendChild(li); });
+        box.appendChild(body);
+        const foot = el('div', null, 'display:flex;justify-content:flex-end;padding:12px 18px;border-top:1px solid #e5e7eb');
+        const ok = el('button', 'Got it'); ok.className = 'btn btn-sm btn-primary'; ok.onclick = () => o.remove(); foot.appendChild(ok); box.appendChild(foot);
+        o.appendChild(box); o.addEventListener('click', e => { if (e.target === o) o.remove(); });
+        document.addEventListener('keydown', function esc(e) { if (e.key === 'Escape') { o.remove(); document.removeEventListener('keydown', esc); } });
+        document.body.appendChild(o);
+    }
+
+    // ---------------------------------------------------------------- wiring
+    const loaders = {faults: () => faults(false), changes, inventory, numbers, settings: () => { catEditor(); hooks(); }};
+    let current = 'faults';
+    function show(tab) {
+        current = tab;
+        document.querySelectorAll('.hw-tab').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
+        document.querySelectorAll('.hw-pane').forEach(p => { p.hidden = p.id !== 'pane-' + tab; });
+        try { localStorage.setItem('es.hw.tab', tab); } catch (e) { /* private window */ }
+        loaders[tab]();
+    }
+    window.esHwRefresh = () => { tiles(); loaders[current](); };
+    document.querySelectorAll('.hw-tab').forEach(b => b.addEventListener('click', () => show(b.dataset.tab)));
+    ['fStatus', 'fComp'].forEach(id => $(id).addEventListener('change', () => faults(false)));
+    let t; $('fSearch').addEventListener('input', () => { clearTimeout(t); t = setTimeout(() => faults(false), 300); });
+    $('fMore').addEventListener('click', () => faults(true));
+    $('cStatus').addEventListener('change', changes);
+    $('iKind').addEventListener('change', inventory);
+    $('iSearch').addEventListener('input', drawInv);
+    $('nDays').addEventListener('change', numbers);
+    $('hwReportBtn').addEventListener('click', pickNodes);
+    $('hwGuideBtn').addEventListener('click', guide);
+    if (IS_ADMIN) {
+        $('catAdd').addEventListener('click', () => { catRows.push({key: '', label: '', hidden: false, builtin: false}); drawCats(); });
+        $('catSave').addEventListener('click', () => post('/hardware/api/categories', {categories: catRows})
+            .then(d => { catRows = d.categories; drawCats(); $('catMsg').textContent = 'Saved.'; })
+            .catch(e => { $('catMsg').textContent = e.message; }));
+        $('hAdd').addEventListener('click', () => {
+            const events = [...document.querySelectorAll('#hEvents input:checked')].map(i => i.value);
+            post('/hardware/api/webhooks', {name: $('hName').value, url: $('hUrl').value, events})
+                .then(d => { $('hMsg').textContent = ''; $('hName').value = ''; $('hUrl').value = '';
+                    prompt('Webhook added. Copy its signing secret now: it is not shown again.', d.secret); hooks(); })
+                .catch(e => { $('hMsg').textContent = e.message; });
+        });
+    }
+    tiles();
+    let start = 'faults';
+    try { start = localStorage.getItem('es.hw.tab') || 'faults'; } catch (e) { /* private window */ }
+    show(loaders[start] && document.querySelector('.hw-tab[data-tab="' + start + '"]') ? start : 'faults');
+})();
+</script>
+{% endblock %}

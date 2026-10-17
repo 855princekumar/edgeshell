@@ -2,6 +2,21 @@
 
 All notable changes are documented here. Format loosely follows Keep a Changelog.
 
+## [1.13.0] - 2026-10-17
+
+### Added
+- **Hardware lifecycle** ([docs](docs/HARDWARE.md), [ADR 0015](docs/adr/0015-hardware-lifecycle.md)). A node is a position; the parts serving it (board, SD card or disk, network adapter, OS install, power supply) have service periods.
+  - Every check reads each node's hardware identity with the metrics (no extra connection, no root). A swapped part shows as **Hardware changed**, named for people ("SD card or disk replaced", "Board replaced (the same SD card in new hardware)", "Operating system reinstalled"). Operators confirm it with the reason (a fault is counted) or reject it as unexpected, which flags the node until its hardware matches the record again.
+  - **Replacement nodes**: adding a node that looks like the replacement of a broken one (same SD card, location, similar name) asks "Is this a replacement?". Yes retires the old node, kept with its history, and joins both histories.
+  - **Fault reports by anyone**, including monitors, from the node card, several selected nodes, the Hardware page or the API. Operators and administrators mark them in progress, add notes and resolve them (replaced, repaired, reseated, no fault found), which records the time to fix and the downtime.
+  - **Low power**: Raspberry Pi under-voltage shows on the card and marks power supply faults reported soon after.
+  - **Hardware page** with open faults, detected changes, parts in service and the numbers: faults per component and month, faults per 100 nodes, mean time to fix, downtime, replacements and service life per kind of part; CSV of faults, parts and changes; a guide. Fault categories are editable by administrators.
+  - **API**: hardware endpoints, and a narrow `report` permission (every role) for field forms and ticketing tools. Hardware events in the event feed.
+  - **Signed webhooks** (HMAC-SHA256, secret shown once and stored encrypted) for fault and change events and node replacements, refusing addresses inside the server's own networks.
+
+### Changed
+- Earlier saved API policies gain the `report` permission unless an administrator turns it off.
+
 ## [1.12.1] - 2026-10-16
 
 ### Fixed

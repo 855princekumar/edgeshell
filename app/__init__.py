@@ -77,10 +77,11 @@ def create_app(config_name='default'):
     from app.routes.account import account_bp
     from app.routes import shell as _shell  # noqa: F401  (registers the WebSocket route)
     from app.routes.nodered import nodered_bp
+    from app.routes.hardware import hardware_bp
 
     for bp in (auth_bp, sensehive_bp, dashboard_bp, nodes_bp, terminal_bp, files_bp, logs_bp,
                settings_bp, users_bp, api_bp, tailscale_bp, monitoring_bp,
-               vpn_bp, health_bp, issues_bp, account_bp, nodered_bp):
+               vpn_bp, health_bp, issues_bp, account_bp, nodered_bp, hardware_bp):
         app.register_blueprint(bp)
 
     # JSON API and health checks are token/session protected but not CSRF-form
@@ -107,6 +108,20 @@ def create_app(config_name='default'):
             return {}
 
     @app.context_processor
+    def _inject_hw_alerts():
+        """Sidebar badge for operators and administrators: open hardware faults
+        and detected changes waiting for a decision (ADR 0015)."""
+        from flask_login import current_user
+        try:
+            if not (current_user.is_authenticated and current_user.can_execute()):
+                return {}
+            from app.models.hardware import HardwareChange, HardwareFault
+            return {'HW_ALERTS': HardwareFault.query.filter(HardwareFault.status == 'open').count()
+                    + HardwareChange.query.filter(HardwareChange.status == 'pending').count()}
+        except Exception:
+            return {}
+
+    @app.context_processor
     def _inject_defaults():
         return {
             'ORGUI_DEFAULT_PORT': app.config['ORGUI_DEFAULT_PORT'],
@@ -124,6 +139,7 @@ def create_app(config_name='default'):
     from app.models import issue as _issue_models  # noqa: F401
     from app.models import ServiceEvent as _svc  # noqa: F401
     from app.models import api as _api_models  # noqa: F401
+    from app.models import hardware as _hw_models  # noqa: F401
     with app.app_context():
         db.create_all()
         _ensure_schema()
@@ -375,6 +391,16 @@ def _ensure_schema():
             'login_paused_at': 'DATETIME',
             'login_pause_reason': 'VARCHAR(16)',
             'ssh_banner': 'VARCHAR(80)',
+            'hw_fingerprint': 'VARCHAR(64)',
+            'hw_scanned_at': 'DATETIME',
+            'hw_model': 'VARCHAR(128)',
+            'hw_os': 'VARCHAR(128)',
+            'hw_undervoltage_at': 'DATETIME',
+            'hw_alert': 'BOOLEAN DEFAULT 0',
+            'hw_replace_prompt': 'VARCHAR(12)',
+            'replaces_id': 'INTEGER',
+            'replaced_by_id': 'INTEGER',
+            'retired_at': 'DATETIME',
         },
         'users': {
             # Sessions moved to the user_sessions table (created by

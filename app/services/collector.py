@@ -33,6 +33,9 @@ from datetime import datetime, timedelta
 
 import paramiko
 
+from app.services import hw_identity
+from app.services.hw_identity import HW_CMD
+
 INTERVAL_S = 30
 WORKERS = 48
 CONNECT_TIMEOUT_S = 8
@@ -65,8 +68,8 @@ METRICS_CMD = (
     # OpenRemoteGUI: installed and its web gateway listening (see orgui_service).
     "( ( [ -d /opt/openremotegui ] || [ -d /etc/openremotegui ] || [ -d \"$HOME/OpenRemoteGUI\" ] ) "
     "&& echo orgui_installed && (ss -ltn 2>/dev/null || netstat -ltn 2>/dev/null) "
-    "| grep -qE '[:.]__ORGUI_PORT__([^0-9]|$)' && echo orgui_running ); echo @@"
-)
+    "| grep -qE '[:.]__ORGUI_PORT__([^0-9]|$)' && echo orgui_running ); echo @@; "
+) + HW_CMD                 # hardware identity (ADR 0015), the last section
 
 
 # ---------------------------------------------------------------- parsing
@@ -150,6 +153,7 @@ def parse_metrics(output):
         'nodered_running': 'nodered_running' in flags,
         'orgui_installed': 'orgui_installed' in flags,
         'orgui_running': 'orgui_running' in flags,
+        'hardware': hw_identity.parse(parts[9]) if len(parts) > 9 else {},
         'collected_at': time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime()),
     }
 
@@ -387,6 +391,12 @@ class Collector:
                 n.orgui_checked_at = datetime.utcnow()
                 n.status, n.last_error = 'online', None
                 n.last_seen = datetime.utcnow()
+                if m.get('hardware'):
+                    try:
+                        from app.services import hardware_service
+                        hardware_service.observe(n, m['hardware'])
+                    except Exception:
+                        logging.getLogger(__name__).warning('hardware check failed for %s', n.name, exc_info=True)
             else:
                 fails = self.failures.get(nid, 0) + 1
                 self.failures[nid] = fails
