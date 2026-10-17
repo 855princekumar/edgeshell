@@ -35,7 +35,7 @@ ZOOMS = [('laptop', 1366, 768, z) for z in (0.67, 1.25, 1.5, 2.0)] + \
         [('desktop', 1920, 1080, z) for z in (1.5, 2.0)]
 PAGES = ['/', '/nodes/', '/monitoring/', '/terminal/', '/files/', '/logs/', '/logs/activity',
          '/users/', '/users/add', '/users/api', '/account/', '/account/email', '/account/api', '/account/api/guide', '/tailscale/', '/settings/', '/issues/',
-         '/nodes/add', '/nodes/import', '/hardware/']
+         '/nodes/add', '/nodes/import', '/hardware/', '/guide/']
 TYPES = [('pi-node', 0.86, 'site-a-pi-node'), ('gateway', 0.10, 'site-b-gateway'),
          ('mini-pc', 0.02, 'site-c-mini-pc'), ('rtu', 0.02, 'plant-east-gate-sensor-hub-panel')]
 
@@ -56,13 +56,13 @@ LAYOUT_JS = r"""
       + 'px window, widened by ' + wide.slice(0, 3).map(el => name(el) + ' (' + Math.round(el.getBoundingClientRect().width) + 'px)').join(', '));
   }
   const vh = document.documentElement.clientHeight;
-  for (const m of document.querySelectorAll('.modal.show .modal-content, #esHbBox, .es-hw-box, #hwGuide')) {
+  for (const m of document.querySelectorAll('.modal.show .modal-content, #esHbBox, .es-hw-box, .welcome')) {
     if (!vis(m)) continue;
     const r = m.getBoundingClientRect();
     if (r.top < -1 || r.bottom > vh + 1 || r.left < -1 || r.right > vw + 1)
       out.push(name(m) + ' does not fit the screen: ' + Math.round(r.top) + ' to ' + Math.round(r.bottom) + ' px in a ' + vh + ' px window');
   }
-  const boxes = [...document.querySelectorAll('.card, .node-card, .stat-card, .cat-card, .topbar, .sidebar, #esCredsOverlay > *, #catEditor > *, #esJobWin > *, #esHbBox, .es-hw-box, #hwGuide, .hw-tile, .es-shell > *')]
+  const boxes = [...document.querySelectorAll('.card, .node-card, .stat-card, .cat-card, .topbar, .sidebar, #esCredsOverlay > *, #catEditor > *, #esJobWin > *, #esHbBox, .es-hw-box, .hw-tile, .es-shell > *')]
     .filter(vis);
   for (const el of document.querySelectorAll('.card, .term-main, .term-nodes, .node-card, .stat-card, .cat-card'))
     if (vis(el) && el.getBoundingClientRect().width < 64)
@@ -271,6 +271,16 @@ def run_layout(pw, base, rep, configs):
             tag = f'{label}{zoom} {path}'
             rep.check(f'{tag} layout', not issues, '; '.join(issues[:6]), page)
             rep.check(f'{tag} no JavaScript errors', not errors, '; '.join(errors[:3]), page)
+            if path.startswith('/guide'):           # every scene of the field guide fits this screen
+                if page.locator('#welcome:not([hidden])').count():
+                    page.click('#start')
+                page.click('#play')
+                bad = []
+                for sid in page.evaluate("[...document.querySelectorAll('.scene')].map(s => s.id.replace('scene-', ''))"):
+                    page.evaluate(f"location.hash = '{sid}'")
+                    page.wait_for_timeout(750)
+                    bad += page.evaluate(GUIDE_FIT_JS)
+                rep.check(f'{tag} every guide scene fits', not bad, ' | '.join(bad[:3]), page)
         page.goto(base + '/logout')             # at most 4 signed-in devices per user
         browser.close()
 
@@ -566,11 +576,25 @@ def run_interactions(pw, base, rep, total, real_id, label, w, h, scale):
     rep.check(f'{label}: the numbers show service life', 'Service life of parts' in page.inner_text('#numbers'),
               page.inner_text('#numbers')[:200], page)
     page.click('#hwGuideBtn')
-    page.wait_for_selector('#hwGuide')
-    issues = page.evaluate(LAYOUT_JS)
-    rep.check(f'{label}: the hardware guide fits the screen', not issues, '; '.join(issues[:4]), page)
-    page.keyboard.press('Escape')
-    page.click('.hw-tab[data-tab="faults"]')
+    page.wait_for_url('**/guide/#find')
+    run_guide(page, rep, label, base)
+
+    # The top bar on every page: the account button looks like a button, the (i) opens the guide
+    page.goto(base + '/nodes/')
+    acc = page.locator('#topbarAccount')
+    look = acc.evaluate("e => { const c = getComputedStyle(e); return [parseFloat(c.borderTopWidth), c.cursor, c.backgroundColor]; }")
+    rep.check(f'{label}: the account name looks like a button (border, pointer)', look[0] >= 1 and look[1] == 'pointer', look, page)
+    box = acc.bounding_box()
+    rep.check(f'{label}: the account button is big enough to tap', box and box['height'] >= 30 and box['width'] >= 30, box, page)
+    acc.click()
+    page.wait_for_url('**/account/')
+    rep.check(f'{label}: the account button opens My account', page.url.endswith('/account/'), page.url, page)
+    page.click('#topbarGuide')
+    page.wait_for_url('**/guide/')
+    page.wait_for_selector('.scene.on')
+    page.click('#backBtn')
+    page.wait_for_url('**/account/')
+    rep.check(f'{label}: closing the guide returns to the page it was opened from', page.url.endswith('/account/'), page.url, page)
 
     # Recycle Bin: "Delete all permanently" opened from the side panel must
     # accept typing (the panel used to keep the keyboard focus)
@@ -580,7 +604,14 @@ def run_interactions(pw, base, rep, total, real_id, label, w, h, scale):
         page.wait_for_selector('#recycleBin.show #binPurgeAll')
         page.click('#binPurgeAll')
         page.wait_for_selector('#bpConfirm')
-        page.click('#bpConfirm')
+        page.wait_for_function("!document.querySelector('.offcanvas.showing, .offcanvas.hiding')", timeout=5000)
+        for _ in range(3):                                   # the side panel may still be letting go of the focus
+            page.click('#bpConfirm')
+            try:
+                page.wait_for_function("document.activeElement && document.activeElement.id === 'bpConfirm'", timeout=1500)
+                break
+            except Exception:
+                pass
         page.keyboard.type('DELETE')                          # real key presses
         typed = page.input_value('#bpConfirm')
         rep.check(f'{label}: Recycle Bin purge accepts typing', typed == 'DELETE', repr(typed), page)
@@ -638,6 +669,63 @@ def run_interactions(pw, base, rep, total, real_id, label, w, h, scale):
         rep.check(f'{label}: closing ends the SSH session on the server', not shell._active, shell._active)
     page.goto(base + '/logout')
     browser.close()
+
+
+GUIDE_FIT_JS = r"""
+() => {
+  const vw = innerWidth, vh = innerHeight, out = [];
+  const d = document.documentElement;
+  if (d.scrollWidth > vw + 1 || d.scrollHeight > vh + 1) out.push('the page scrolls: ' + d.scrollWidth + 'x' + d.scrollHeight + ' in ' + vw + 'x' + vh);
+  const stage = document.getElementById('stage').getBoundingClientRect();
+  const sc = document.querySelector('.scene.on');
+  if (!sc) return ['no scene shown'];
+  for (const el of sc.querySelectorAll('h1, h2, .line, .phone, .tile, .role, .sign, .say, .lvl, .rule, .pi, .endgrid, .go')) {
+    const r = el.getBoundingClientRect();
+    if (!r.width || !r.height) continue;
+    if (r.bottom > stage.bottom + 2 || r.top < stage.top - 2 || r.right > vw + 1 || r.left < -1)
+      out.push(sc.id + ': ' + el.className + ' is outside the screen (' + Math.round(r.top) + '..' + Math.round(r.bottom) + ' of ' + Math.round(stage.top) + '..' + Math.round(stage.bottom) + ')');
+  }
+  const ph = sc.querySelector('.phone');
+  if (ph && ph.getBoundingClientRect().height < Math.min(260, stage.height * 0.45)) out.push(sc.id + ': the phone is only ' + Math.round(ph.getBoundingClientRect().height) + 'px tall');
+  return out.slice(0, 6);
+}
+"""
+
+
+def run_guide(page, rep, label, base):
+    """The field guide: every scene fits the screen, keys and the menu move it, close goes back."""
+    page.wait_for_selector('.scene.on')
+    rep.check(f'{label}: the guide opens straight at the linked topic', page.locator('#scene-find.on').count() == 1,
+              page.url, page)
+    page.click('#play')                                   # stop the autoplay while checking
+    ids = page.evaluate("[...document.querySelectorAll('.scene')].map(s => s.id.replace('scene-', ''))")
+    rep.check(f'{label}: the guide has its topics', len(ids) >= 12, ids, page)
+    bad = []
+    for sid in ids:
+        page.evaluate(f"location.hash = '{sid}'")
+        page.wait_for_timeout(900 if sid not in ('find', 'fill', 'startjob', 'close', 'swap', 'newpi2') else 1500)
+        issues = page.evaluate(GUIDE_FIT_JS)
+        if issues:
+            bad.append('; '.join(issues))
+    rep.check(f'{label}: every guide scene fits the screen without scrolling', not bad, ' | '.join(bad[:3]), page)
+    page.evaluate("location.hash = 'find'")
+    page.wait_for_timeout(700)
+    before = page.inner_text('#chapter')
+    page.keyboard.press('ArrowRight')
+    page.wait_for_timeout(700)
+    page.keyboard.press('ArrowRight')
+    page.wait_for_timeout(700)
+    page.keyboard.press('ArrowRight')
+    page.wait_for_timeout(700)
+    rep.check(f'{label}: arrow keys move through the guide', page.inner_text('#chapter') != before,
+              page.inner_text('#chapter'), page)
+    page.click('#menuBtn')
+    page.locator('#jump button', has_text='Signs on a node card').click()
+    page.wait_for_timeout(700)
+    rep.check(f'{label}: the topic menu jumps to a topic', page.locator('#scene-signs.on').count() == 1, page.url, page)
+    page.click('#backBtn')
+    page.wait_for_load_state('load')
+    rep.check(f'{label}: the guide closes back to EdgeShell', '/guide' not in page.url, page.url, page)
 
 
 def main():

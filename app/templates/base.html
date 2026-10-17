@@ -119,12 +119,25 @@
 
         .topbar-user {
             display: flex; align-items: center; gap: 8px;
-            padding: 6px 12px; border-radius: var(--radius);
+            padding: 4px 10px 4px 4px; border-radius: 999px;
+            border: 1px solid var(--gray-200); background: #fff; box-shadow: var(--shadow-sm);
             cursor: pointer; text-decoration: none; color: var(--gray-700);
             font-weight: 500;
-            transition: background 0.15s;
+            transition: background 0.15s, border-color 0.15s, box-shadow 0.15s;
         }
-        .topbar-user:hover { background: var(--gray-100); }
+        .topbar-user:hover, .topbar-user:focus-visible { background: var(--primary-light); border-color: var(--primary); color: var(--primary-dark); }
+        .topbar-user:focus-visible, .topbar-help:focus-visible { outline: 3px solid var(--primary); outline-offset: 2px; }
+        .topbar-user .bi-chevron-down { font-size: 11px; color: var(--gray-400); }
+        .topbar-user:hover .bi-chevron-down { color: var(--primary); }
+        .topbar-user:hover .user-avatar { background: #fff; }
+        .topbar-help {
+            width: 36px; height: 36px; border-radius: 50%; flex-shrink: 0;
+            display: inline-flex; align-items: center; justify-content: center;
+            border: 1px solid var(--gray-200); background: #fff; color: var(--primary);
+            font-size: 19px; text-decoration: none; box-shadow: var(--shadow-sm);
+            transition: background 0.15s, border-color 0.15s;
+        }
+        .topbar-help:hover { background: var(--primary-light); border-color: var(--primary); }
 
         .user-avatar {
             width: 30px; height: 30px; border-radius: 50%;
@@ -472,7 +485,7 @@
         @media (max-width: 1100px) { .topbar-user .text-muted { display: none; } }
         @media (max-width: 600px) {
             .topbar-badge, .topbar-user > span, .topbar-logout-text { display: none; }
-            .topbar-user { padding: 4px; }
+            .topbar-user { padding: 3px 6px 3px 3px; gap: 4px; }
             .topbar-brand { font-size: 15px; }
         }
         @media (max-width: 768px) {
@@ -513,11 +526,18 @@
                 Fleet Active
             </div>
 
+            <a class="topbar-help" id="topbarGuide" href="{{ url_for('guide.field') }}"
+               title="Field guide: how to report and fix, step by step" aria-label="Field guide">
+                <i class="bi bi-info-lg" aria-hidden="true"></i>
+            </a>
+
             <div class="dropdown" style="position:relative">
-                <a class="topbar-user" href="{{ url_for('account.index') }}" title="My account: password, 2FA, devices">
+                <a class="topbar-user" id="topbarAccount" href="{{ url_for('account.index') }}" role="button"
+                   title="My account: password, 2FA, devices" aria-label="My account ({{ current_user.username }})">
                     <div class="user-avatar">{{ current_user.username[0].upper() }}</div>
                     <span>{{ current_user.username }}</span>
                     <span class="text-xs text-muted" style="text-transform:capitalize">{{ current_user.role }}</span>
+                    <i class="bi bi-chevron-down" aria-hidden="true"></i>
                 </a>
             </div>
 
@@ -544,6 +564,9 @@
             <a href="{{ url_for('hardware.index') }}" class="nav-item {% if 'hardware.' in request.endpoint %}active{% endif %}">
                 <i class="bi bi-cpu"></i> Hardware
                 {% if HW_ALERTS %}<span class="nav-badge" title="Open faults and hardware changes to review">{{ HW_ALERTS }}</span>{% endif %}
+            </a>
+            <a href="{{ url_for('guide.field') }}" class="nav-item">
+                <i class="bi bi-info-circle"></i> Field guide
             </a>
         </div>
 

@@ -2,6 +2,18 @@
 
 All notable changes are documented here. Format loosely follows Keep a Changelog.
 
+## [1.14.0] - 2026-10-17
+
+### Added
+- **Field guide** inside the app (`/guide/`): an animated, full-screen tour for site technicians and operators with Nodi, a small robot guide. Report a fault, start and close a job, confirm a swapped SD card or board, replace a dead node, what the signs on a node card mean, how serious is serious, three golden rules. A phone taps through the real screens; one headline per scene; plays by itself, swipe, scroll, arrow keys or a topic menu; every scene fits any screen and zoom (checked by the browser test from a phone to a 200 % zoomed laptop). It replaces the text guide on the Hardware page.
+- An **(i) button** in the top bar of every page and a **Field guide** link in the sidebar open it; its close button returns to the page it was opened from (only ever an EdgeShell page).
+
+### Changed
+- The **account button** in the top bar now looks like a button: a border, a down arrow, a hover and focus state, and a label for screen readers.
+
+### Fixed
+- The browser test's Recycle Bin purge check waits for the keyboard focus before typing (it failed now and then on the release run).
+
 ## [1.13.0] - 2026-10-17
 
 ### Added

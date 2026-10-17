@@ -192,6 +192,7 @@ flowchart LR
 | **Public API** | [REST API](docs/API.md) with an OpenAPI document: data points (latest metrics, time series, fleet summary), an event feed with a cursor for alerts and triggers in other systems, node management, exports and (optionally) commands. Sign in with password plus 2FA, or give an integration its own service key with chosen permissions, lifetime and allowed addresses |
 | **Data lake** | A second MariaDB replicates the hot database live and keeps every row for good: metrics, rollups, events, activity and account history. Exports and history queries read from it. An optional hot retention policy (off by default) keeps only the last week, month, quarter, semester or year on the hot database, and never deletes what the lake has not got |
 | **Architecture detection** | 32-bit (ARMv7) and 64-bit (ARM64) detected automatically, shown as badges and filters |
+| **Field guide** | An animated, full-screen tour inside the app for site technicians and operators, opened from the **(i)** button in the top bar on every page: report a fault, start and close a job, confirm a swapped SD card or board, replace a dead node, what each sign on a node card means. One short headline per scene, a phone that taps through the real screens, and it fits any screen from a phone to a desktop ([docs](docs/HARDWARE.md#field-guide)) |
 | **Hardware lifecycle** | Every check also reads each node's board serial, SD card or disk, network adapter and OS install, so a swapped SD card or board shows as **Hardware changed** ("SD card or disk replaced", "Board replaced") for an operator to confirm (with the reason) or reject as unexpected. A new node can be marked as the replacement of a broken one, which is retired with its history kept. **Anyone can report an issue** on a node (power supply, SD card, board...); operators resolve it. A fleet Hardware page shows faults per 100 nodes, time to fix, downtime and how long each kind of part lasts, with CSV, an API with a narrow `report` permission and signed webhooks ([docs](docs/HARDWARE.md)) |
 
 ### Security and access
@@ -224,7 +225,7 @@ flowchart LR
 | **Sandbox** | EdgeShell plus a 6-node emulated fleet and a full end-to-end suite in one command |
 | **Issue portal** | Built-in support tickets with threaded replies and optional email via [useSend](https://usesend.com) |
 | **Database portability** | SQLite (WAL) for development, MariaDB in production, PostgreSQL supported; one-command export and import |
-| **Quality gates** | Required CI before every merge: lint, secret scan, Bandit, pip-audit and CodeQL, 320+ unit tests on three Python versions with a coverage floor, 500+ browser checks with 1500 nodes, a data lake test on real MariaDB, then image audit and end-to-end tests (including the API with real 2FA) on amd64 and arm64 |
+| **Quality gates** | Required CI before every merge: lint, secret scan, Bandit, pip-audit and CodeQL, 330+ unit tests on three Python versions with a coverage floor, 550+ browser checks with 1500 nodes, a data lake test on real MariaDB, then image audit and end-to-end tests (including the API with real 2FA) on amd64 and arm64 |
 
 ## Quick start
 
@@ -378,7 +379,7 @@ Change [`sandbox/fleet.json`](sandbox/fleet.json) to test any mix, up to 20 node
 
 ```bash
 bash sandbox/run.sh                                                 # build from source, test, tear down
-EDGESHELL_IMAGE=devprincekumar/edgeshell:1.13.0 bash sandbox/run.sh  # test a published image
+EDGESHELL_IMAGE=devprincekumar/edgeshell:1.14.0 bash sandbox/run.sh  # test a published image
 ```
 
 **Your own workflow:** run a change (command, playbook, file rollout) against

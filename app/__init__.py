@@ -78,10 +78,11 @@ def create_app(config_name='default'):
     from app.routes import shell as _shell  # noqa: F401  (registers the WebSocket route)
     from app.routes.nodered import nodered_bp
     from app.routes.hardware import hardware_bp
+    from app.routes.guide import guide_bp
 
     for bp in (auth_bp, sensehive_bp, dashboard_bp, nodes_bp, terminal_bp, files_bp, logs_bp,
                settings_bp, users_bp, api_bp, tailscale_bp, monitoring_bp,
-               vpn_bp, health_bp, issues_bp, account_bp, nodered_bp, hardware_bp):
+               vpn_bp, health_bp, issues_bp, account_bp, nodered_bp, hardware_bp, guide_bp):
         app.register_blueprint(bp)
 
     # JSON API and health checks are token/session protected but not CSRF-form

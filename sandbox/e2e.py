@@ -367,6 +367,8 @@ def main():
                                                                'new_serial': 'PSU-SANDBOX-1'})
         check('the fault is resolved and its downtime measured',
               r.get('success') and r['fault']['status'] == 'resolved' and r['fault']['downtime_min'] is not None, r)
+    st, _, b = admin.request('GET', '/guide/')
+    check('the field guide is served to signed-in users', st == 200 and "Hi, I'm Nodi" in b, st)
     st, _, b = admin.request('GET', '/hardware/api/stats?days=30')
     stats = json.loads(b) if st == 200 else {}
     check('the fleet numbers count the fault and the replacement',

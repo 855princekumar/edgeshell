@@ -7,7 +7,7 @@
         <div class="page-subtitle">Faults, replacements and parts across the fleet. Everyone can report an issue; operators and administrators resolve them.</div>
     </div>
     <div class="flex gap-2" style="flex-wrap:wrap">
-        <button type="button" class="btn btn-outline" id="hwGuideBtn" title="How the hardware log works"><i class="bi bi-info-circle"></i> Guide</button>
+        <a class="btn btn-outline" id="hwGuideBtn" href="{{ url_for('guide.field') }}#find" title="The field guide: report, fix, swap, step by step"><i class="bi bi-info-circle"></i> Field guide</a>
         <button type="button" class="btn btn-primary" id="hwReportBtn"><i class="bi bi-exclamation-triangle"></i> Report issue</button>
     </div>
 </div>
@@ -318,29 +318,6 @@
         document.body.appendChild(o); search.focus();
     }
 
-    // ---------------------------------------------------------------- guide
-    function guide() {
-        const steps = [
-            ['Report an issue', 'Anyone signed in: Report issue on a node card, on several selected nodes, here, or through the API. Pick the component and describe the symptom.'],
-            ['Operators resolve', 'Open a fault, mark it in progress, add notes, and resolve it: replaced, repaired, reseated or no fault found. A replaced power supply or peripheral can get the new part\'s serial, which starts its service life.'],
-            ['Replacements are detected', 'Every check reads the board serial, the SD card or disk, the network adapter and the OS install. If one differs, the node shows "Hardware changed": confirm it (why: a fault, an upgrade, maintenance) or reject it as unexpected, which flags the node (a cloned SD card looks like this).'],
-            ['A new node for a broken one', 'When you add a node that looks like the replacement of an existing one (same location, similar name, the old SD card), EdgeShell asks. Yes: the old node is retired, kept with its history, and both histories show together.'],
-            ['Low power', 'Raspberry Pi boards report under-voltage. The card shows "Low power" and a power supply fault reported afterwards is marked, so you can see how often the warning came first.'],
-            ['The numbers', 'Faults per component and month, per 100 nodes, mean time to fix, downtime, replacements, and how long each kind of part lasts. Export everything as CSV.']];
-        const o = el('div', null, 'position:fixed;inset:0;z-index:99995;background:rgba(15,23,42,.55);display:flex;align-items:center;justify-content:center;padding:12px');
-        const box = el('div', null, 'background:#fff;border-radius:14px;width:100%;max-width:620px;display:flex;flex-direction:column;max-height:calc(100dvh - 24px);overflow:hidden');
-        box.setAttribute('role', 'dialog'); box.setAttribute('aria-modal', 'true'); box.setAttribute('aria-label', 'Hardware guide'); box.id = 'hwGuide';
-        box.appendChild(el('div', 'How the hardware log works', 'font-weight:700;font-size:16px;padding:14px 18px;border-bottom:1px solid #e5e7eb'));
-        const body = el('ol', null, 'overflow:auto;flex:1;min-height:0;padding:12px 18px 12px 36px;margin:0');
-        steps.forEach(([h, t]) => { const li = el('li', null, 'margin-bottom:10px'); li.appendChild(el('b', h + '. ')); li.appendChild(document.createTextNode(t)); body.appendChild(li); });
-        box.appendChild(body);
-        const foot = el('div', null, 'display:flex;justify-content:flex-end;padding:12px 18px;border-top:1px solid #e5e7eb');
-        const ok = el('button', 'Got it'); ok.className = 'btn btn-sm btn-primary'; ok.onclick = () => o.remove(); foot.appendChild(ok); box.appendChild(foot);
-        o.appendChild(box); o.addEventListener('click', e => { if (e.target === o) o.remove(); });
-        document.addEventListener('keydown', function esc(e) { if (e.key === 'Escape') { o.remove(); document.removeEventListener('keydown', esc); } });
-        document.body.appendChild(o);
-    }
-
     // ---------------------------------------------------------------- wiring
     const loaders = {faults: () => faults(false), changes, inventory, numbers, settings: () => { catEditor(); hooks(); }};
     let current = 'faults';
@@ -361,7 +338,6 @@
     $('iSearch').addEventListener('input', drawInv);
     $('nDays').addEventListener('change', numbers);
     $('hwReportBtn').addEventListener('click', pickNodes);
-    $('hwGuideBtn').addEventListener('click', guide);
     if (IS_ADMIN) {
         $('catAdd').addEventListener('click', () => { catRows.push({key: '', label: '', hidden: false, builtin: false}); drawCats(); });
         $('catSave').addEventListener('click', () => post('/hardware/api/categories', {categories: catRows})
