@@ -31,6 +31,7 @@ from flask import current_app
 
 from app import db
 from app.models.hardware import Webhook, WebhookDelivery
+from app.services.hw_errors import HardwareError
 
 EVENTS = ('hardware.fault_reported', 'hardware.fault_updated', 'hardware.fault_resolved',
           'hardware.change_detected', 'hardware.change_confirmed', 'hardware.change_rejected', 'node.replaced')
@@ -51,35 +52,35 @@ def sign(secret, timestamp, body):
 
 
 def check_url(url, allow_private=None):
-    """Raises ValueError with a reason when EdgeShell must not call this address."""
+    """Raises HardwareError (a ValueError) with a code when EdgeShell must not call this address."""
     if allow_private is None:
         allow_private = bool(current_app.config.get('WEBHOOK_ALLOW_PRIVATE'))
     if not isinstance(url, str) or len(url) > 500:
-        raise ValueError('The address is too long.')
+        raise HardwareError('url_long')
     parts = urlsplit(url.strip())
     if parts.scheme not in ('https', 'http'):
-        raise ValueError('Use an https:// address.')
+        raise HardwareError('url_https')
     if parts.scheme == 'http' and not allow_private:
-        raise ValueError('Use an https:// address (plain http only for private networks, when allowed).')
+        raise HardwareError('url_http')
     if parts.username or parts.password:
-        raise ValueError('Put credentials in the receiver, not in the address.')
+        raise HardwareError('url_creds')
     host = parts.hostname
     if not host:
-        raise ValueError('The address has no host.')
+        raise HardwareError('url_host')
     try:
         port = parts.port or (443 if parts.scheme == 'https' else 80)
         infos = socket.getaddrinfo(host, port, proto=socket.IPPROTO_TCP)
     except (socket.gaierror, ValueError, UnicodeError):
-        raise ValueError('The host name does not resolve.')
+        raise HardwareError('url_dns')
     for info in infos:
         ip = ipaddress.ip_address(info[4][0].split('%')[0])
         if getattr(ip, 'ipv4_mapped', None):
             ip = ip.ipv4_mapped
         if ip.is_loopback or ip.is_link_local or ip.is_multicast or ip.is_unspecified or ip.is_reserved:
-            raise ValueError('That address points inside the server and is refused.')
+            raise HardwareError('url_internal')
         private = ip.is_private or (ip.version == 4 and ip in ipaddress.ip_network('100.64.0.0/10'))
         if private and not allow_private:
-            raise ValueError('Private network addresses are refused unless WEBHOOK_ALLOW_PRIVATE is set.')
+            raise HardwareError('url_private')
     return url.strip()
 
 
@@ -124,7 +125,8 @@ def _deliver(app, hook_id, url, secret, event, body, delivery_id, retry=True):
                 if error is None or 400 <= r.status_code < 500 and r.status_code not in (408, 429):
                     break                             # done, or a refusal a retry will not fix
             except ValueError as e:
-                status, error = None, str(e)[:200]
+                from app.services.hw_errors import public_message
+                status, error = None, public_message(e)
                 break
             except Exception as e:
                 status, error = None, type(e).__name__
@@ -156,12 +158,12 @@ def _record(hook_id, delivery_id, event, status, error, attempts, started):
 def create(name, url, events, user):
     name = (name or '').strip()[:80]
     if not name:
-        raise ValueError('Give the webhook a name.')
+        raise HardwareError('hook_name')
     events = sorted({e for e in events or [] if e in EVENTS})
     if not events:
-        raise ValueError('Choose at least one event.')
+        raise HardwareError('hook_events')
     if Webhook.query.count() >= MAX_WEBHOOKS:
-        raise ValueError(f'At most {MAX_WEBHOOKS} webhooks.')
+        raise HardwareError('too_many_hooks')
     url = check_url(url)
     secret = new_secret()
     h = Webhook(name=name, url=url, events=','.join(events), created_by=user, active=True)

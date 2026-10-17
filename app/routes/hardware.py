@@ -119,7 +119,7 @@ def export():
     try:
         text = hw.export_csv(what)
     except hw.HardwareError as e:
-        return _fail(str(e))
+        return _fail(hw.public_message(e))
     stamp = datetime.utcnow().strftime('%Y%m%d-%H%M')
     return Response(text, mimetype='text/csv',
                     headers={'Content-Disposition': f'attachment; filename=hardware-{what}-{stamp}.csv',
@@ -144,7 +144,7 @@ def report():
                                  description=d.get('description') or '', severity=d.get('severity') or 'normal',
                                  started_at=d.get('started_at') or None)
     except hw.HardwareError as e:
-        return _fail(str(e))
+        return _fail(hw.public_message(e))
     log_activity('Report hardware fault', node=', '.join(n.name for n in nodes)[:64],
                  response=f"{d.get('component')}: {faults[0].symptom}")
     return jsonify({'success': True, 'faults': [f.id for f in faults]})
@@ -164,7 +164,7 @@ def fault_update(fault_id):
         hw.update_fault(f, d.get('action'), current_user.username, resolution=d.get('resolution'),
                         note=d.get('note') or '', new_serial=d.get('new_serial'))
     except hw.HardwareError as e:
-        return _fail(str(e))
+        return _fail(hw.public_message(e))
     log_activity('Hardware fault ' + str(d.get('action')), node=f.node_name, response=f'fault {f.id}: {f.status}')
     return jsonify({'success': True, 'fault': hw.fault_detail(f)})
 
@@ -181,7 +181,7 @@ def change_decide(change_id):
         hw.decide_change(ch, d.get('decision'), current_user.username, reason=d.get('reason'),
                          fault_id=d.get('fault_id') or None, note=d.get('note') or '')
     except hw.HardwareError as e:
-        return _fail(str(e))
+        return _fail(hw.public_message(e))
     log_activity('Hardware change ' + ch.status, node=ch.node_name, response=ch.summary)
     return jsonify({'success': True, 'change': ch.to_dict()})
 
@@ -209,7 +209,7 @@ def replaces(node_id):
     try:
         hw.link_replacement(n, old, current_user.username, failed=failed, note=d.get('note') or '')
     except hw.HardwareError as e:
-        return _fail(str(e))
+        return _fail(hw.public_message(e))
     log_activity('Replace node', node=n.name, response=f'replaces {old.name}; failed: {", ".join(failed) or "-"}')
     return jsonify({'success': True})
 
@@ -237,7 +237,7 @@ def categories():
     try:
         cats = hw.save_categories(_body().get('categories'))
     except hw.HardwareError as e:
-        return _fail(str(e))
+        return _fail(hw.public_message(e))
     log_activity('Hardware categories saved', response=', '.join(c['key'] for c in cats)[:500])
     return jsonify({'success': True, 'categories': cats})
 
@@ -259,7 +259,7 @@ def webhook_create():
     try:
         h, secret = webhook_service.create(d.get('name'), d.get('url'), d.get('events'), current_user.username)
     except ValueError as e:
-        return _fail(str(e))
+        return _fail(hw.public_message(e))
     log_activity('Add webhook', response=f'{h.name}: {h.url} ({h.events})')
     return jsonify({'success': True, 'webhook': h.to_dict(), 'secret': secret})
 
