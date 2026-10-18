@@ -506,6 +506,9 @@ def main():
     st, _, body = admin.request('GET', NGINX + '/sensehive/login')
     page = body.lower().replace('-', '')
     check("SenseHive's own login page appears", st == 200 and 'sensehive' in page and 'static/login.js' in page, st)
+    st, _, _ = admin.request('GET', NGINX + '/sensehive/static/secure.js')
+    st2, _, _ = admin.request('GET', NGINX + '/sensehive/api/secure/status')
+    check('SenseHive 1.7 secure topics are served, and their API needs a SenseHive sign-in', st == 200 and st2 == 401, (st, st2))
 
     for c in list(admin.jar):                      # back to no pass: the admin panel route
         if c.name == 'es_sensehive':
