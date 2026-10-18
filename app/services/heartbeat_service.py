@@ -406,7 +406,7 @@ class Syncer:
 ROUTINE_KEY = 'heartbeat_routine'
 ROUTINE_LAST_KEY = 'heartbeat_routine_last'
 ROUTINE_DEFAULTS = {'enabled': True, 'hours': 6}
-RETRY_AFTER_FAILURE_S = 24 * 3600   # a node that failed is left alone this long
+HOLD_AFTER_ATTEMPT_S = 24 * 3600    # a node the routine worked on (any result) is left alone this long
 MISSING_AFTER_S = 15 * 60           # SSH up but no heartbeat this long: repair
 
 
@@ -468,12 +468,12 @@ def version_tuple(text):
 
 def plan(node, now=None, shipped=None):
     """What the routine does for one node: 'install', 'update', 'repair' or None.
-    Only for nodes SSH reaches now; a node that failed recently is left alone."""
+    Only for nodes SSH reaches now. A node the routine worked on in the last 24
+    hours is left alone, whatever the result: one try, then a pause."""
     now = now or datetime.utcnow()
     if node.is_deleted or not node.is_active or node.status != 'online' or node.login_paused_at:
         return None
-    if node.hb_routine_at and (node.hb_routine_note or '').startswith('failed') and \
-            (now - node.hb_routine_at).total_seconds() < RETRY_AFTER_FAILURE_S:
+    if node.hb_routine_at and (now - node.hb_routine_at).total_seconds() < HOLD_AFTER_ATTEMPT_S:
         return None
     if not node.hb_installed:
         return 'install'
@@ -521,8 +521,15 @@ def run_routine(owner_id=None, actor='routine'):
     from app.models.node import Node
     from app.services import jobs
     from app.services.activity_service import log_activity
-    sync()
     now, shipped = datetime.utcnow(), agent_version()
+    if sync() is None:
+        # Without fresh heartbeat state every node would look silent: change nothing this time
+        why = 'SenseHive was not reachable, so heartbeat state was not fresh' if sensehive_configured() \
+            else 'SenseHive is not set up, so there is no heartbeat state'
+        summary = {'at': now.isoformat() + 'Z', 'planned': {}, 'deferred': 0, 'shipped_version': shipped, 'by': actor,
+                   'result': 'skipped: ' + why}
+        _save_last(summary)
+        return None, summary
     todo = []
     for n in Node.query.filter_by(is_deleted=False).all():
         action = plan(n, now, shipped)

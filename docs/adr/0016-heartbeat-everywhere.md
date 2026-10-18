@@ -30,7 +30,11 @@ each node SSH reaches now:
 | has no agent | installs it |
 | has an agent older than the one in this EdgeShell | updates it |
 | SSH works but no heartbeat for 15 minutes | runs the agent's own test on the node; reinstalls only if the test fails |
-| failed in the last 24 hours | leaves it alone (no hammering a broken node) |
+| was worked on by the routine in the last 24 hours, whatever the result | leaves it alone (one try, then a pause; no hammering a node) |
+| is offline or its logins are paused | skips it |
+
+If SenseHive is not reachable the pass changes nothing (1.15.1): without fresh
+heartbeat state every node would look silent and get a needless repair.
 
 At most `HEARTBEAT_ROUTINE_MAX` (25) nodes per pass, 8 at a time, as a
 background job with an activity log entry per node and the pass summary in

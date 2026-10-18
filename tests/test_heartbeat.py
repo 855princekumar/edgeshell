@@ -237,6 +237,8 @@ def test_the_routine_plans_install_update_repair_and_leaves_working_nodes_alone(
         assert hb.plan(n, now) == 'repair'                                   # SSH works, no heartbeat for long
         n = _node(app, hb_routine_at=now - timedelta(hours=2), hb_routine_note='failed repair: no way in')
         assert hb.plan(n, now) is None                                       # failed recently: leave it a day
+        n = _node(app, hb_routine_at=now - timedelta(hours=2), hb_routine_note='repaired: Broker: x over tcp')
+        assert hb.plan(n, now) is None                                       # worked on recently, any result: a pause
         n = _node(app, hb_routine_at=now - timedelta(hours=25))
         assert hb.plan(n, now) == 'repair'
         for kw in ({'status': 'offline'}, {'is_deleted': True}, {'login_paused_at': now}):
@@ -264,7 +266,7 @@ def test_a_repair_tests_first_and_reinstalls_only_when_the_test_fails(app, monke
 def test_the_routine_runs_as_a_job_and_records_its_pass(app, monkeypatch):
     from app.services import heartbeat_service as hb, jobs
     seen = []
-    monkeypatch.setattr(hb, 'sync', lambda *a, **k: None)
+    monkeypatch.setattr(hb, 'sync', lambda *a, **k: 3)
     monkeypatch.setattr(hb, 'run_routine_node', lambda node, action: seen.append((node.name, action)) or (True, 'installed'))
 
     def run_each(kind, title, owner, items, work, workers=16, summary=None):
@@ -290,9 +292,24 @@ def test_the_routine_runs_as_a_job_and_records_its_pass(app, monkeypatch):
     assert c.post('/nodes/heartbeat/routine', json={'hours': 0}).status_code == 400
 
 
+def test_the_routine_changes_nothing_when_sensehive_is_not_reachable(app, monkeypatch):
+    from app.services import heartbeat_service as hb, jobs
+    monkeypatch.setattr(hb, 'sync', lambda *a, **k: None)              # SenseHive down: heartbeat state is stale
+    monkeypatch.setattr(hb, 'sensehive_configured', lambda: True)
+    started = []
+    monkeypatch.setattr(jobs, 'run_each', lambda *a, **k: started.append(1) or 'j')
+    with app.app_context():
+        for n in Node.query.all():
+            n.hb_installed, n.hb_agent_version, n.hb_status = True, '1.2.0', 'silent'
+        db.session.commit()
+        jid, summary = hb.run_routine()
+        assert jid is None and started == [] and summary['result'].startswith('skipped: SenseHive was not reachable')
+        assert hb.routine_last()['result'].startswith('skipped')
+
+
 def test_the_routine_respects_its_limit(app, monkeypatch):
     from app.services import heartbeat_service as hb, jobs
-    monkeypatch.setattr(hb, 'sync', lambda *a, **k: None)
+    monkeypatch.setattr(hb, 'sync', lambda *a, **k: 3)
     monkeypatch.setattr(jobs, 'run_each', lambda kind, title, owner, items, work, **kw: (seen.extend(items), 'j')[1])
     seen = []
     app.config['HEARTBEAT_ROUTINE_MAX'] = 2
