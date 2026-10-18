@@ -79,10 +79,11 @@ def create_app(config_name='default'):
     from app.routes.nodered import nodered_bp
     from app.routes.hardware import hardware_bp
     from app.routes.guide import guide_bp
+    from app.routes.apps import apps_bp
 
     for bp in (auth_bp, sensehive_bp, dashboard_bp, nodes_bp, terminal_bp, files_bp, logs_bp,
                settings_bp, users_bp, api_bp, tailscale_bp, monitoring_bp,
-               vpn_bp, health_bp, issues_bp, account_bp, nodered_bp, hardware_bp, guide_bp):
+               vpn_bp, health_bp, issues_bp, account_bp, nodered_bp, hardware_bp, guide_bp, apps_bp):
         app.register_blueprint(bp)
 
     # JSON API and health checks are token/session protected but not CSRF-form
@@ -141,6 +142,7 @@ def create_app(config_name='default'):
     from app.models import ServiceEvent as _svc  # noqa: F401
     from app.models import api as _api_models  # noqa: F401
     from app.models import hardware as _hw_models  # noqa: F401
+    from app.models import apps as _app_models  # noqa: F401
     with app.app_context():
         db.create_all()
         _ensure_schema()
@@ -389,6 +391,9 @@ def _ensure_schema():
             'hb_way': 'VARCHAR(24)',
             'hb_routine_at': 'DATETIME',
             'hb_routine_note': 'VARCHAR(200)',
+            'apps_inventory': 'TEXT',
+            'apps_checked_at': 'DATETIME',
+            'esapp_version': 'VARCHAR(16)',
             'nodered_installed': 'BOOLEAN',
             'capabilities_checked_at': 'DATETIME',
             'last_error': 'VARCHAR(256)',

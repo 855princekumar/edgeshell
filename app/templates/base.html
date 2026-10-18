@@ -582,6 +582,11 @@
                 <i class="bi bi-cloud-upload"></i> Deploy Files
             </a>
             {% endif %}
+            {% if current_user.can_upload() %}
+            <a href="{{ url_for('apps.index') }}" class="nav-item {% if 'apps.' in request.endpoint %}active{% endif %}">
+                <i class="bi bi-box-seam"></i> Apps
+            </a>
+            {% endif %}
         </div>
 
         <div style="padding: 0 8px 16px;">

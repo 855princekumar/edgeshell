@@ -20,3 +20,4 @@ Short records of the significant choices in EdgeShell and why they were made.
 | [0014](0014-nodered-through-edgeshell.md) | Node-RED and the remote desktop through EdgeShell at /nodered/<node>/ and /remoteGUI/<node>/, isolated on the same origin |
 | [0015](0015-hardware-lifecycle.md) | Hardware lifecycle: nodes as positions, detected replacements, fault reports |
 | [0016](0016-heartbeat-everywhere.md) | The heartbeat agent on every node, kept there by a routine; four ways to the broker |
+| [0017](0017-apps-on-the-edge.md) | Apps on the edge: one folder, one service, versions side by side, a way back |

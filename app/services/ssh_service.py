@@ -1,4 +1,4 @@
-import time, socket, json, os, tempfile, shlex
+import time, socket, json, os, tempfile, shlex, posixpath, re
 import paramiko
 from datetime import datetime
 from app.utils.timeutil import iso_utc
@@ -133,66 +133,67 @@ def execute_in_dir(node, command, cwd=None, timeout=60):
     return result
 
 
-def upload_file(node, local_path, remote_path, timeout=120):
-    """
-    Upload any file to a node.
-    Strategy:
-      1. SFTP-put to /tmp/edgeshell_stage/<filename>  (always writable)
-      2. SSH exec: sudo mv staging_file → target_path  (handles /opt, /etc, etc.)
-      3. sudo chown/chmod as needed
-    This bypasses SFTP permission limits for system directories.
-    """
-    filename   = os.path.basename(local_path)
-    # Bandit B108 reviewed: path on the remote node, not a local temp file
-    stage_dir  = '/tmp/edgeshell_stage'  # nosec B108
-    stage_file = f'{stage_dir}/{filename}'
-    final_path = f"{remote_path.rstrip('/')}/{filename}"
-    if not remote_path.startswith('/') or any(ord(ch) < 32 for ch in remote_path + filename):
-        return False, 'The target must be an absolute path'
-    # Every path below is shell-quoted: a crafted file or folder name can never
-    # add a command (it would bypass the command policy and the audit log).
-    q_stage, q_dir, q_final = shlex.quote(stage_file), shlex.quote(remote_path), shlex.quote(final_path)
+# The only place EdgeShell puts files on a node (under the SSH user's home).
+# Services and apps go to /opt/edgeshell through esapp (the Apps page), never here.
+UPLOAD_ROOT = 'Downloads/edgeshell'
+_SUB_RE = re.compile(r'^[A-Za-z0-9._-]+(/[A-Za-z0-9._-]+)*$')
 
+
+def clean_subfolder(sub):
+    """A folder under ~/Downloads/edgeshell ('' for the folder itself); ValueError otherwise."""
+    sub = (sub or '').strip().replace('\\', '/')
+    refuse = ValueError('Files go to ~/Downloads/edgeshell on each node: give a folder inside it '
+                        '(letters, digits, . _ - and /), not a path elsewhere')
+    if sub.startswith('/'):                           # an absolute path: somewhere else on the node
+        raise refuse
+    for prefix in ('~/' + UPLOAD_ROOT, UPLOAD_ROOT):
+        if sub == prefix or sub.startswith(prefix + '/'):
+            sub = sub[len(prefix):]
+            break
+    sub = sub.strip('/')
+    if not sub:
+        return ''
+    if not _SUB_RE.match(sub) or any(part in ('.', '..') for part in sub.split('/')):
+        raise refuse
+    return sub
+
+
+def upload_file(node, local_path, subfolder='', timeout=120):
+    """Copy a file into ~/Downloads/edgeshell[/subfolder] on a node, as the SSH
+    user (no sudo): written under a temporary name, then renamed, so a reader
+    never sees half a file. Returns (ok, message, path on the node)."""
+    filename = os.path.basename(local_path)
+    try:
+        sub = clean_subfolder(subfolder)
+    except ValueError as e:
+        return False, str(e), None
+    if not filename or any(ord(ch) < 32 for ch in filename) or filename in ('.', '..'):
+        return False, 'Not a valid file name', None
     try:
         client = get_ssh_client(node, timeout=10)
-
-        # Step 1 - ensure staging dir exists
-        # Bandit B601 reviewed: running commands on nodes is the feature (operators only; command policy and audit log apply)
-        _, stdout, _ = client.exec_command(f'mkdir -p {shlex.quote(stage_dir)}', timeout=5)  # nosec B601
-        stdout.channel.recv_exit_status()
-
-        # Step 2 - SFTP to staging (always /tmp, always writable)
-        sftp = client.open_sftp()
-        sftp.put(local_path, stage_file)
-        sftp.close()
-
-        # Step 3 - ensure target dir exists with sudo
-        # Bandit B601 reviewed: running commands on nodes is the feature (operators only; command policy and audit log apply)
-        _, stdout, stderr = client.exec_command(  # nosec B601
-            f'sudo -n mkdir -p -- {q_dir} 2>/dev/null || mkdir -p -- {q_dir}', timeout=10)
-        stdout.channel.recv_exit_status()
-
-        # Step 4 - move from staging to target with sudo
-        # Bandit B601 reviewed: running commands on nodes is the feature (operators only; command policy and audit log apply)
-        _, stdout, stderr_ch = client.exec_command(  # nosec B601
-            f'sudo -n cp -- {q_stage} {q_final} && sudo -n chmod 644 -- {q_final} && echo OK',
-            timeout=30)
-        out = stdout.read().decode().strip()
-        err = stderr_ch.read().decode().strip()
-        rc  = stdout.channel.recv_exit_status()
-
-        # Cleanup staging
-        # Bandit B601 reviewed: running commands on nodes is the feature (operators only; command policy and audit log apply)
-        client.exec_command(f'rm -f -- {q_stage}', timeout=5)  # nosec B601
-        client.close()
-
-        if rc == 0 or 'OK' in out:
-            return True, f'Deployed to {final_path}'
-        return False, err or f'Deploy failed (exit {rc})'
-
+        try:
+            sftp = client.open_sftp()
+            home = sftp.normalize('.')
+            folder = posixpath.join(home, UPLOAD_ROOT, sub) if sub else posixpath.join(home, UPLOAD_ROOT)
+            path = home
+            for part in posixpath.relpath(folder, home).split('/'):
+                path = posixpath.join(path, part)
+                try:
+                    sftp.stat(path)
+                except IOError:
+                    sftp.mkdir(path, 0o750)
+            final = posixpath.join(folder, filename)
+            part = posixpath.join(folder, '.' + filename + '.part')
+            sftp.put(local_path, part)
+            sftp.chmod(part, 0o640)
+            sftp.posix_rename(part, final)
+            sftp.close()
+        finally:
+            client.close()
+        return True, f'Deployed to {final}', final
     except Exception as e:
         from app.services.errors import describe
-        return False, describe(e, f'file deploy to {node.name}')
+        return False, describe(e, f'file deploy to {node.name}'), None
 
 
 # Full heartbeat metrics script

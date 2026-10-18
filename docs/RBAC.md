@@ -33,6 +33,12 @@ route for monitors. User management, platform settings, VPN config, and
 email (useSend) settings are admin only, hidden and route-blocked for
 operators and monitors.
 
+Apps ([APPS.md](APPS.md)): operators see the packages, each node's apps and
+versions, and the audit, and can read the nodes again; uploading a package,
+rolling it out, rolling back, switching versions, cleaning up, removing an
+app and removing a package from the bucket are admin only. Monitors do not
+see Apps.
+
 
 ## How it is enforced
 

@@ -1,0 +1,12 @@
+{
+  "name": "hello-sensor",
+  "version": "1.0.0",
+  "description": "An example: reads a value every few seconds, keeps the last one in APP_DATA, serves it on 127.0.0.1:8095",
+  "run": "python app/main.py",
+  "env": {"INTERVAL_S": "5"},
+  "health": {"within_s": 15, "http": "http://127.0.0.1:8095/health"},
+  "stable_after_s": 600,
+  "ports": [8095],
+  "memory_max": "64M",
+  "cpu_quota": "20%"
+}

@@ -5,7 +5,7 @@
 <div class="d-flex align-items-center justify-content-between mb-4">
   <div>
     <h4 class="fw-bold mb-0">File Deployment</h4>
-    <small class="text-muted">Upload any file and deploy it to one or many nodes via SSH</small>
+    <small class="text-muted">Upload any file to <code>~/Downloads/edgeshell</code> on one or many nodes</small>
   </div>
 </div>
 
@@ -42,23 +42,20 @@
           </button>
         </div>
 
-        <!-- Target path -->
-        <div class="mt-3">
-          <label class="form-label fw-medium">Target Path on Node</label>
-          <input type="text" id="targetPath" class="form-control font-monospace" value="/tmp/"
-                 placeholder="/opt/myapp/">
-          <div class="form-text">
-            EdgeShell stages to <code>/tmp/</code> first, then <code>sudo cp</code> to your target - so
-            <code>/opt/</code>, <code>/etc/</code>, <code>/usr/local/bin/</code> all work.
+        <!-- Folder on the node: only ~/Downloads/edgeshell -->
+        <div class="mt-3 mb-4">
+          <label class="form-label fw-medium" for="targetPath">Folder on each node</label>
+          <div class="input-group">
+            <span class="input-group-text font-monospace">~/Downloads/edgeshell/</span>
+            <input type="text" id="targetPath" class="form-control font-monospace" value=""
+                   placeholder="optional subfolder, e.g. configs" maxlength="200">
           </div>
-        </div>
-
-        <!-- Quick path buttons -->
-        <div class="d-flex flex-wrap gap-2 mt-2 mb-4">
-          {% for p in ['/tmp/', '/opt/', '/home/pi/', '/var/lib/', '/etc/', '/usr/local/bin/'] %}
-          <button class="btn btn-sm btn-outline-secondary font-monospace"
-                  onclick="document.getElementById('targetPath').value='{{ p }}'">{{ p }}</button>
-          {% endfor %}
+          <div class="form-text">
+            Files go only to <code>~/Downloads/edgeshell</code> of the node's SSH user, so nothing else on
+            the node changes. To run a service or an app, build a package and use
+            <a href="{{ url_for('apps.index') }}">Apps</a>: it installs into <code>/opt/edgeshell</code>
+            with its own service, versions and rollback.
+          </div>
         </div>
 
         <!-- Deploy button -->
@@ -249,7 +246,7 @@ async function startDeploy() {
   if (!selectedFiles.length) return;
   const nodeIds = [...document.querySelectorAll('.node-chk:checked')].map(c => c.value);
   if (!nodeIds.length) { alert('Select at least one node.'); return; }
-  const target = document.getElementById('targetPath').value.trim() || '/tmp/';
+  const target = document.getElementById('targetPath').value.trim();
 
   const btn = document.getElementById('deployBtn');
   btn.disabled = true; btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Deploying…';
@@ -267,7 +264,7 @@ async function startDeploy() {
   const fd = new FormData();
   selectedFiles.forEach(f => fd.append('files', f));
   nodeIds.forEach(id => fd.append('node_ids', id));
-  fd.append('target_path', target);
+  fd.append('subfolder', target);
 
   try {
     const resp = await fetch('/files/upload', { method: 'POST', body: fd });

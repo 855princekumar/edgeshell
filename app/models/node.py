@@ -44,6 +44,10 @@ class Node(db.Model):
     hb_way = db.Column(db.String(24))                           # how the agent reaches the broker, e.g. ws-tls:8884
     hb_routine_at = db.Column(db.DateTime)                      # the routine's last action on this node
     hb_routine_note = db.Column(db.String(200))                 # what it did ("failed ..." when it did not work)
+    # Apps on the edge (ADR 0017): what esapp reports from /opt/edgeshell
+    apps_inventory = db.Column(db.Text)                         # JSON: apps, versions, states, service
+    apps_checked_at = db.Column(db.DateTime)
+    esapp_version = db.Column(db.String(16))
     is_deleted = db.Column(db.Boolean, default=False, index=True)  # recycle bin
     deleted_at = db.Column(db.DateTime)
     # Hardware lifecycle (ADR 0015): what serves this position, and its lineage
