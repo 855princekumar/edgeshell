@@ -18,3 +18,5 @@ Short records of the significant choices in EdgeShell and why they were made.
 | [0012](0012-cia-triad-for-the-control-plane.md) | Security model: the CIA triad for a central fleet control plane |
 | [0013](0013-mqtt-heartbeat.md) | A second, VPN-independent liveness signal: encrypted MQTT heartbeats |
 | [0014](0014-nodered-through-edgeshell.md) | Node-RED and the remote desktop through EdgeShell at /nodered/<node>/ and /remoteGUI/<node>/, isolated on the same origin |
+| [0015](0015-hardware-lifecycle.md) | Hardware lifecycle: nodes as positions, detected replacements, fault reports |
+| [0016](0016-heartbeat-everywhere.md) | The heartbeat agent on every node, kept there by a routine; four ways to the broker |

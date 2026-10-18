@@ -641,7 +641,67 @@ def heartbeat_export():
 def heartbeat_settings_get():
     from app.services import heartbeat_service as hb
     return jsonify({'settings': hb.agent_settings(), 'enabled': hb.enabled(),
-                    'sensehive': hb.sensehive_configured(), 'agent_version': hb.agent_version()})
+                    'sensehive': hb.sensehive_configured(), 'agent_version': hb.agent_version(),
+                    'routine': hb.routine_settings(), 'routine_last': hb.routine_last(),
+                    'broker_user': hb.broker_login()[0]})
+
+
+@nodes_bp.route('/heartbeat/routine', methods=['POST'])
+@login_required
+@admin_required            # installs and updates software on nodes: administrators only
+def heartbeat_routine():
+    """Save the routine (on or off, every N hours) and, with run_now, start a pass:
+    install the agent where it is missing, update it where it is old, repair it
+    where SSH works but no heartbeat arrives."""
+    from app.services import heartbeat_service as hb
+    data = request.get_json() or {}
+    s = hb.routine_settings()
+    enabled_ = data.get('enabled', s['enabled'])
+    hours = data.get('hours', s['hours'])
+    try:
+        hb.save_routine_settings(enabled_, hours)
+    except ValueError:
+        return jsonify({'success': False, 'message': 'Every 1 to 168 hours, on or off.'}), 400
+    log_activity('Heartbeat routine settings', status='info',
+                 response=f"{'on' if enabled_ else 'off'}, every {hours} h")
+    if not data.get('run_now'):
+        return jsonify({'success': True, 'routine': hb.routine_settings()})
+    if not hb.enabled():
+        return jsonify({'success': False, 'message': 'Set HEARTBEAT_MASTER_KEY on the server first '
+                                                     '(see docs/HEARTBEAT.md).'}), 400
+    jid, summary = hb.run_routine(current_user.id, current_user.username)
+    log_activity('Heartbeat routine started', status='info', response=json.dumps(summary.get('planned', {})))
+    return jsonify({'success': True, 'job_id': jid, 'summary': summary,
+                    'message': None if jid else summary.get('result')})
+
+
+@nodes_bp.route('/heartbeat/login', methods=['POST'])
+@login_required
+@admin_required
+def heartbeat_login_push():
+    """Push the broker login (HEARTBEAT_BROKER_USERNAME / _PASSWORD) to every node
+    with the agent. Each node checks it against the broker before saving it."""
+    from app.services import heartbeat_service as hb
+    if not hb.enabled():
+        return jsonify({'success': False, 'message': 'Set HEARTBEAT_MASTER_KEY on the server first.'}), 400
+    ids = [n.id for n in Node.query.filter(Node.is_active.is_(True), Node.is_deleted.isnot(True),
+                                           Node.hb_installed.is_(True)).all()]
+    if not ids:
+        return jsonify({'success': False, 'message': 'No node has the agent yet.'})
+    actor = current_user.username
+
+    def work(nid):
+        node = db.session.get(Node, nid)
+        if node is None:
+            return False
+        ok, msg = hb.push_login(node)
+        log_activity('Heartbeat broker login pushed', node=node.name, status='success' if ok else 'failure',
+                     response=msg, user=actor)
+        return ok
+    jid = _jobs.run_each('heartbeat-login', f'Pushing the broker login to {len(ids)} node(s)', current_user.id, ids,
+                         work, workers=8, summary=lambda j: f"{j['ok']} ok, {j['failed']} failed")
+    log_activity('Heartbeat broker login push started', response=f'{len(ids)} node(s)', status='info')
+    return jsonify({'success': True, 'job_id': jid, 'count': len(ids)})
 
 
 # ── Bulk import (CSV / TXT / JSON) ───────────────────────────────────────────
@@ -649,6 +709,7 @@ def heartbeat_settings_get():
 # token sits in the session cookie: whole files in the cookie overflowed the
 # proxy's header limit and browsers' 4 KB cookie limit). After the commit the
 # new nodes are checked over SSH in a background job with live progress.
+import json
 import os as _os
 import secrets as _secrets
 import time as _time

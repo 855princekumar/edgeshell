@@ -72,8 +72,9 @@ def test_the_pushed_config_is_always_one_the_agent_accepts(app):
     with app.app_context():
         s, err = hb.validate_settings({'broker': 'mqtt.example.org', 'port': 8884, 'tls': True, 'interval': 15})
         assert err is None
-        assert agent.parse_settings(hb.config_yaml(s)) == {'broker': 'mqtt.example.org', 'port': 8884,
-                                                          'tls': True, 'interval': 15}
+        parsed = agent.parse_settings(hb.config_yaml(s))
+        assert {k: parsed[k] for k in ('broker', 'port', 'tls', 'interval')} == {
+            'broker': 'mqtt.example.org', 'port': 8884, 'tls': True, 'interval': 15}
         for bad in ({'broker': 'evil/topic'}, {'broker': 'a b'}, {'port': 0}, {'interval': 1}, {'port': 'x'}):
             assert hb.validate_settings(bad)[1], bad
 
@@ -176,16 +177,177 @@ def test_the_install_sends_only_what_the_node_needs(app, monkeypatch):
     sent, ran = {}, []
     monkeypatch.setattr(hb, '_upload', lambda target, files: sent.update(files) or '/tmp/edgeshell-hb.abcd1234')
     monkeypatch.setattr(collector, 'run_command', lambda target, cmd, **kw: ran.append((cmd, kw)) or
-                        {'success': True, 'stdout': 'HEARTBEAT_OK 1.1.0'})
+                        {'success': True, 'stdout': 'Ways to the broker\nBroker: broker.hivemq.com over ws-tls on port 8884, '
+                                                    'login accepted\nHEARTBEAT_OK 1.2.0\nDone.'})
     with app.app_context():
         n = Node.query.filter_by(name='pi-01').first()
         ok, out = hb.install(n)
-        assert ok and n.hb_installed
-    assert set(sent) == {'heartbeat_agent.py', 'heartbeat_protocol.py', 'install.sh', 'agent.env', 'config.yaml'}
+        assert ok and n.hb_installed and n.hb_way == 'ws-tls:8884'
+    assert set(sent) == {'heartbeat_agent.py', 'heartbeat_protocol.py', 'install.sh', 'setup.py', 'token', 'login'}
     assert MASTER not in ''.join(sent.values())
     cmd, kw = ran[0]
-    assert 'sudo bash /tmp/edgeshell-hb.abcd1234/install.sh' in cmd and 'rm -rf /tmp/edgeshell-hb.abcd1234' in cmd
-    assert '\r' not in sent['install.sh']                        # Unix line endings reach the node
+    assert 'sudo python3 /tmp/edgeshell-hb.abcd1234/setup.py --token-file' in cmd and '--login-file' in cmd
+    assert 'rm -rf /tmp/edgeshell-hb.abcd1234' in cmd and 'admin123' not in cmd     # secrets only in files
+    assert '\r' not in sent['install.sh'] and '\r' not in sent['setup.py']          # Unix line endings reach the node
+
+
+def test_the_join_token_is_what_the_agents_setup_py_reads(app):
+    import importlib.util
+    from app.services import heartbeat_service as hb
+    spec = importlib.util.spec_from_file_location('vendored_setup', os.path.join(hb.AGENT_DIR, 'setup.py'))
+    setup = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(setup)
+    with app.app_context():
+        n = Node.query.filter_by(name='pi-01').first()
+        token = hb.join_token(n)
+        t = setup.read_token(token)
+        assert t['node'] == 'pi-01' and MASTER not in token
+        assert dict(line.split('=', 1) for line in setup.agent_env(t).splitlines()) == \
+            hb.protocol().provision(bytes.fromhex(MASTER), 'pi-01')
+
+
+def test_the_vendored_agent_is_one_release(app):
+    """heartbeat_agent.py, setup.py and install.sh from the same agent release."""
+    from app.services import heartbeat_service as hb
+    text = open(os.path.join(hb.AGENT_DIR, 'setup.py'), encoding='utf-8').read()
+    assert '--merge-config' in text and '--set-credentials' in text and hb.agent_version() == '1.2.0'
+
+
+def _node(app, **kw):
+    n = Node.query.filter_by(name='pi-01').first()
+    for k, v in kw.items():
+        setattr(n, k, v)
+    db.session.commit()
+    return n
+
+
+def test_the_routine_plans_install_update_repair_and_leaves_working_nodes_alone(app):
+    from app.services import heartbeat_service as hb
+    now = datetime.utcnow()
+    with app.app_context():
+        n = _node(app, hb_installed=None)
+        assert hb.plan(n, now) == 'install'
+        n = _node(app, hb_installed=True, hb_agent_version='1.1.0', hb_status='online', hb_last_seen=now)
+        assert hb.plan(n, now) == 'update'                                   # older than the shipped 1.2.0
+        n = _node(app, hb_agent_version='1.2.0')
+        assert hb.plan(n, now) is None                                       # current and fresh: nothing to do
+        n = _node(app, hb_status='silent', hb_last_seen=now - timedelta(minutes=5))
+        assert hb.plan(n, now) is None                                       # a short gap: wait
+        n = _node(app, hb_last_seen=now - timedelta(minutes=20))
+        assert hb.plan(n, now) == 'repair'                                   # SSH works, no heartbeat for long
+        n = _node(app, hb_routine_at=now - timedelta(hours=2), hb_routine_note='failed repair: no way in')
+        assert hb.plan(n, now) is None                                       # failed recently: leave it a day
+        n = _node(app, hb_routine_at=now - timedelta(hours=25))
+        assert hb.plan(n, now) == 'repair'
+        for kw in ({'status': 'offline'}, {'is_deleted': True}, {'login_paused_at': now}):
+            n = _node(app, **dict({'status': 'online', 'is_deleted': False, 'login_paused_at': None}, **kw))
+            assert hb.plan(n, now) is None                                   # only nodes SSH reaches now
+
+
+def test_a_repair_tests_first_and_reinstalls_only_when_the_test_fails(app, monkeypatch):
+    from app.services import heartbeat_service as hb
+    calls = []
+    monkeypatch.setattr(hb, 'test', lambda node: calls.append('test') or (True, 'HEARTBEAT_TEST ok'))
+    monkeypatch.setattr(hb, 'install', lambda node: calls.append('install') or (True, 'Broker: x over tcp on port 1883\nDone.'))
+    with app.app_context():
+        n = _node(app, hb_installed=True)
+        ok, note = hb.run_routine_node(n, 'repair')
+        assert ok and calls == ['test'] and n.hb_routine_note.startswith('checked')
+        monkeypatch.setattr(hb, 'test', lambda node: calls.append('test') or (False, 'FAIL  service'))
+        ok, note = hb.run_routine_node(n, 'repair')
+        assert ok and calls[-2:] == ['test', 'install'] and note.startswith('repaired')
+        monkeypatch.setattr(hb, 'install', lambda node: (False, 'Not set up: no way to the broker works'))
+        ok, note = hb.run_routine_node(n, 'repair')
+        assert not ok and n.hb_routine_note.startswith('failed repair: Not set up: no way')
+
+
+def test_the_routine_runs_as_a_job_and_records_its_pass(app, monkeypatch):
+    from app.services import heartbeat_service as hb, jobs
+    seen = []
+    monkeypatch.setattr(hb, 'sync', lambda *a, **k: None)
+    monkeypatch.setattr(hb, 'run_routine_node', lambda node, action: seen.append((node.name, action)) or (True, 'installed'))
+
+    def run_each(kind, title, owner, items, work, workers=16, summary=None):
+        job = {'ok': 0, 'failed': 0}
+        for it in items:
+            job['ok' if work(it) else 'failed'] += 1
+        summary(job)
+        return 'job1'
+    monkeypatch.setattr(jobs, 'run_each', run_each)
+    with app.app_context():
+        for n in Node.query.all():
+            n.hb_installed = None
+        db.session.commit()
+    c = login(app)
+    assert login(app, 'op', 'Operator-pass-1').post('/nodes/heartbeat/routine', json={'run_now': True}).status_code == 403
+    r = c.post('/nodes/heartbeat/routine', json={'enabled': True, 'hours': 4, 'run_now': True})
+    d = r.get_json()
+    assert d['success'] and d['job_id'] == 'job1' and sorted(seen) == [('pi-00', 'install'), ('pi-01', 'install'),
+                                                                      ('pi-02', 'install')]
+    g = c.get('/nodes/heartbeat/settings').get_json()
+    assert g['routine'] == {'enabled': True, 'hours': 4} and g['routine_last']['planned']['install'] == 3
+    assert g['routine_last']['result'] == '3 ok, 0 failed' and g['broker_user'] == 'admin'
+    assert c.post('/nodes/heartbeat/routine', json={'hours': 0}).status_code == 400
+
+
+def test_the_routine_respects_its_limit(app, monkeypatch):
+    from app.services import heartbeat_service as hb, jobs
+    monkeypatch.setattr(hb, 'sync', lambda *a, **k: None)
+    monkeypatch.setattr(jobs, 'run_each', lambda kind, title, owner, items, work, **kw: (seen.extend(items), 'j')[1])
+    seen = []
+    app.config['HEARTBEAT_ROUTINE_MAX'] = 2
+    with app.app_context():
+        jid, summary = hb.run_routine()
+    assert len(seen) == 2 and summary['deferred'] == 1
+
+
+def test_the_keeper_waits_then_runs_every_n_hours(app, monkeypatch):
+    from app.services import heartbeat_service as hb
+    runs = []
+    monkeypatch.setattr(hb, 'run_routine', lambda *a, **k: runs.append(1) or (None, {}))
+    clock = [1_000_000.0]
+    monkeypatch.setattr(hb.time, 'time', lambda: clock[0])
+    with app.app_context():
+        k = hb.Keeper()
+        k.tick()
+        assert runs == []                              # not right after a start
+        clock[0] += hb.Keeper.FIRST_AFTER_S
+        k.tick()
+        assert runs == [1]
+        clock[0] += 3600
+        k.tick()
+        assert runs == [1]                             # every 6 hours by default
+        clock[0] += 5 * 3600
+        k.tick()
+        assert runs == [1, 1]
+        hb.save_routine_settings(False, 6)
+        clock[0] += 7 * 3600
+        k.tick()
+        assert runs == [1, 1]                          # off means off
+
+
+def test_a_settings_push_merges_on_nodes_with_a_new_agent(app, monkeypatch):
+    from app.services import collector, heartbeat_service as hb
+    ran = []
+    monkeypatch.setattr(hb, '_upload', lambda target, files: '/tmp/edgeshell-hb.abcd1234')
+    monkeypatch.setattr(collector, 'run_command', lambda target, cmd, **kw: ran.append(cmd) or
+                        {'success': True, 'stdout': 'CONFIG_PUSHED broker x'})
+    with app.app_context():
+        ok, msg = hb.push_config(Node.query.filter_by(name='pi-01').first())
+    assert ok and '--merge-config' in ran[0]
+
+
+def test_the_broker_login_push_is_for_administrators_and_runs_as_a_job(app, monkeypatch):
+    from app.services import heartbeat_service as hb, jobs
+    monkeypatch.setattr(jobs, 'run_each', lambda kind, title, owner, items, work, **kw: 'jl')
+    with app.app_context():
+        for n in Node.query.all():
+            n.hb_installed = True
+        db.session.commit()
+    assert login(app, 'op', 'Operator-pass-1').post('/nodes/heartbeat/login', json={}).status_code == 403
+    assert login(app).post('/nodes/heartbeat/login', json={}).get_json()['job_id'] == 'jl'
+    with app.app_context():
+        assert hb.login_env() == 'HB_MQTT_USERNAME=admin\nHB_MQTT_PASSWORD=admin123\n'
 
 
 @pytest.mark.parametrize('who,code', [(None, 401), ('op', 403), ('admin', 401)])   # admin: needs a pass first

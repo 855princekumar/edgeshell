@@ -445,7 +445,7 @@ def main():
     check('heartbeat settings pushed to the node (config.yaml)', j.get('ok') == 1, j)
     time.sleep(12)
     status, res, _ = admin.fleet_exec([hb_node['id']],
-                                      'grep -c "interval: 7" /opt/edgeshell-heartbeat/config.yaml; '
+                                      'sudo grep -c "interval: 7" /opt/edgeshell-heartbeat/config.yaml; '   # root:hbagent 0640 since agent 1.2
                                       'grep -c "settings reloaded: interval=7" /var/log/edgeshell-heartbeat.log 2>/dev/null '
                                       '|| sudo journalctl -u edgeshell-heartbeat --no-pager | grep -c "settings reloaded: interval=7"')
     out = (res.get(hb_node['name']) or {}).get('stdout', '')

@@ -2,6 +2,18 @@
 
 All notable changes are documented here. Format loosely follows Keep a Changelog.
 
+## [1.15.0] - 2026-10-18
+
+### Added
+- **The heartbeat agent on every node, kept there by a routine** ([ADR 0016](docs/adr/0016-heartbeat-everywhere.md)). About 10 minutes after a start and then every 6 hours, for each node SSH reaches: install the agent where it is missing, update it where it is older than this EdgeShell's, and repair it where SSH works but no heartbeat arrived for 15 minutes (the agent's own test first, a reinstall only if it fails). At most 25 nodes per pass (`HEARTBEAT_ROUTINE_MAX`), a node that failed is left alone for a day, every action is in the activity log, the pass summary in Fleet Setup (**Keep every node covered**: on or off, every 1 to 168 hours, **Run now**). The heartbeat is what lets the SLA tell a down node from a VPN or SSH glitch, so it is no longer optional; OpenRemoteGUI, Docker and Node-RED stay optional.
+- **Four ways to the broker** (agent 1.2.0): MQTT over TLS, WebSocket over TLS, plain MQTT, plain WebSocket. The install tries each with a real login (the job log shows the table) and keeps the first that works; the node card's heartbeat badge shows it. An agent whose way in stops working finds another by itself, and tries the preferred way again every 10 minutes. This fixes agents stuck retrying a blocked TLS port.
+- **Broker login** for every agent: `HEARTBEAT_BROKER_USERNAME` / `HEARTBEAT_BROKER_PASSWORD` (default `admin` / `admin123`; change them on your broker and here) and **Fleet Setup, Push to every node**. Each node checks a new login against the broker before it saves it.
+
+### Changed
+- Installs go through the agent's `setup.py` with a join token (the node's keys and the broker, never the master key), the same way SenseHive's **Add node** works.
+- **Save and push to fleet** merges the new broker, port, TLS and interval into each node's settings and keeps the way in the node found, unless the broker itself changed.
+- Agent 1.2.0 bundled (from 1.1.0); SenseHive 1.8.0 by default (`SENSEHIVE_TAG`): Add node with join tokens, every SenseHive its own fleet, bulk tokens, broker login.
+
 ## [1.14.2] - 2026-10-18
 
 ### Changed

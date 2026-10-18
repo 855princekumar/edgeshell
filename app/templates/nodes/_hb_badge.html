@@ -3,7 +3,7 @@
    (broker or internet path). ADR 0013. Click: heartbeat history (hb_history.js). #}
 {% if node.hb_status == 'online' %}
 <span class="badge hb-badge" role="button" tabindex="0" data-hb-node="{{ node.id }}" data-hb-name="{{ node.name }}" style="background:#dcfce7;color:#166534;cursor:pointer"
-      title="MQTT heartbeat: online{% if node.hb_last_seen %}, last {{ node.hb_last_seen|localtime('%H:%M:%S') }}{% endif %}{% if node.hb_agent_version %}, agent {{ node.hb_agent_version }}{% endif %}">
+      title="MQTT heartbeat: online{% if node.hb_last_seen %}, last {{ node.hb_last_seen|localtime('%H:%M:%S') }}{% endif %}{% if node.hb_agent_version %}, agent {{ node.hb_agent_version }}{% endif %}{% if node.hb_way %}, over {{ node.hb_way }}{% endif %}">
   <i class="bi bi-heart-pulse-fill"></i> heartbeat
 </span>
 {% elif node.hb_status == 'offline' %}
@@ -13,7 +13,7 @@
 </span>
 {% elif node.hb_status == 'silent' %}
 <span class="badge hb-badge" role="button" tabindex="0" data-hb-node="{{ node.id }}" data-hb-name="{{ node.name }}" style="background:#fef3c7;color:#92400e;cursor:pointer"
-      title="MQTT heartbeat: none recently and no last will: usually the broker or the internet path, not the node">
+      title="MQTT heartbeat: none recently and no last will: usually the broker or the internet path, not the node{% if node.hb_routine_note %}. Routine: {{ node.hb_routine_note }}{% endif %}">
   <i class="bi bi-heart"></i> heartbeat silent
 </span>
 {% elif node.hb_installed is sameas false and node.status == 'online' %}

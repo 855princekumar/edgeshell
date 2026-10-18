@@ -185,6 +185,10 @@ class Config:
     HEARTBEAT_PORT = int(os.environ.get('HEARTBEAT_PORT', '8883'))
     HEARTBEAT_TLS = os.environ.get('HEARTBEAT_TLS', 'true')
     HEARTBEAT_INTERVAL = int(os.environ.get('HEARTBEAT_INTERVAL', '10'))
+    # The broker login every node's agent uses (change both on your broker; any value works on a public one)
+    HEARTBEAT_BROKER_USERNAME = os.environ.get('HEARTBEAT_BROKER_USERNAME', 'admin')
+    HEARTBEAT_BROKER_PASSWORD = os.environ.get('HEARTBEAT_BROKER_PASSWORD', 'admin123')
+    HEARTBEAT_ROUTINE_MAX = int(os.environ.get('HEARTBEAT_ROUTINE_MAX', '25'))   # nodes per routine pass
     SENSEHIVE_URL = os.environ.get('SENSEHIVE_URL', '').strip()               # internal, e.g. http://sensehive:5000
     SENSEHIVE_API_TOKEN = os.environ.get('SENSEHIVE_API_TOKEN', '').strip()
     SENSEHIVE_PUBLIC_PATH = os.environ.get('SENSEHIVE_PUBLIC_PATH', '').strip()  # e.g. /sensehive/ (admins only)
