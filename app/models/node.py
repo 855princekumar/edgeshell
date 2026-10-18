@@ -41,6 +41,9 @@ class Node(db.Model):
     hb_since = db.Column(db.DateTime)
     hb_lwt_at = db.Column(db.DateTime)
     hb_agent_version = db.Column(db.String(16))
+    hb_way = db.Column(db.String(24))                           # how the agent reaches the broker, e.g. ws-tls:8884
+    hb_routine_at = db.Column(db.DateTime)                      # the routine's last action on this node
+    hb_routine_note = db.Column(db.String(200))                 # what it did ("failed ..." when it did not work)
     is_deleted = db.Column(db.Boolean, default=False, index=True)  # recycle bin
     deleted_at = db.Column(db.DateTime)
     # Hardware lifecycle (ADR 0015): what serves this position, and its lineage
@@ -134,7 +137,9 @@ class Node(db.Model):
                          'retired_at': iso_utc(self.retired_at)},
             'heartbeat': {'installed': self.hb_installed, 'status': self.hb_status,
                           'last_seen': iso_utc(self.hb_last_seen), 'since': iso_utc(self.hb_since),
-                          'lwt_at': iso_utc(self.hb_lwt_at), 'agent_version': self.hb_agent_version},
+                          'lwt_at': iso_utc(self.hb_lwt_at), 'agent_version': self.hb_agent_version,
+                          'way': self.hb_way, 'routine_at': iso_utc(self.hb_routine_at),
+                          'routine_note': self.hb_routine_note},
         }
 
     def __repr__(self):

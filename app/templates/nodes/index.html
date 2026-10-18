@@ -445,6 +445,22 @@
           </div>
           <button class="btn btn-primary btn-xs" style="margin-top:8px" onclick="saveHeartbeatSettings()"><i class="bi bi-send"></i> Save and push to fleet</button>
           <span class="text-xs text-muted" id="hbAgentVersion"></span>
+          <hr style="margin:10px 0 8px">
+          <div class="fw-semibold"><i class="bi bi-arrow-repeat me-1"></i>Keep every node covered</div>
+          <p class="text-xs text-muted" style="margin:6px 0 8px">The heartbeat is what lets the SLA tell a node that is down from a VPN or
+            SSH glitch. This routine installs the agent where it is missing, updates it where it is older than this server's, and repairs it
+            where SSH works but no heartbeat arrives. Each install tries the four ways to the broker (TLS first) and keeps the best.</p>
+          <div class="flex gap-2" style="flex-wrap:wrap;align-items:flex-end">
+            <label class="text-xs" style="flex:0 0 auto"><input type="checkbox" id="hbRoutineOn"> On, every</label>
+            <label class="text-xs" style="flex:0 0 80px"><input class="form-control form-control-sm" id="hbRoutineHours" type="number" min="1" max="168"></label>
+            <span class="text-xs" style="flex:0 0 auto">hours</span>
+            <button class="btn btn-outline-secondary btn-xs" id="hbRoutineSave" onclick="saveHeartbeatRoutine(false)">Save</button>
+            <button class="btn btn-primary btn-xs" id="hbRoutineRun" onclick="saveHeartbeatRoutine(true)"><i class="bi bi-play-fill"></i> Run now</button>
+          </div>
+          <div class="text-xs text-muted" id="hbRoutineLast" style="margin-top:6px"></div>
+          <div class="text-xs" style="margin-top:8px">Broker login <b id="hbLoginUser"></b> (<code>HEARTBEAT_BROKER_USERNAME</code> /
+            <code>_PASSWORD</code> on the server):
+            <button class="btn btn-outline-secondary btn-xs" id="hbLoginPush" onclick="pushHeartbeatLogin()"><i class="bi bi-key"></i> Push to every node</button></div>
         </div>
       </div>
       <p class="text-xs text-muted">Docker and Node-RED installs run vendor scripts over SSH and can take several minutes per node. Validate on one node before running fleet-wide.</p>
@@ -861,7 +877,38 @@ function loadHeartbeatSettings() {
         document.getElementById('hbTls').checked = !!s.tls;
         document.getElementById('hbOff').style.display = d.enabled ? 'none' : '';
         document.getElementById('hbAgentVersion').textContent = d.agent_version ? ' agent ' + d.agent_version : '';
+        const r = d.routine || {};
+        document.getElementById('hbRoutineOn').checked = !!r.enabled;
+        document.getElementById('hbRoutineHours').value = r.hours || 6;
+        document.getElementById('hbLoginUser').textContent = d.broker_user || '';
+        const last = d.routine_last;
+        const p = (last && last.planned) || {};
+        document.getElementById('hbRoutineLast').textContent = last
+            ? `Last pass ${new Date(last.at).toLocaleString()}: ${p.install || 0} to install, ${p.update || 0} to update, ` +
+              `${p.repair || 0} to repair${last.deferred ? `, ${last.deferred} left for the next pass` : ''}. ${last.result || 'running'}.`
+            : 'No pass yet: the first runs about 10 minutes after EdgeShell starts.';
     }).catch(() => {});
+}
+function saveHeartbeatRoutine(runNow) {
+    const body = {enabled: document.getElementById('hbRoutineOn').checked,
+                  hours: parseInt(document.getElementById('hbRoutineHours').value, 10), run_now: runNow};
+    if (runNow && !confirm('Run the heartbeat routine now?\n\nIt installs the agent where it is missing, updates old agents and repairs '
+                           + 'agents that send nothing, on nodes SSH reaches now (up to 25 per pass).')) return;
+    fetch('/nodes/heartbeat/routine', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)})
+        .then(r => r.json()).then(d => {
+            if (d.job_id) esJobWindow(d.job_id);
+            else showToast(d.message || (d.success ? 'Saved.' : 'Not saved.'), d.success ? 'success' : 'danger');
+            loadHeartbeatSettings();
+        }).catch(e => showToast('Error: ' + e.message, 'danger'));
+}
+function pushHeartbeatLogin() {
+    if (!confirm('Push the broker login from the server settings to every node with the agent?\n\n'
+                 + 'Each node checks it against the broker first; a login the broker refuses is not saved.')) return;
+    fetch('/nodes/heartbeat/login', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: '{}'})
+        .then(r => r.json()).then(d => {
+            if (d.job_id) esJobWindow(d.job_id);
+            else showToast(d.message || 'Nothing to do.', d.success ? 'success' : 'warning');
+        }).catch(e => showToast('Error: ' + e.message, 'danger'));
 }
 function saveHeartbeatSettings() {
     const body = {broker: document.getElementById('hbBroker').value.trim(),

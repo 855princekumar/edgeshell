@@ -27,6 +27,8 @@ flowchart LR
 1. [What you see](#what-you-see)
 2. [Set it up](#set-it-up)
 3. [Install the agent on nodes](#install-the-agent-on-nodes)
+   - [Keep every node covered (the routine)](#keep-every-node-covered-the-routine)
+   - [Four ways to the broker](#four-ways-to-the-broker)
 4. [Change settings on every node (hot reload)](#change-settings-on-every-node-hot-reload)
 5. [How uptime is counted](#how-uptime-is-counted)
 6. [Opening SenseHive](#opening-sensehive)
@@ -106,23 +108,70 @@ open SenseHive once from the sidebar and change its password (`admin` /
 It runs as a background job, 8 nodes at a time, with live progress. Per node:
 
 1. EdgeShell uploads the agent (a pinned copy inside the EdgeShell image; no
-   download from the internet), this node's `agent.env` (its name and keys) and
-   the fleet `config.yaml` into a private temporary folder.
-2. `install.sh` installs the OS packages (`python3-paho-mqtt`, `python3-yaml`,
-   `python3-cryptography`), creates the unprivileged user `hbagent`, puts the
-   files in `/opt/edgeshell-heartbeat` and starts the hardened systemd service
-   `edgeshell-heartbeat`; the temporary folder is removed.
+   download from the internet), this node's join token (its name and keys,
+   never the master key) and the broker login into a private temporary folder.
+2. The agent's `setup.py` checks the token, tries the
+   [four ways to the broker](#four-ways-to-the-broker) with a real login and
+   keeps the best that works, then `install.sh` installs the OS packages
+   (`python3-paho-mqtt`, `python3-yaml`, `python3-cryptography`), creates the
+   unprivileged user `hbagent`, puts the files in `/opt/edgeshell-heartbeat` and
+   starts the hardened systemd service `edgeshell-heartbeat`; the temporary
+   folder is removed. The job log shows the checkpoint table per node.
 3. The agent identifies itself by the **EdgeShell node name**, so its heartbeats
    land on exactly that node: no duplicates, no overwriting another node.
 
 Try one node first (select it, then install), then the rest. The Fleet Setup
 scan shows which nodes have the agent running.
 
+### Keep every node covered (the routine)
+
+The heartbeat is what lets the SLA tell a node that is down from a VPN or SSH
+glitch, so EdgeShell keeps the agent on **every** node by itself
+([ADR 0016](adr/0016-heartbeat-everywhere.md)). About 10 minutes after a start
+and then every 6 hours (**Fleet Setup, Keep every node covered**), for each node
+SSH reaches now:
+
+| The node | The routine |
+| -------- | ----------- |
+| has no agent | installs it |
+| has an agent older than this EdgeShell's | updates it |
+| SSH works but no heartbeat for 15 minutes | runs the agent's test on the node; reinstalls only if it fails |
+| failed in the last 24 hours | leaves it alone until then |
+
+Up to 25 nodes per pass (`HEARTBEAT_ROUTINE_MAX`), 8 at a time, as a background
+job; each action is in the activity log, the pass summary in Fleet Setup, and a
+silent node's card says what the routine did. **Run now** starts a pass at once;
+the routine can be turned off or set to every 1 to 168 hours. OpenRemoteGUI,
+Docker and Node-RED stay optional and are never installed by it.
+
+### Four ways to the broker
+
+On some networks TLS on 8883 is blocked, or a proxy owns the port, and an agent
+that knows one way in retries it forever. The agent (1.2.0) knows four, tried
+in this order with a real login each:
+
+| Way | Port | |
+| --- | ---- | --- |
+| MQTT over TLS | 8883 | preferred |
+| WebSocket over TLS | 8884 | gets out where only web traffic does |
+| plain MQTT | 1883 | only when no TLS way works; the heartbeats stay encrypted, the login does not |
+| plain WebSocket | 8000 | last resort |
+
+At install the node keeps the first way that works (the node card's heartbeat
+badge shows it, e.g. `ws-tls:8884`). While running, if its connection stays down
+for three beats it probes again and switches; every 10 minutes it tries the
+preferred way first. A broker that refuses the login stops the search (every way
+uses the same login). The broker login comes from `HEARTBEAT_BROKER_USERNAME` /
+`HEARTBEAT_BROKER_PASSWORD` (default `admin` / `admin123`: change them on your
+broker and here, then **Push to every node**); each node checks a new login
+against the broker before it saves it.
+
 ## Change settings on every node (hot reload)
 
 **Fleet Setup, Heartbeat settings**: broker, port, TLS, interval, then **Save and
-push to fleet**. EdgeShell writes the same `config.yaml` to every node with the
-agent (atomically). Each agent:
+push to fleet**. EdgeShell sends the new values to every node with the agent; a
+node with agent 1.2+ merges them into its `config.yaml` and keeps the way in it
+found (unless the broker itself changed). Each agent:
 
 - applies a new interval at once, without reconnecting;
 - switches to a new broker cleanly (disconnect, connect, new last will), so no

@@ -307,6 +307,8 @@ class Collector:
                     self._purge_history()
                     from app.services import login_policy
                     login_policy.recheck(self)
+                    from app.services import heartbeat_service
+                    heartbeat_service.KEEPER.tick()             # keep the agent on every node (ADR 0016)
             except Exception as e:
                 self._app.logger.warning('metrics cycle failed: %s', e)
             interval = int(self._app.config.get('COLLECTOR_INTERVAL', INTERVAL_S))
