@@ -139,6 +139,9 @@ def main():
           'the version keeps its own install.sh, rollback.sh and uninstall.sh')
     check(dx(node, 'su -s /bin/sh es-demo-sensor -c "touch /opt/edgeshell/apps/demo-sensor/current/x" 2>/dev/null').returncode != 0,
           'the app cannot change its own code (version folders are root-only)')
+    check(dx(node, 'su -s /bin/sh nobody -c "cat /opt/edgeshell/apps/demo-sensor/current/app/main.py; ls /opt/edgeshell/apps" 2>/dev/null').returncode != 0
+          and dx(node, 'stat -c %a /opt/edgeshell/apps/demo-sensor/data /opt/edgeshell/bin/esapp /etc/systemd/system/es-demo-sensor.service | tr "\n" " "').stdout.split() == ['700', '700', '600'],
+          'other users cannot read the app, its data or esapp')
     check(dx(node, 'journalctl -u es-demo-sensor --no-pager | grep -c "Started"').stdout.strip() not in ('', '0'), 'logs go to the journal')
 
     res, out, s = push(node, p2bad)

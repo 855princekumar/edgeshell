@@ -60,8 +60,8 @@ def upload():
         return _fail('Choose a .esapp package (build one with: python3 esapp.py pack FOLDER)')
     try:
         pkg, created = svc.store(f.stream, current_user.username, request.form.get('note'))
-    except ValueError as e:
-        return _fail(str(e))
+    except svc.Refused as e:
+        return _fail(e.text)
     log_activity('App package upload', command='%s %s' % (pkg.name, pkg.version),
                  response='sha256 %s, %d bytes%s' % (pkg.sha256[:16], pkg.size, '' if created else ' (same build again)'))
     return jsonify({'success': True, 'created': created, 'package': pkg.to_dict()})

@@ -136,14 +136,15 @@ def execute_in_dir(node, command, cwd=None, timeout=60):
 # The only place EdgeShell puts files on a node (under the SSH user's home).
 # Services and apps go to /opt/edgeshell through esapp (the Apps page), never here.
 UPLOAD_ROOT = 'Downloads/edgeshell'
+UPLOAD_REFUSED = ('Files go to ~/Downloads/edgeshell on each node: give a folder inside it '
+                  '(letters, digits, . _ - and /), not a path elsewhere')
 _SUB_RE = re.compile(r'^[A-Za-z0-9._-]+(/[A-Za-z0-9._-]+)*$')
 
 
 def clean_subfolder(sub):
     """A folder under ~/Downloads/edgeshell ('' for the folder itself); ValueError otherwise."""
     sub = (sub or '').strip().replace('\\', '/')
-    refuse = ValueError('Files go to ~/Downloads/edgeshell on each node: give a folder inside it '
-                        '(letters, digits, . _ - and /), not a path elsewhere')
+    refuse = ValueError(UPLOAD_REFUSED)
     if sub.startswith('/'):                           # an absolute path: somewhere else on the node
         raise refuse
     for prefix in ('~/' + UPLOAD_ROOT, UPLOAD_ROOT):

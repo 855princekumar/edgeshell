@@ -126,6 +126,12 @@ The unit runs from `current`, as user `es-my-sensor`, with `ProtectSystem=strict
 `ProtectHome`, `PrivateTmp`, `NoNewPrivileges` and only `data/` writable.
 Logs: `journalctl -u es-my-sensor`.
 
+Permissions: `/opt/edgeshell` and `apps/` can be passed through but not listed;
+an app's folder and versions are `root:es-NAME`, readable only by its own
+user (never writable by it); `data/` belongs to the app's user alone (0700);
+esapp, the OTA copies, the per-version scripts and the unit are root only.
+Other apps and users on the node cannot read an app's code or data.
+
 On the node, by hand (as root), every version carries its own scripts, and they
 work even if `/opt/edgeshell/bin/esapp` changes later:
 
@@ -171,6 +177,7 @@ server; the records stay.
 | ----- | ------ |
 | First version: package to `~/Downloads/edgeshell`, venv, hardened service, healthy | about 18 s |
 | A version that crashes rolls itself back, and the earlier version serves again | about 22 s |
+| Other users cannot read the app, its data or esapp | checked |
 | One-click rollback to the newest stable version before | about 12 s |
 | Full removal: no folder, user or service left, the rest of the system exactly as before | under 1 s |
 

@@ -43,6 +43,14 @@ def esapp():
 ES = esapp()
 
 
+class Refused(Exception):
+    """A package refused, with a sentence written for people (esapp's own text, never a library message)."""
+
+    def __init__(self, text):
+        super().__init__(text)
+        self.text = text
+
+
 def bucket():
     path = os.path.join(current_app.config['UPLOAD_FOLDER'], 'packages')
     os.makedirs(path, exist_ok=True)
@@ -56,7 +64,7 @@ def package_path(pkg):
 # ------------------------------------------------------------------ the bucket
 def store(stream, user, note=None):
     """Check and keep an uploaded package. Returns (package, created).
-    Raises ValueError with a reason a person can act on."""
+    Raises Refused with a reason a person can act on."""
     from app.models.apps import AppPackage
     tmp = os.path.join(bucket(), '.incoming-%s.esapp' % uuid.uuid4().hex)
     try:
@@ -65,10 +73,10 @@ def store(stream, user, note=None):
         try:
             m, digest = ES.read_package(tmp)
         except ES.Fail as e:
-            raise ValueError(str(e))
+            raise Refused(e.text)
         have = AppPackage.query.filter_by(name=m['name'], version=m['version']).first()
         if have and have.sha256 != digest:
-            raise ValueError('%s %s was uploaded before with different contents. Versions never change: '
+            raise Refused('%s %s was uploaded before with different contents. Versions never change: '
                              'give the new build a new version.' % (m['name'], m['version']))
         fname = '%s-%s%s' % (m['name'], m['version'], ES.EXT)
         dest_dir = os.path.join(bucket(), m['name'], m['version'])
@@ -173,7 +181,7 @@ def _version_tuple(v):
 
 def ensure_esapp(node):
     """esapp in /opt/edgeshell/bin at this EdgeShell's version (installs or updates it)."""
-    res, _ = _run(node, 'python3 %s version 2>/dev/null || true' % NODE_ESAPP, timeout=30)
+    res, _ = _run(node, 'sudo python3 %s version 2>/dev/null || true' % NODE_ESAPP, timeout=30)
     have = res.get('esapp') if res.get('ok') else None
     if have and _version_tuple(have) >= _version_tuple(ES.ESAPP_VERSION):
         return have

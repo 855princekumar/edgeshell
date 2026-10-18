@@ -47,11 +47,11 @@ def upload():
     files = [f for f in files if f and f.filename]
     node_ids = request.form.getlist('node_ids')
     # Files land only in ~/Downloads/edgeshell on each node (a folder inside it may be given)
-    from app.services.ssh_service import clean_subfolder, UPLOAD_ROOT
+    from app.services.ssh_service import clean_subfolder, UPLOAD_ROOT, UPLOAD_REFUSED
     try:
         sub = clean_subfolder(request.form.get('subfolder', request.form.get('target_path', '')))
-    except ValueError as e:
-        return jsonify({'error': str(e)}), 400
+    except ValueError:
+        return jsonify({'error': UPLOAD_REFUSED}), 400
     target_path = '~/' + UPLOAD_ROOT + ('/' + sub if sub else '')
 
     if not files:

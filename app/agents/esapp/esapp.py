@@ -67,7 +67,12 @@ EXT = '.esapp'
 
 
 class Fail(Exception):
-    """A refusal with a plain reason; nothing on the node was left half done."""
+    """A refusal with a plain reason; nothing on the node was left half done.
+    .text is esapp's own sentence, never a library message or a traceback."""
+
+    def __init__(self, text):
+        super().__init__(text)
+        self.text = text
 
 
 # ------------------------------------------------------------------ manifest and package
@@ -165,10 +170,10 @@ def read_package(path):
                 _member_ok(t)
                 if t.name in ('manifest.json', './manifest.json') and t.isfile():
                     manifest = json.loads(tf.extractfile(t).read().decode('utf-8'))
-    except (tarfile.TarError, OSError, EOFError) as e:
-        raise Fail('package: not a valid .esapp file (%s)' % e)
-    except ValueError as e:
-        raise Fail('manifest.json is not valid JSON (%s)' % e)
+    except (tarfile.TarError, OSError, EOFError):
+        raise Fail('package: not a valid .esapp file (a gzip tarball made by esapp pack)')
+    except ValueError:
+        raise Fail('manifest.json is not valid JSON')
     if manifest is None:
         raise Fail('package: manifest.json missing at the top level')
     m = check_manifest(manifest)
@@ -197,7 +202,7 @@ def extract(path, dest):
             os.makedirs(os.path.dirname(target), exist_ok=True)
             with tf.extractfile(t) as src, open(target, 'wb') as out:
                 shutil.copyfileobj(src, out)
-            os.chmod(target, 0o755 if t.mode & 0o111 else 0o644)
+            os.chmod(target, 0o700 if t.mode & 0o111 else 0o600)   # opened to the app's group by share_tree()
 
 
 def pack(folder, out=None):
@@ -266,6 +271,12 @@ def ensure_user(user, home, groups):
 def remove_user(user):
     if user_exists(user):
         sh(['userdel', user], check=False)
+
+
+def share_tree(path, group):
+    """root owns it, the app's group may read (and enter, and run what is executable), others nothing."""
+    sh(['chown', '-R', 'root:%s' % group, path])
+    sh(['chmod', '-R', 'u=rwX,g=rX,o=', path])
 
 
 def chown_tree(path, owner):
@@ -436,7 +447,7 @@ def write_scripts(app, v, vd):
              'uninstall %s' % app.name)):
         with open(os.path.join(vd, fname), 'w') as fh:
             fh.write(SCRIPT % {'what': what, 'name': app.name, 'version': v, 'args': args})
-        os.chmod(os.path.join(vd, fname), 0o755)  # nosec B103 - root-owned script, runnable not writable by others
+        os.chmod(os.path.join(vd, fname), 0o700)           # for root: they switch, roll back or remove the app
 
 
 def install_unit(app, v):
@@ -445,7 +456,7 @@ def install_unit(app, v):
     dst = os.path.join(UNIT_DIR, app.unit)
     tmp = dst + '.esapp-new'
     shutil.copyfile(src, tmp)
-    os.chmod(tmp, 0o644)
+    os.chmod(tmp, 0o600)                                # systemd reads units as root
     os.replace(tmp, dst)
     systemctl('daemon-reload')
 
@@ -507,14 +518,15 @@ def need_systemd():
 
 def bootstrap():
     need_root()
-    for d in ('bin', 'apps'):
-        os.makedirs(os.path.join(ROOT, d), exist_ok=True)
-        os.chmod(os.path.join(ROOT, d), 0o755)  # nosec B103 - root-owned folder the app users must traverse
-    os.chmod(ROOT, 0o755)  # nosec B103 - root-owned folder the app users must traverse
+    os.makedirs(os.path.join(ROOT, 'bin'), exist_ok=True)
+    os.makedirs(os.path.join(ROOT, 'apps'), exist_ok=True)
+    os.chmod(os.path.join(ROOT, 'bin'), 0o700)          # esapp is for root only
+    for d in (ROOT, os.path.join(ROOT, 'apps')):
+        sh(['chmod', 'u=rwx,go=x', d])                  # app users may pass through, not list or read
     dst = os.path.join(ROOT, 'bin', 'esapp')
     tmp = dst + '.new'
     shutil.copyfile(os.path.abspath(__file__), tmp)
-    os.chmod(tmp, 0o755)  # nosec B103 - root-owned tool, runnable not writable by others
+    os.chmod(tmp, 0o700)
     os.replace(tmp, dst)
     return {'ok': True, 'esapp': ESAPP_VERSION, 'path': dst}
 
@@ -529,7 +541,8 @@ def install(pkg, sha=None, activate_now=True):
     v = m['version']
     os.makedirs(os.path.join(app.dir, 'ota'), exist_ok=True)
     os.makedirs(os.path.join(app.dir, 'versions'), exist_ok=True)
-    os.chmod(app.dir, 0o755)  # nosec B103 - root-owned app folder its service user must traverse
+    for d in (app.dir, os.path.join(app.dir, 'ota'), os.path.join(app.dir, 'versions')):
+        os.chmod(d, 0o700)                              # root only until the app's user exists
     have = app.state['versions'].get(v)
     if have and have.get('sha256') != digest:
         raise Fail('%s %s was installed here with different contents; give the new build a new version' % (app.name, v))
@@ -549,11 +562,14 @@ def install(pkg, sha=None, activate_now=True):
     app.log('received %s %s (%s)' % (app.name, v, digest[:12]))
     created = ensure_user(app.user, os.path.join(app.dir, 'data'), m['groups'])
     app.state.setdefault('created_user', created)       # uninstall removes the user only if esapp made it
+    for d in (app.dir, os.path.join(app.dir, 'versions')):
+        sh(['chown', 'root:%s' % app.user, d])
+        sh(['chmod', 'u=rwx,g=x,o=', d])               # the app's user may pass through, nobody else
     data = os.path.join(app.dir, 'data')
     if not os.path.isdir(data):
         os.makedirs(data)
         chown_tree(data, '%s:%s' % (app.user, app.user))
-        os.chmod(data, 0o750)  # nosec B103 - the app user owns its data; its group may read
+        os.chmod(data, 0o700)                           # the app's own files: its user only
     build = os.path.join(app.dir, 'versions', '.build-%s' % v)
     if os.path.lexists(build):
         shutil.rmtree(build)
@@ -567,8 +583,7 @@ def install(pkg, sha=None, activate_now=True):
         with open(os.path.join(build, app.unit), 'w') as fh:
             fh.write(unit_text(app, m))
         write_scripts(app, v, build)
-        chown_tree(build, 'root:root')
-        os.chmod(build, 0o755)  # nosec B103 - root-owned version folder, read-only for the app user
+        share_tree(build, app.user)                     # read-only for the app, invisible to others
         os.rename(build, app.vdir(v))
     except Exception:
         shutil.rmtree(build, ignore_errors=True)
@@ -781,6 +796,7 @@ def uninstall(name, keep_data=False):
         os.makedirs(os.path.dirname(kept), exist_ok=True)
         os.rename(os.path.join(app.dir, 'data'), kept)
         chown_tree(kept, 'root:root')
+        os.chmod(kept, 0o700)
     created = app.state.get('created_user', False)
     shutil.rmtree(app.dir, ignore_errors=True)
     if created:
