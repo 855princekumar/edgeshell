@@ -2,6 +2,11 @@
 
 All notable changes are documented here. Format loosely follows Keep a Changelog.
 
+## [1.15.2] - 2026-10-19
+
+### Fixed
+- **Upgrading an existing database to 1.15.x.** The three heartbeat routine columns (`hb_way`, `hb_routine_at`, `hb_routine_note`) were not added to databases made by an earlier version, so every page and job that reads nodes failed after an upgrade. They are added at start now, and a safety net adds any other nullable model column an older database lacks, so a forgotten column can never break an upgrade again (tests drop more than 50 columns across every table and check they come back).
+
 ## [1.15.1] - 2026-10-19
 
 ### Changed

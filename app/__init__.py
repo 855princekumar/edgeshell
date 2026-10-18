@@ -386,6 +386,9 @@ def _ensure_schema():
             'hb_since': 'DATETIME',
             'hb_lwt_at': 'DATETIME',
             'hb_agent_version': 'VARCHAR(16)',
+            'hb_way': 'VARCHAR(24)',
+            'hb_routine_at': 'DATETIME',
+            'hb_routine_note': 'VARCHAR(200)',
             'nodered_installed': 'BOOLEAN',
             'capabilities_checked_at': 'DATETIME',
             'last_error': 'VARCHAR(256)',
@@ -441,6 +444,24 @@ def _ensure_schema():
             for col, ddl in cols.items():
                 if col not in existing:
                     conn.execute(text(f'ALTER TABLE {table} ADD COLUMN {col} {ddl}'))
+
+    # Safety net: any other nullable model column an older database lacks is
+    # added too, so a column missing from the list above can never break an
+    # upgrade (every query on that table would fail).
+    inspector = inspect(bind)
+    q = bind.dialect.identifier_preparer.quote
+    for table in db.metadata.sorted_tables:
+        if table.name not in inspector.get_table_names():
+            continue
+        existing = {c['name'] for c in inspector.get_columns(table.name)}
+        missing = [c for c in table.columns if c.name not in existing and c.nullable and not c.primary_key]
+        if not missing:
+            continue
+        with bind.begin() as conn:
+            for c in missing:
+                ddl = c.type.compile(dialect=bind.dialect)
+                # Bandit B608 reviewed: table and column names come from the models, quoted by the dialect
+                conn.execute(text(f'ALTER TABLE {q(table.name)} ADD COLUMN {q(c.name)} {ddl}'))  # nosec B608
 
     # Indexes added after a table was first created (create_all skips them).
     wanted_indexes = {('activity_logs', 'ix_activity_logs_user'): 'user'}
