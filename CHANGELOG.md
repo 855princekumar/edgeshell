@@ -2,6 +2,12 @@
 
 All notable changes are documented here. Format loosely follows Keep a Changelog.
 
+## [1.15.1] - 2026-10-19
+
+### Changed
+- **The heartbeat routine tries once, then pauses.** A node the routine worked on (install, update, repair or check, whatever the result) is left alone for 24 hours; before, only a failure held a node. Offline and login-paused nodes stay skipped, and a node whose heartbeat arrives is never touched.
+- **No pass on stale data.** When SenseHive is not reachable (or not set up) a routine pass changes nothing, because every node would look silent; the pass summary in Fleet Setup says why.
+
 ## [1.15.0] - 2026-10-18
 
 ### Added

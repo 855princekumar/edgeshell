@@ -136,12 +136,15 @@ SSH reaches now:
 | has no agent | installs it |
 | has an agent older than this EdgeShell's | updates it |
 | SSH works but no heartbeat for 15 minutes | runs the agent's test on the node; reinstalls only if it fails |
-| failed in the last 24 hours | leaves it alone until then |
+| was worked on by the routine in the last 24 hours (any result) | leaves it alone until then: one try, then a pause |
+| is offline or its logins are paused | is skipped; SSH must reach it now |
 
 Up to 25 nodes per pass (`HEARTBEAT_ROUTINE_MAX`), 8 at a time, as a background
 job; each action is in the activity log, the pass summary in Fleet Setup, and a
 silent node's card says what the routine did. **Run now** starts a pass at once;
-the routine can be turned off or set to every 1 to 168 hours. OpenRemoteGUI,
+the routine can be turned off or set to every 1 to 168 hours. When SenseHive
+is not reachable the pass changes nothing (the heartbeat state would be stale
+and every node would look silent) and the summary says so. OpenRemoteGUI,
 Docker and Node-RED stay optional and are never installed by it.
 
 ### Four ways to the broker
