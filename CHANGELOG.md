@@ -2,6 +2,12 @@
 
 All notable changes are documented here. Format loosely follows Keep a Changelog.
 
+## [1.14.2] - 2026-10-18
+
+### Changed
+- SenseHive 1.7.0 by default (`SENSEHIVE_TAG`): **secure topics** (devices publish encrypted and signed messages with a key SenseHive issues, and their topics appear by themselves) and a **heartbeat recycle bin** for retired nodes. A node in SenseHive's bin leaves its read API; EdgeShell keeps its last known state, as for any node SenseHive no longer lists.
+- The sandbox checks that the bundled SenseHive serves secure topics through the production nginx and that their API needs a SenseHive sign-in.
+
 ## [1.14.1] - 2026-10-17
 
 ### Security
