@@ -91,7 +91,7 @@ def pkg(tmp_path, version, **extra):
     d = tmp_path / ('src-' + version)
     (d / 'bin').mkdir(parents=True)
     (d / 'bin' / 'server').write_text('#!/bin/sh\nexec sleep 1000\n')
-    os.chmod(d / 'bin' / 'server', 0o755)
+    os.chmod(d / 'bin' / 'server', 0o700)
     m = dict({'name': 'demo-sensor', 'version': version, 'run': 'bin/server --port 18080',
               'health': {'within_s': 10}, 'stable_after_s': 60, 'groups': ['dialout', 'gpio']}, **extra)
     (d / 'manifest.json').write_text(json.dumps(m))
