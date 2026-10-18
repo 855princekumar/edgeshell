@@ -26,6 +26,7 @@ DOCS = {
     'docs/API.md': 'API',
     'docs/EMAIL.md': 'Email',
     'docs/HEARTBEAT.md': 'MQTT-Heartbeat',
+    'docs/APPS.md': 'Apps-on-the-Edge',
     'docs/VPN-NETWORK.md': 'VPN-and-Network',
     'docs/MIGRATION.md': 'Database-Migration',
     'docs/ISSUES.md': 'Support-Tickets',

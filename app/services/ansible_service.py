@@ -116,11 +116,12 @@ def run_playbook(nodes, playbook_path, extra_vars=None, become=True):
     return results
 
 
-def deploy_file(nodes, local_path, remote_path):
+def deploy_file(nodes, local_path, subfolder=''):
+    """Into ~/Downloads/edgeshell[/subfolder] on every node."""
     results = {}
     for n in nodes:
-        ok, msg = upload_file(n, local_path, remote_path)
-        results[n.name] = {'success': ok, 'message': msg}
+        ok, msg, path = upload_file(n, local_path, subfolder)
+        results[n.name] = {'success': ok, 'message': msg, 'path': path}
     return results
 
 

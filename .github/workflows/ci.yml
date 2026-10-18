@@ -185,6 +185,23 @@ jobs:
       - name: lake-init again (idempotent)
         run: docker run --rm --network esnet -e MARIADB_ROOT_PASSWORD=ci-root-pw -v "$PWD/docker/lake-init.sh:/l.sh:ro" mariadb:11.4 sh /l.sh | grep "io=Yes sql=Yes"
 
+  esapp:
+    name: Apps on a real systemd node (esapp on Debian 12)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: A Debian 12 node with systemd
+        run: |
+          docker run -d --name esnode --privileged --cgroupns=host -v /sys/fs/cgroup:/sys/fs/cgroup:rw jrei/systemd-debian:12
+          for i in $(seq 1 30); do docker exec esnode systemctl is-system-running 2>/dev/null | grep -qE 'running|degraded' && break; sleep 2; done
+      - name: Install, crash and roll back by itself, one-click rollback, cleanup, full removal
+        run: python tests/esapp_e2e.py --node esnode
+      - name: The example app packs
+        run: python app/agents/esapp/esapp.py pack examples/apps/hello-sensor -o /tmp/hello.esapp
+
   ui:
     name: Browser UI (1500 nodes, phone to desktop, zoom 67 to 200%)
     runs-on: ubuntu-24.04
@@ -214,7 +231,7 @@ jobs:
 
   image:
     name: Image build (amd64 + arm64) and hardening audit
-    needs: [lint, secrets, security, test, ui, lake]   # stage 2: only after the whole gate passed
+    needs: [lint, secrets, security, test, ui, lake, esapp]   # stage 2: only after the whole gate passed
     runs-on: ubuntu-24.04
     permissions:
       contents: read

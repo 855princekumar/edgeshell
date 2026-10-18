@@ -379,13 +379,15 @@ def main():
     token = secrets.token_hex(8)
     fname = f'e2e-{token}.txt'
     status, _, body = admin.post_multipart(
-        '/files/upload', [('node_ids', str(i)) for i in ids] + [('target_path', '/tmp/')],
+        '/files/upload', [('node_ids', str(i)) for i in ids] + [('subfolder', 'e2e')],
         [('files', (fname, f'edgeshell-e2e {token}\n'.encode()))])
     up = json.loads(body) if status == 200 else {}
     check('file pushed to every node', status == 200 and up.get('success'), body[:200])
     pulled = 0
+    paths = {name: res.get('path') for name, res in (up.get('results') or {}).get(fname, {}).items()}
+    check('files land only in ~/Downloads/edgeshell', paths and all((p or '').endswith(f'/Downloads/edgeshell/e2e/{fname}') for p in paths.values()), paths)
     for n in nodes:
-        _, r = admin.post_json('/logs/fetch', {'node_id': n['id'], 'file_path': f'/tmp/{fname}'})
+        _, r = admin.post_json('/logs/fetch', {'node_id': n['id'], 'file_path': paths.get(n['name']) or ''})
         pulled += token in (r.get('content') or '')
     check('file pulled back from every node', pulled == EXPECTED_NODES, f'{pulled}/{EXPECTED_NODES}')
 
@@ -395,10 +397,13 @@ def main():
     script = (f'#!/bin/sh\nset -e\nmkdir -p /opt/edgeshell-ota\n'
               f'echo "{version}" > /opt/edgeshell-ota/VERSION\n').encode()
     status, _, body = admin.post_multipart(
-        '/files/upload', [('node_ids', str(i)) for i in ids] + [('target_path', '/tmp/')],
+        '/files/upload', [('node_ids', str(i)) for i in ids] + [('subfolder', 'e2e')],
         [('files', ('edgeshell-ota.sh', script))])
     check('update package pushed', status == 200 and json.loads(body).get('success'), body[:200])
-    status, ota, _ = admin.fleet_exec(ids, 'sudo sh /tmp/edgeshell-ota.sh && cat /opt/edgeshell-ota/VERSION')
+    status, ota, _ = admin.fleet_exec(ids, 'sudo sh ~/Downloads/edgeshell/e2e/edgeshell-ota.sh && cat /opt/edgeshell-ota/VERSION')
+    status, _, body = admin.post_multipart('/files/upload', [('node_ids', str(ids[0])), ('target_path', '/etc/')],
+                                           [('files', ('x.conf', b'x'))])
+    check('a path outside ~/Downloads/edgeshell is refused', status == 400, body[:200])
     applied = [k for k, v in ota.items() if version in (v.get('stdout') or '')]
     check('update applied with sudo on every node', len(applied) == EXPECTED_NODES,
           f'{len(applied)}/{EXPECTED_NODES}')

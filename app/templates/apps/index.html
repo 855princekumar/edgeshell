@@ -1,0 +1,348 @@
+{% extends "base.html" %}
+{% block title %}Apps{% endblock %}
+{% block content %}
+<div class="page-header">
+    <div>
+        <div class="page-title">Apps on the edge</div>
+        <div class="page-subtitle">Every app in <code>/opt/edgeshell</code> on the node: its own service, user and Python packages, versions side by side, and a way back. Nothing else on the node is touched.</div>
+    </div>
+    <div class="flex gap-2" style="flex-wrap:wrap">
+        <a class="btn btn-outline" href="{{ url_for('apps.esapp_tool') }}" title="The packaging tool (the same file the nodes run)"><i class="bi bi-download"></i> esapp.py</a>
+        <button type="button" class="btn btn-outline" id="scanBtn" title="Read every reachable node's apps and versions"><i class="bi bi-arrow-repeat"></i> Read nodes</button>
+    </div>
+</div>
+
+<div class="ap-tiles">
+    <div class="card ap-tile"><div class="ap-tile-label">Packages in the bucket</div><div class="ap-tile-value" id="tPk">-</div><div class="ap-tile-sub" id="tPkSub"></div></div>
+    <div class="card ap-tile"><div class="ap-tile-label">Apps running</div><div class="ap-tile-value" id="tRun">-</div><div class="ap-tile-sub" id="tRunSub"></div></div>
+    <div class="card ap-tile"><div class="ap-tile-label">Not healthy</div><div class="ap-tile-value" id="tBad">-</div><div class="ap-tile-sub" id="tBadSub"></div></div>
+    <div class="card ap-tile"><div class="ap-tile-label">Kept per app</div><div class="ap-tile-value">{{ min_stable }}</div><div class="ap-tile-sub">newest stable versions, always</div></div>
+</div>
+
+<div class="card ap-job" id="jobBox" hidden>
+    <div class="card-body" style="padding:12px 16px">
+        <div class="flex items-center gap-2"><strong id="jobTitle"></strong><span class="text-xs text-muted" id="jobState"></span>
+            <button type="button" class="btn btn-sm btn-outline" style="margin-left:auto" id="jobClose">Close</button></div>
+        <div id="jobItems"></div>
+        <pre class="ap-log" id="jobLog"></pre>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-body" style="padding:12px 16px">
+        <div class="ap-tabs" role="tablist">
+            <button type="button" class="ap-tab active" data-tab="packages" role="tab">Packages</button>
+            <button type="button" class="ap-tab" data-tab="nodes" role="tab">On the nodes</button>
+            <button type="button" class="ap-tab" data-tab="audit" role="tab">Audit</button>
+            <button type="button" class="ap-tab" data-tab="build" role="tab">How to build an app</button>
+        </div>
+
+        <section class="ap-pane" id="pane-packages">
+            {% if current_user.is_admin() %}
+            <form class="flex gap-2 items-center" id="upForm" style="flex-wrap:wrap;margin:12px 0">
+                <input type="file" class="form-control form-control-sm" id="upFile" accept=".esapp" style="max-width:320px" aria-label="Package">
+                <input class="form-control form-control-sm" id="upNote" placeholder="Note for the audit (optional)" maxlength="300" style="max-width:300px">
+                <button type="submit" class="btn btn-sm btn-primary"><i class="bi bi-cloud-upload"></i> Upload package</button>
+                <span class="text-xs text-muted">Checked like the node checks it; kept in the bucket until you remove it after the audit.</span>
+            </form>
+            {% endif %}
+            <div id="pkList"></div>
+            <div id="rollPanel" class="ap-panel" hidden>
+                <div class="ap-h" id="rollTitle"></div>
+                <div class="text-xs text-muted" style="margin-bottom:8px">Canary nodes first, one at a time. The rest only if every canary is healthy, 4 at a time; the rollout stops by itself when too many fail. A node whose new version does not stay up goes back to its previous version by itself.</div>
+                <div class="flex gap-2 items-center" style="flex-wrap:wrap;margin-bottom:8px">
+                    <label class="text-sm">Canary nodes <input type="number" id="rollCanary" class="form-control form-control-sm" value="1" min="1" max="50" style="width:80px;display:inline-block"></label>
+                    <label class="text-sm">Stop when more than <input type="number" id="rollStop" class="form-control form-control-sm" value="20" min="0" max="100" style="width:80px;display:inline-block"> % fail</label>
+                    <input class="form-control form-control-sm" id="rollFilter" placeholder="Filter nodes" style="max-width:200px" maxlength="64">
+                    <button type="button" class="btn btn-sm btn-outline" id="rollAll">Select all online</button>
+                </div>
+                <div class="ap-nodes" id="rollNodes"></div>
+                <div class="flex gap-2" style="margin-top:8px">
+                    <button type="button" class="btn btn-sm btn-primary" id="rollGo"><i class="bi bi-send"></i> Roll out</button>
+                    <button type="button" class="btn btn-sm btn-outline" id="rollCancel">Cancel</button>
+                </div>
+            </div>
+        </section>
+
+        <section class="ap-pane" id="pane-nodes" hidden>
+            <div class="flex gap-2 items-center" style="flex-wrap:wrap;margin:12px 0">
+                <input class="form-control form-control-sm" id="nFilter" placeholder="Filter by node or app" style="max-width:240px" maxlength="64">
+                <span class="text-xs text-muted">The running version is marked; <i class="bi bi-lock"></i> versions are kept (the running one and the newest {{ min_stable }} stable).</span>
+            </div>
+            <div id="nodeList"></div>
+            <div id="prunePanel" class="ap-panel" hidden>
+                <div class="ap-h" id="pruneTitle"></div>
+                <div class="text-xs text-muted" style="margin-bottom:8px">Pick the versions to remove from the node, with their OTA copies. Kept versions cannot be picked.</div>
+                <div id="pruneList"></div>
+                <div class="flex gap-2" style="margin-top:8px">
+                    <button type="button" class="btn btn-sm btn-primary" id="pruneGo"><i class="bi bi-trash"></i> Remove picked versions</button>
+                    <button type="button" class="btn btn-sm btn-outline" id="pruneCancel">Cancel</button>
+                </div>
+            </div>
+        </section>
+
+        <section class="ap-pane" id="pane-audit" hidden>
+            <div class="text-xs text-muted" style="margin:12px 0">Every upload, rollout, rollback, switch, cleanup and removal, with the result on each node. Packages stay in the bucket until an administrator removes them; their records stay here.</div>
+            <div id="auditList"></div>
+        </section>
+
+        <section class="ap-pane ap-doc" id="pane-build" hidden>
+            <div class="ap-h">1. A folder with your app and a manifest.json</div>
+<pre class="ap-code">my-sensor/
+  manifest.json
+  requirements.txt        Python packages, installed in the version's own venv
+  app/main.py
+  wheels/                 optional: wheel files, for nodes without internet</pre>
+<pre class="ap-code">{
+  "name": "my-sensor",
+  "version": "1.0.0",
+  "description": "Reads the sensor and publishes it",
+  "run": "python app/main.py",
+  "requirements": "requirements.txt",
+  "env": {"INTERVAL_S": "10"},
+  "health": {"within_s": 20, "http": "http://127.0.0.1:8080/health"},
+  "stable_after_s": 600,
+  "groups": ["dialout"],
+  "ports": [8080],
+  "memory_max": "256M",
+  "cpu_quota": "50%"
+}</pre>
+            <div class="ap-h">2. Pack it (any computer with Python 3)</div>
+<pre class="ap-code">python3 esapp.py pack my-sensor        # makes my-sensor-1.0.0.esapp, checked like a node checks it</pre>
+            <div class="ap-h">3. Upload it here, roll it out</div>
+            <p class="text-sm">Packages: upload, then <b>Roll out</b> to the nodes you pick. Each node receives it in <code>~/Downloads/edgeshell</code> and esapp installs it:</p>
+<pre class="ap-code">/opt/edgeshell/apps/my-sensor/
+  versions/1.0.0/        your files, venv/, manifest.json, es-my-sensor.service,
+                         install.sh, rollback.sh, uninstall.sh   (read-only)
+  current -> versions/1.0.0
+  data/                  APP_DATA: your files, kept across versions
+  ota/                   every package received
+/etc/systemd/system/es-my-sensor.service   user es-my-sensor, starts at boot, restarts on failure,
+                                           logs in the journal (journalctl -u es-my-sensor)</pre>
+            <div class="ap-h">Rules every app follows</div>
+            <ul class="text-sm">
+                <li>Write only to <code>$APP_DATA</code>. The code, the venv and the rest of the system are read-only for the app.</li>
+                <li>Python packages only through <code>requirements</code>: they go into the version's own venv, never system-wide.</li>
+                <li>A version never changes: fix something, raise the version. A version that failed on a node is never installed there again.</li>
+                <li>Health: the service must stay up for <code>health.within_s</code> seconds (and answer its health check) or the node goes back to the previous version by itself. After <code>stable_after_s</code> without a restart the version counts as stable.</li>
+                <li>The newest {{ min_stable }} stable versions always stay on the node for a one-click rollback. Clean up removes only older ones.</li>
+                <li>Remove takes away everything: service, versions, OTA copies, user and data (or keeps the data in <code>/opt/edgeshell/kept</code> if you ask).</li>
+            </ul>
+            <p class="text-sm">Full guide: docs/APPS.md in the EdgeShell repository. esapp {{ esapp_version }}.</p>
+        </section>
+    </div>
+</div>
+
+<style>
+.ap-tiles { display:grid; grid-template-columns:repeat(auto-fit, minmax(180px, 1fr)); gap:12px; margin-bottom:16px; }
+.ap-tile { padding:14px 16px; min-width:0; }
+.ap-tile-label { font-size:12.5px; color:var(--gray-500); }
+.ap-tile-value { font-size:26px; font-weight:700; color:var(--gray-900); line-height:1.25; }
+.ap-tile-sub { font-size:12px; color:var(--gray-500); min-height:16px; }
+.ap-tabs { display:flex; gap:4px; flex-wrap:wrap; border-bottom:1px solid var(--gray-200); }
+.ap-tab { border:0; background:none; padding:8px 12px; font-weight:600; color:var(--gray-500); border-bottom:2px solid transparent; cursor:pointer; }
+.ap-tab.active { color:var(--primary); border-bottom-color:var(--primary); }
+.ap-h { font-size:15px; font-weight:700; margin:14px 0 6px; }
+.ap-table { width:100%; border-collapse:collapse; font-size:13.5px; }
+.ap-table th { text-align:left; color:var(--gray-500); font-weight:600; padding:6px 8px; border-bottom:1px solid var(--gray-200); white-space:nowrap; }
+.ap-table td { padding:7px 8px; border-bottom:1px solid var(--gray-100); vertical-align:top; white-space:nowrap; }
+.ap-table td.wrap { white-space:normal; min-width:180px; overflow-wrap:anywhere; }
+.ap-wrap { overflow-x:auto; }
+.ap-empty { color:var(--gray-500); padding:16px 4px; }
+.ap-pill { display:inline-block; padding:1px 8px; border-radius:999px; font-size:12px; font-weight:600; margin:1px 2px 1px 0; }
+.ap-panel { border:1px solid var(--gray-200); border-radius:8px; padding:12px; margin-top:12px; }
+.ap-nodes { display:grid; grid-template-columns:repeat(auto-fill, minmax(180px, 1fr)); gap:4px 12px; max-height:260px; overflow:auto; }
+.ap-nodes label { font-size:13px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.ap-log { max-height:180px; overflow:auto; font-size:12px; background:var(--gray-50); padding:8px; border-radius:6px; margin:8px 0 0; white-space:pre-wrap; }
+.ap-code { font-size:12.5px; background:var(--gray-50); padding:10px; border-radius:6px; overflow-x:auto; }
+.ap-job { margin-bottom:16px; }
+.ap-actions a { margin-right:10px; cursor:pointer; }
+</style>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+(function () {
+    'use strict';
+    const IS_ADMIN = {{ current_user.is_admin()|tojson }};
+    const $ = id => document.getElementById(id);
+    const when = iso => iso ? new Date(iso).toLocaleString() : '-';
+    const ts = s => s ? new Date(s * 1000).toLocaleString() : '-';
+    const size = b => b == null ? '' : b > 1048576 ? (b / 1048576).toFixed(1) + ' MB' : Math.max(1, Math.round(b / 1024)) + ' KB';
+    function el(tag, text, css) { const e = document.createElement(tag); if (text != null) e.textContent = text; if (css) e.style.cssText = css; return e; }
+    const PILL = {stable: ['#dcfce7', '#166534'], active: ['#e0e7ff', '#3730a3'], installed: ['#f3f4f6', '#374151'],
+                  failed: ['#fee2e2', '#991b1b'], running: ['#e0e7ff', '#3730a3'], done: ['#dcfce7', '#166534'],
+                  stopped: ['#fef3c7', '#92400e'], ok: ['#dcfce7', '#166534'], skipped: ['#f3f4f6', '#374151'],
+                  waiting: ['#f3f4f6', '#374151'], 'in bucket': ['#dcfce7', '#166534'], removed: ['#f3f4f6', '#374151'],
+                  inactive: ['#fee2e2', '#991b1b'], activating: ['#fef3c7', '#92400e']};
+    function pill(t, title) { const c = PILL[t] || ['#f3f4f6', '#374151']; const s = el('span', t); s.className = 'ap-pill'; s.style.background = c[0]; s.style.color = c[1]; if (title) s.title = title; return s; }
+    function table(parent, heads, rows, wrap) {
+        const w = el('div'); w.className = 'ap-wrap';
+        const t = el('table'); t.className = 'ap-table';
+        const h = el('tr'); heads.forEach(x => h.appendChild(el('th', x))); t.appendChild(h);
+        rows.forEach(r => { const tr = el('tr'); r.forEach((c, i) => { const td = el('td'); if ((wrap || []).includes(i)) td.className = 'wrap';
+            if (c instanceof Node) td.appendChild(c); else td.textContent = c == null ? '' : c; tr.appendChild(td); }); t.appendChild(tr); });
+        w.appendChild(t); parent.appendChild(w);
+    }
+    function link(text, fn) { const a = el('a', text); a.onclick = fn; return a; }
+    function frag(items) { const s = el('span'); s.className = 'ap-actions'; items.filter(Boolean).forEach(x => s.appendChild(x)); return s; }
+    const get = url => fetch(url, {credentials: 'same-origin'}).then(r => r.json());
+    const post = (url, body) => fetch(url, {method: 'POST', headers: {'Content-Type': 'application/json'}, credentials: 'same-origin', body: JSON.stringify(body || {})})
+        .then(r => r.json().then(d => { if (!r.ok || d.success === false) throw new Error(d.message || ('HTTP ' + r.status)); return d; }));
+    const say = e => alert(e.message || e);
+
+    // ---------------------------------------------------------------- job progress
+    let jobTimer = null;
+    function watch(jobId, title) {
+        $('jobBox').hidden = false; $('jobTitle').textContent = title; $('jobItems').textContent = ''; $('jobLog').textContent = '';
+        clearInterval(jobTimer);
+        const tick = () => get('/nodes/jobs/' + jobId).then(j => {
+            if (!j || !j.id) return;
+            $('jobState').textContent = j.done + ' of ' + j.total + (j.state === 'running' ? ', running' : ', ' + (j.message || j.state));
+            const box = $('jobItems'); box.textContent = '';
+            if ((j.items || []).length) table(box, ['Node', 'Step', 'State', 'Result'], j.items.map(i => [i.name || i.key, i.step || '', pill(i.state || 'waiting'), i.message || '']), [3]);
+            $('jobLog').textContent = (j.log || []).join('\n');
+            if (j.state !== 'running') { clearInterval(jobTimer); refresh(); }
+        });
+        tick(); jobTimer = setInterval(tick, 2000);
+    }
+    $('jobClose').onclick = () => { $('jobBox').hidden = true; clearInterval(jobTimer); };
+
+    // ---------------------------------------------------------------- data
+    let PKGS = [], NODES = [];
+    function refresh() { return Promise.all([get('/apps/api/packages'), get('/apps/api/nodes')]).then(([p, n]) => {
+        PKGS = p.packages || []; NODES = n.nodes || []; tiles(); packages(); nodes(); audit(); }); }
+
+    function tiles() {
+        const inB = PKGS.filter(p => p.in_bucket);
+        $('tPk').textContent = inB.length; $('tPkSub').textContent = size(inB.reduce((a, p) => a + (p.size || 0), 0)) + (PKGS.length > inB.length ? ', ' + (PKGS.length - inB.length) + ' removed after audit' : '');
+        let run = 0, bad = 0, withApps = 0;
+        NODES.forEach(n => { if (n.apps.length) withApps++; n.apps.forEach(a => { if (a.current && a.service === 'active') run++; else bad++; }); });
+        $('tRun').textContent = run; $('tRunSub').textContent = withApps + ' node(s) with apps';
+        $('tBad').textContent = bad; $('tBadSub').textContent = bad ? 'service not active, see On the nodes' : 'all services up';
+    }
+
+    // ---------------------------------------------------------------- packages
+    function packages() {
+        const box = $('pkList'); box.textContent = '';
+        if (!PKGS.length) { box.appendChild(el('div', 'No packages yet. Build one with esapp.py pack (see How to build an app).')).className = 'ap-empty'; return; }
+        table(box, ['App', 'Version', 'What it runs', 'Uploaded', 'By', 'Size', 'sha256', 'Bucket', ''], PKGS.map(p => [
+            p.name, p.version, p.run + (p.description ? '  (' + p.description + ')' : ''), when(p.uploaded_at), p.uploaded_by || '',
+            size(p.size), p.sha256.slice(0, 12), pill(p.in_bucket ? 'in bucket' : 'removed', p.removed_by ? 'by ' + p.removed_by + ', ' + when(p.removed_at) : ''),
+            frag(IS_ADMIN && p.in_bucket ? [link('Roll out', () => rollOpen(p)), link('Download', () => { location.href = '/apps/api/packages/' + p.id + '/download'; }),
+                link('Remove from bucket', () => { const c = prompt('This deletes the package file from the server (the audit records stay). Type "' + p.name + ' ' + p.version + '" to confirm:');
+                    if (c) post('/apps/api/packages/' + p.id + '/remove', {confirm: c}).then(refresh).catch(say); })] : [])]), [2]);
+    }
+    {% if current_user.is_admin() %}
+    $('upForm').onsubmit = ev => {
+        ev.preventDefault();
+        const f = $('upFile').files[0]; if (!f) return alert('Choose a .esapp package');
+        const fd = new FormData(); fd.append('package', f); fd.append('note', $('upNote').value);
+        fetch('/apps/api/packages', {method: 'POST', body: fd, credentials: 'same-origin'}).then(r => r.json()).then(d => {
+            if (!d.success) throw new Error(d.message);
+            alert(d.created ? 'Uploaded ' + d.package.name + ' ' + d.package.version : 'That build is already in the bucket');
+            $('upFile').value = ''; $('upNote').value = ''; refresh();
+        }).catch(say);
+    };
+    {% endif %}
+
+    let rollPkg = null;
+    function rollOpen(p) {
+        rollPkg = p; $('rollPanel').hidden = false; $('rollTitle').textContent = 'Roll out ' + p.name + ' ' + p.version;
+        const box = $('rollNodes'); box.textContent = '';
+        NODES.forEach(n => {
+            const lab = el('label'); const cb = el('input'); cb.type = 'checkbox'; cb.value = n.id; cb.disabled = n.status !== 'online';
+            const have = (n.apps.find(a => a.name === p.name) || {}).current;
+            lab.appendChild(cb); lab.appendChild(document.createTextNode(' ' + n.name + (n.status !== 'online' ? ' (' + n.status + ')' : '') + (have ? ' [' + have + ']' : '')));
+            lab.dataset.name = n.name.toLowerCase(); box.appendChild(lab);
+        });
+        $('rollPanel').scrollIntoView({behavior: 'smooth'});
+    }
+    if ($('rollAll')) {
+        $('rollAll').onclick = () => $('rollNodes').querySelectorAll('label').forEach(l => { const cb = l.firstChild; if (!cb.disabled && l.style.display !== 'none') cb.checked = true; });
+        $('rollFilter').oninput = () => { const q = $('rollFilter').value.trim().toLowerCase(); $('rollNodes').querySelectorAll('label').forEach(l => { l.style.display = l.dataset.name.includes(q) ? '' : 'none'; }); };
+        $('rollCancel').onclick = () => { $('rollPanel').hidden = true; };
+        $('rollGo').onclick = () => {
+            const ids = [...$('rollNodes').querySelectorAll('input:checked')].map(c => +c.value);
+            if (!ids.length) return alert('Select at least one node');
+            if (!confirm('Roll out ' + rollPkg.name + ' ' + rollPkg.version + ' to ' + ids.length + ' node(s)?')) return;
+            post('/apps/api/rollout', {package_id: rollPkg.id, node_ids: ids, canary: +$('rollCanary').value, stop_after_pct: +$('rollStop').value})
+                .then(d => { $('rollPanel').hidden = true; watch(d.job_id, 'Roll out ' + rollPkg.name + ' ' + rollPkg.version); }).catch(say);
+        };
+    }
+
+    // ---------------------------------------------------------------- nodes
+    function act(kind, n, a, extra, title) {
+        return post('/apps/api/action', Object.assign({kind: kind, app: a.name, node_ids: [n.id]}, extra || {}))
+            .then(d => watch(d.job_id, title)).catch(say);
+    }
+    function nodes() {
+        const box = $('nodeList'); box.textContent = '';
+        const q = $('nFilter').value.trim().toLowerCase();
+        const rows = [];
+        NODES.forEach(n => n.apps.forEach(a => { if (!q || n.name.toLowerCase().includes(q) || a.name.includes(q)) rows.push([n, a]); }));
+        if (!rows.length) { box.appendChild(el('div', NODES.some(n => n.checked_at) ? 'No apps on the nodes yet.' : 'Not read yet: use Read nodes.')).className = 'ap-empty'; return; }
+        table(box, ['Node', 'App', 'Running', 'Service', 'Versions on the node', 'Read', ''], rows.map(([n, a]) => {
+            const vs = el('span');
+            a.versions.filter(v => v.on_disk || v.status === 'failed').forEach(v => {
+                const p = pill((v.protected ? '\u{1F512} ' : '') + v.version + ' ' + v.status + (v.version === a.current ? ' *' : ''),
+                    (v.failed_reason ? v.failed_reason + '. ' : '') + 'installed ' + ts(v.installed_at) + (v.stable_at ? ', stable ' + ts(v.stable_at) : '') + ', ' + size(v.size));
+                const c = PILL[v.status] || PILL.installed; p.style.background = c[0]; p.style.color = c[1]; vs.appendChild(p);
+            });
+            const others = a.versions.filter(v => v.on_disk && v.version !== a.current && v.status !== 'failed');
+            return [n.name, a.name, a.current || 'nothing', pill(a.service, a.restarts ? a.restarts + ' restarts' : ''), vs, when(n.checked_at),
+                frag(IS_ADMIN && n.status === 'online' ? [
+                    a.versions.some(v => v.status === 'stable' && v.version !== a.current && v.on_disk) ? link('Roll back', () => {
+                        if (confirm('Roll ' + a.name + ' on ' + n.name + ' back to its newest stable version before ' + a.current + '? ' + a.current + ' is removed from the node (its OTA copy stays).'))
+                            act('rollback', n, a, {}, 'Roll back ' + a.name + ' on ' + n.name); }) : null,
+                    others.length ? link('Switch', () => { const v = prompt('Switch ' + a.name + ' on ' + n.name + ' to which version? ' + others.map(x => x.version).join(', '));
+                        if (v) act('activate', n, a, {version: v.trim()}, 'Switch ' + a.name + ' to ' + v + ' on ' + n.name); }) : null,
+                    link('Clean up', () => pruneOpen(n, a)),
+                    link('Remove', () => { const c = prompt('Remove ' + a.name + ' from ' + n.name + ' completely (service, every version, OTA copies, user, data)? Type the app name to confirm:');
+                        if (!c) return; const keep = confirm('Keep its data? OK keeps it in /opt/edgeshell/kept on the node, Cancel deletes it.');
+                        act('uninstall', n, a, {confirm: c, keep_data: keep}, 'Remove ' + a.name + ' from ' + n.name); })] : [])];
+        }), [4]);
+    }
+    $('nFilter').oninput = nodes;
+    let pruneCtx = null;
+    function pruneOpen(n, a) {
+        pruneCtx = [n, a]; $('prunePanel').hidden = false; $('pruneTitle').textContent = 'Clean up ' + a.name + ' on ' + n.name;
+        const box = $('pruneList'); box.textContent = '';
+        a.versions.forEach(v => { const lab = el('label', null, 'display:block;font-size:13px'); const cb = el('input'); cb.type = 'checkbox'; cb.value = v.version; cb.disabled = v.protected;
+            lab.appendChild(cb); lab.appendChild(document.createTextNode(' ' + v.version + ' ' + v.status + ', ' + size(v.size) + (v.protected ? ' (kept)' : '') + (v.version === a.current ? ' (running)' : ''))); box.appendChild(lab); });
+        $('prunePanel').scrollIntoView({behavior: 'smooth'});
+    }
+    $('pruneCancel').onclick = () => { $('prunePanel').hidden = true; };
+    $('pruneGo').onclick = () => {
+        const vs = [...$('pruneList').querySelectorAll('input:checked')].map(c => c.value);
+        if (!vs.length) return alert('Pick at least one version');
+        const [n, a] = pruneCtx; $('prunePanel').hidden = true;
+        act('prune', n, a, {versions: vs}, 'Clean up ' + a.name + ' on ' + n.name);
+    };
+
+    // ---------------------------------------------------------------- audit
+    function audit() {
+        get('/apps/api/actions').then(d => {
+            const box = $('auditList'); box.textContent = '';
+            const rows = (d.actions || []).map(a => [a.started_at, a.kind, a.app + (a.version ? ' ' + a.version : ''), a.by || '',
+                a.nodes.length + ' node(s)', pill(a.status), a.summary || '',
+                link('Results', () => alert(Object.entries(a.results).map(([k, v]) => k + ': ' + (v.ok ? 'ok ' : '') + (v.message || '')).join('\n') || 'No results yet'))]);
+            PKGS.forEach(p => rows.push([p.uploaded_at, 'upload', p.name + ' ' + p.version, p.uploaded_by || '', '', pill(p.in_bucket ? 'in bucket' : 'removed'),
+                'sha256 ' + p.sha256.slice(0, 16) + (p.note ? ', ' + p.note : '') + (p.removed_by ? ', removed by ' + p.removed_by + ' ' + when(p.removed_at) : ''), '']));
+            rows.sort((x, y) => new Date(y[0] || 0) - new Date(x[0] || 0));
+            rows.forEach(r => { r[0] = when(r[0]); });
+            if (!rows.length) { box.appendChild(el('div', 'Nothing yet.')).className = 'ap-empty'; return; }
+            table(box, ['When', 'What', 'App', 'By', 'Nodes', 'Status', 'Summary', ''], rows, [6]);
+        });
+    }
+
+    // ---------------------------------------------------------------- tabs, scan
+    document.querySelectorAll('.ap-tab').forEach(b => b.onclick = () => {
+        document.querySelectorAll('.ap-tab').forEach(x => x.classList.toggle('active', x === b));
+        document.querySelectorAll('.ap-pane').forEach(p => { p.hidden = p.id !== 'pane-' + b.dataset.tab; });
+    });
+    $('scanBtn').onclick = () => post('/apps/api/scan', {}).then(d => watch(d.job_id, 'Read apps on the nodes')).catch(say);
+    refresh();
+})();
+</script>
+{% endblock %}

@@ -2,6 +2,19 @@
 
 All notable changes are documented here. Format loosely follows Keep a Changelog.
 
+## [1.16.0] - 2026-10-19
+
+### Added
+- **Apps on the edge** ([ADR 0017](docs/adr/0017-apps-on-the-edge.md), [docs](docs/APPS.md)): one way to ship any service or app to the fleet. A folder with a `manifest.json`, `esapp.py pack`, upload on the new **Apps** page, roll out. On each node esapp (`/opt/edgeshell/bin/esapp`) installs it into `/opt/edgeshell/apps/NAME` only: its own systemd service `es-NAME` (starts at boot, restarts on failure, logs in the journal, hardened), its own user, its own Python venv (nothing installed system-wide), code read-only, data in `APP_DATA` kept across versions.
+- **Versions side by side, an atomic switch, a way back by itself**: a new version is built next to the running one and switched in with one rename; if it does not stay up for its health window (or fails its health check) the previous version comes back by itself, and a version that failed on a node is never installed there again. After a while without a restart a version is stable.
+- **Rollouts with a canary and an automatic stop**: canary nodes first, one at a time (any failure leaves the rest of the fleet untouched), then the rest 4 at a time, stopping when more than a set share failed. The package's checksum is checked before anything is sent; offline nodes are skipped.
+- **On the nodes**: every node's apps, the running version, the service and every version with its state. **Roll back** (one click: the newest stable version before, the failed one removed), **Switch** to any version on the node, **Clean up** (pick versions; the running one and the newest 3 stable versions are always kept), **Remove** (service, versions, OTA copies, user and data, or keep the data). Every version also carries its own `install.sh`, `rollback.sh` and `uninstall.sh` on the node.
+- **Bucket and audit**: every package uploaded stays on the server with its checksum until an administrator removes it after the audit; every upload, rollout and node action is listed with the result per node.
+- CI: a new required job runs esapp on a real Debian 12 systemd node: install, a crashing version that rolls itself back (about 22 s), one-click rollback (about 12 s), cleanup rules, full removal that leaves the system exactly as before. An example app in `examples/apps/hello-sensor`.
+
+### Changed
+- **Deploy Files writes only to `~/Downloads/edgeshell`** on each node (a folder inside it may be given), as the SSH user, under a temporary name then renamed. Paths elsewhere (`/etc`, `/opt`, `/usr/local/bin`...) are refused: anything that must run or live elsewhere becomes an app.
+
 ## [1.15.2] - 2026-10-19
 
 ### Fixed

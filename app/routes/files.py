@@ -46,8 +46,13 @@ def upload():
     files = request.files.getlist('files') or request.files.getlist('file')
     files = [f for f in files if f and f.filename]
     node_ids = request.form.getlist('node_ids')
-    # Bandit B108 reviewed: path on the remote node, not a local temp file
-    target_path = request.form.get('target_path', '/tmp/').strip() or '/tmp/'  # nosec B108
+    # Files land only in ~/Downloads/edgeshell on each node (a folder inside it may be given)
+    from app.services.ssh_service import clean_subfolder, UPLOAD_ROOT, UPLOAD_REFUSED
+    try:
+        sub = clean_subfolder(request.form.get('subfolder', request.form.get('target_path', '')))
+    except ValueError:
+        return jsonify({'error': UPLOAD_REFUSED}), 400
+    target_path = '~/' + UPLOAD_ROOT + ('/' + sub if sub else '')
 
     if not files:
         return jsonify({'error': 'No files provided'}), 400
@@ -68,7 +73,7 @@ def upload():
         filename = secure_filename(f.filename)
         local_path = os.path.join(upload_dir, filename)
         f.save(local_path)
-        file_results = deploy_file(nodes, local_path, target_path)
+        file_results = deploy_file(nodes, local_path, sub)
         per_file[filename] = file_results
         ok = sum(1 for r in file_results.values() if r.get('success'))
         total_ok += ok

@@ -185,7 +185,8 @@ flowchart LR
 | **VPN status** | Live Tailscale state of the server and every tailnet peer: status, OS, direct or relayed link, last seen, traffic. Filter by status, OS, link and last seen; sort any column |
 | **Remote desktop** | One-click [OpenRemoteGUI](https://github.com/855princekumar/OpenRemoteGUI) per node at `https://<your domain>/remoteGUI/<node name>/`, through EdgeShell with no IP or port shown and no VPN needed (keyboard and mouse only with a ticket from the Remote button), with detection and a guided install: safety checks first (OS, disk, network, desktop session, sudo), then `git clone`, `cd`, `sudo bash install.sh`, with live progress; fleet installs stop at the first failure |
 | **Node-RED access** | Each node's Node-RED editor at `https://<your domain>/nodered/<node name>/`, behind EdgeShell's sign-in and roles (operators and administrators), with the node's address hidden and no VPN needed; every opening logged ([ADR 0014](docs/adr/0014-nodered-through-edgeshell.md)) |
-| **File deployment** | Upload files to many nodes at once, with per-node results and history |
+| **File deployment** | Upload files to many nodes at once, with per-node results and history. Files land only in `~/Downloads/edgeshell` on each node, never elsewhere |
+| **Apps on the edge** | Ship any service or app the same way: a folder with a `manifest.json`, `esapp.py pack`, upload, roll out. Each app gets one folder in `/opt/edgeshell`, its own systemd service and user, its own Python venv (nothing system-wide), versions side by side with an atomic switch, and goes back to the previous version by itself when a new one does not stay up. Canary nodes first, automatic stop, one-click rollback, cleanup that always keeps the newest 3 stable versions, exact full removal, and every package kept on the server for the audit ([docs](docs/APPS.md)) |
 | **Log browser** | Browse, fetch and download log files from any node |
 | **Fleet setup** | Scan the fleet for Docker, Node-RED and OpenRemoteGUI; install on every node missing them |
 | **Background jobs** | Long work (imports, installs, exports, login checks) runs in the background; a progress card follows you across pages, with a live step-by-step log |
@@ -379,7 +380,7 @@ Change [`sandbox/fleet.json`](sandbox/fleet.json) to test any mix, up to 20 node
 
 ```bash
 bash sandbox/run.sh                                                 # build from source, test, tear down
-EDGESHELL_IMAGE=devprincekumar/edgeshell:1.15.2 bash sandbox/run.sh  # test a published image
+EDGESHELL_IMAGE=devprincekumar/edgeshell:1.16.0 bash sandbox/run.sh  # test a published image
 ```
 
 **Your own workflow:** run a change (command, playbook, file rollout) against
@@ -741,6 +742,7 @@ Dependabot keeps Python packages, the base image and Actions up to date.
 | [Roles and access](docs/RBAC.md) | Roles, enforcement, lockout, sessions |
 | [Wiki](https://github.com/855princekumar/edgeshell/wiki) | All of this documentation as a browsable wiki with a sidebar, generated from these files |
 | [MQTT heartbeat](docs/HEARTBEAT.md) | VPN-independent liveness: encrypted heartbeats over a public broker, SenseHive, SLA |
+| [Apps on the edge](docs/APPS.md) | Build, ship, update, roll back and remove services in /opt/edgeshell: packages, rollouts, the rules every app follows |
 | [Hardware lifecycle](docs/HARDWARE.md) | Detected replacements, fault reports, replacement nodes, the fleet hardware numbers, API and signed webhooks |
 | [Email](docs/EMAIL.md) | Verification, password resets and ticket mail; free providers (Resend, Brevo, useSend, Gmail) step by step |
 | [VPN and network](docs/VPN-NETWORK.md) | Tailscale, WireGuard, container networking |

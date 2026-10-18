@@ -35,7 +35,7 @@ ZOOMS = [('laptop', 1366, 768, z) for z in (0.67, 1.25, 1.5, 2.0)] + \
         [('desktop', 1920, 1080, z) for z in (1.5, 2.0)]
 PAGES = ['/', '/nodes/', '/monitoring/', '/terminal/', '/files/', '/logs/', '/logs/activity',
          '/users/', '/users/add', '/users/api', '/account/', '/account/email', '/account/api', '/account/api/guide', '/tailscale/', '/settings/', '/issues/',
-         '/nodes/add', '/nodes/import', '/hardware/', '/guide/']
+         '/nodes/add', '/nodes/import', '/hardware/', '/guide/', '/apps/']
 TYPES = [('pi-node', 0.86, 'site-a-pi-node'), ('gateway', 0.10, 'site-b-gateway'),
          ('mini-pc', 0.02, 'site-c-mini-pc'), ('rtu', 0.02, 'plant-east-gate-sensor-hub-panel')]
 
