@@ -151,7 +151,7 @@ edgeshell/
 | `COLLECTOR_INTERVAL` / `COLLECTOR_WORKERS` | no | `30` / `48` | Seconds between fleet metric passes, and nodes polled at once |
 | `IDLE_MINUTES` / `IDLE_WARNING_MINUTES` | no | `10` / `5` | "Still there?" prompt after this much inactivity, then sign-out (`0` turns it off) |
 | `SIGNUP_ENABLED` | no | `true` | Let people request an account (an admin approves it with a role) |
-| `EDGESHELL_TAG` | no | `1.16.0` | Image version |
+| `EDGESHELL_TAG` | no | `1.17.0` | Image version |
 | `DISPLAY_TZ` | no | `UTC` | Time zone shown in the UI (the database stores UTC) |
 | `SESSION_HOURS` | no | `8` | Idle session lifetime |
 | `SINGLE_SESSION` | no | `true` | Enforce each user's device limit (1 by default, up to 4 per user) |
@@ -199,7 +199,7 @@ sed -i 's|^EDGESHELL_DOMAIN=:80$|EDGESHELL_DOMAIN=|' .env    # IP mode is now an
 for k in MFA_ADMIN_PASSWORD MFA_PEPPER MFA_DB_PASSWORD MFA_SECRET_KEY; do
   grep -q "^$k=" .env || echo "$k=$(openssl rand -hex 32)" >> .env
 done
-sed -i 's|^EDGESHELL_TAG=.*|EDGESHELL_TAG=1.16.0|' .env
+sed -i 's|^EDGESHELL_TAG=.*|EDGESHELL_TAG=1.17.0|' .env
 docker compose pull && docker compose up -d --remove-orphans   # removes the old caddy container
 ```
 
@@ -253,4 +253,4 @@ Report vulnerabilities privately: see
 | Tag | Meaning |
 |---|---|
 | `latest` | Newest release |
-| `1.16.0`, `1.16`, `1` | Specific versions; pin one in production |
+| `1.17.0`, `1.17`, `1` | Specific versions; pin one in production |

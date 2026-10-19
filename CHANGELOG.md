@@ -2,6 +2,20 @@
 
 All notable changes are documented here. Format loosely follows Keep a Changelog.
 
+## [1.17.0] - 2026-10-19
+
+### Changed
+- **The heartbeat agent is an app** ([ADR 0018](docs/adr/0018-heartbeat-agent-as-an-app.md)): on nodes with systemd it is installed by esapp like any app, in `/opt/edgeshell/apps/heartbeat` with **its own Python venv** (no more apt packages installed system-wide), the service and user `es-heartbeat`, the node's keys and login in its private `data/` folder. Updates switch atomically and go back to the previous version by itself when the new one does not stay up; the newest 3 stable versions stay; the Apps page shows its versions and can roll it back. Its package is built from the agent in the image and kept in the Apps bucket, so every agent sent to a node is in the audit.
+- **Nodes move over by themselves**: the routine sees agent 1.2 as older and updates it. The classic agent stops only for the switch and is removed (folder, service, user `hbagent`) once the new one runs; if the new one does not run, the classic one starts again. Nodes without systemd keep the classic install. The apt packages the classic install used stay (other software may use them).
+- Agent 1.3.0 bundled: `setup.py --files-only` writes only the node's settings; its folder, group and service come from `HB_HOME` (or `APP_DATA`), `HB_GROUP`, `HB_UNIT`.
+
+### Fixed
+- esapp: reinstalling the version that already runs (a repair) left the app's folder root-only, so its service could not start (found by the new end-to-end test on a real node). Folders are locked only when esapp creates them, and their modes are repaired on every install.
+- esapp packages are reproducible: the same files always give the same bytes.
+
+### Tests
+- CI runs the heartbeat agent as an app on a real Debian 12 systemd node with a real broker (18 checks): moved from the classic install in about 31 s, a broken first version leaves the classic agent running, the agent's own venv, private settings, the agent's own test, a settings push hot reloaded, a bad update rolled back in about 38 s with heartbeats continuing, the failed version refused next time, a repair.
+
 ## [1.16.0] - 2026-10-19
 
 ### Added

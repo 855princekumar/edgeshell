@@ -16,6 +16,8 @@ import json
 import os
 import posixpath
 import re
+import shutil
+import shlex
 import time
 from datetime import datetime
 
@@ -24,8 +26,9 @@ from flask import current_app
 from app import db
 
 AGENT_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'agents', 'heartbeat')
-AGENT_FILES = ('heartbeat_agent.py', 'heartbeat_protocol.py', 'install.sh', 'setup.py')
-REMOTE_HOME = '/opt/edgeshell-heartbeat'
+AGENT_FILES = ('heartbeat_agent.py', 'heartbeat_protocol.py', 'install.sh', 'setup.py', 'hb_node.sh')
+REMOTE_HOME = '/opt/edgeshell-heartbeat'          # the classic install (nodes without systemd, older nodes)
+APP_NAME = 'heartbeat'                             # the esapp app (ADR 0018): /opt/edgeshell/apps/heartbeat
 SETTINGS_KEY = 'heartbeat_agent_settings'
 FRESH_S = 40                     # a heartbeat newer than this counts the node as up
 SYNC_EVERY_S = 15
@@ -194,10 +197,39 @@ def _read(name):
         return fh.read()
 
 
+def agent_package():
+    """The agent as an esapp package, built from the copy in this EdgeShell and kept
+    in the Apps bucket like any app (so every agent sent to a node is in the audit).
+    The build is reproducible: the same agent always gives the same package."""
+    import tempfile
+    from app.models.apps import AppPackage
+    from app.services import app_service
+    version = agent_version()
+    have = AppPackage.query.filter_by(name=APP_NAME, version=version).first()
+    if have and have.removed_at is None and app_service.verify(have):
+        return have
+    with tempfile.TemporaryDirectory() as work:
+        src = os.path.join(work, 'src')
+        os.makedirs(os.path.join(src, 'app'))
+        with open(os.path.join(AGENT_DIR, 'esapp.json'), encoding='utf-8') as fh:
+            manifest = json.load(fh)
+        manifest['version'] = version
+        with open(os.path.join(src, 'manifest.json'), 'w', encoding='utf-8') as fh:
+            json.dump(manifest, fh, indent=1, sort_keys=True)
+        shutil.copyfile(os.path.join(AGENT_DIR, 'requirements.txt'), os.path.join(src, 'requirements.txt'))
+        for name in ('heartbeat_agent.py', 'heartbeat_protocol.py', 'setup.py'):
+            shutil.copyfile(os.path.join(AGENT_DIR, name), os.path.join(src, 'app', name))
+        out = app_service.ES.pack(src, os.path.join(work, '%s-%s.esapp' % (APP_NAME, version)))
+        with open(out, 'rb') as fh:
+            pkg, _ = app_service.store(fh, 'edgeshell', 'the MQTT heartbeat agent bundled with EdgeShell')
+    return pkg
+
+
 def install(node):
     """Install or update the agent on one node and push the fleet config.yaml.
-    Returns (ok, output)."""
-    from app.services import collector
+    With systemd the agent is an esapp app (its own venv and service, an atomic
+    switch with a way back); a classic install is moved over. Returns (ok, output)."""
+    from app.services import app_service, collector
     if not enabled():
         return False, 'HEARTBEAT_MASTER_KEY is not set on this server'
     target = collector.target_for(node)
@@ -206,15 +238,18 @@ def install(node):
     files['token'] = join_token(node, s)              # this node's keys and the broker, never the master key
     files['login'] = login_env()
     try:
+        pkg = agent_package()
+        app_service.ensure_esapp(node)
+        remote_pkg = app_service._put(node, app_service.package_path(pkg), pkg.filename)
         d = _upload(target, files)
     except Exception as e:
         from app.services.errors import describe
         return False, describe(e, f'heartbeat upload to {node.name}')
-    # setup.py tries the four ways to the broker (TLS first) with a real login,
-    # keeps the best that works, and installs the hardened service.
-    cmd = (f'sudo python3 {d}/setup.py --token-file {d}/token --login-file {d}/login '
-           f'--interval {int(s["interval"])}; rc=$?; rm -rf {d}; exit $rc')
-    r = collector.run_command(target, cmd, timeout=600, sudo_password=target['password'])
+    # setup.py tries the four ways to the broker (TLS first) with a real login and
+    # keeps the best that works; hb_node.sh installs, switches, keeps what runs.
+    cmd = (f'sudo bash {d}/hb_node.sh install {shlex.quote(remote_pkg)} {pkg.sha256} {pkg.version} '
+           f'{int(s["interval"])}; rc=$?; rm -rf {d}; exit $rc')
+    r = collector.run_command(target, cmd, timeout=900, sudo_password=target['password'])
     out = (r.get('stdout') or '')[-3000:]
     ok = r.get('success') and 'HEARTBEAT_OK' in out and 'Done.' in out
     m = WAY.search(out)
@@ -223,17 +258,31 @@ def install(node):
     node.hb_installed = bool(ok) or node.hb_installed
     node.hb_checked_at = datetime.utcnow()
     db.session.commit()
+    if ok:
+        try:
+            app_service.refresh_inventory(node)          # the Apps page shows the agent's versions too
+        except Exception:                                # noqa: BLE001 - the install result matters more
+            current_app.logger.warning('heartbeat: inventory after install on %s failed', node.name, exc_info=True)
     return bool(ok), out.strip() or (r.get('error') or '')
+
+
+def _helper(node, mode, files, timeout=120):
+    """Run hb_node.sh MODE on the node (as root, from a private temp folder). Returns (result, output)."""
+    from app.services import collector
+    target = collector.target_for(node)
+    d = _upload(target, dict(files, **{'hb_node.sh': _read('hb_node.sh')}))
+    cmd = f'sudo bash {d}/hb_node.sh {mode}; rc=$?; rm -rf {d}; exit $rc'
+    r = collector.run_command(target, cmd, timeout=timeout, sudo_password=target['password'])
+    return r, (r.get('stdout') or '')
 
 
 def test(node):
     """The agent's own check on the node: service, files, the four ways in, the login. (ok, output)"""
-    from app.services import collector
-    target = collector.target_for(node)
-    cmd = (f'test -f {REMOTE_HOME}/setup.py || {{ echo NOT_INSTALLED_OR_OLD; exit 3; }}; '
-           f'sudo python3 {REMOTE_HOME}/setup.py --test')
-    r = collector.run_command(target, cmd, timeout=120, sudo_password=target['password'])
-    out = r.get('stdout') or ''
+    try:
+        r, out = _helper(node, 'test', {})
+    except Exception as e:
+        from app.services.errors import describe
+        return False, describe(e, f'heartbeat test on {node.name}')
     m = re.search(r'reached over (\S+)', out)
     if m:
         node.hb_way = m.group(1)
@@ -243,45 +292,32 @@ def test(node):
 
 def push_login(node):
     """A new broker login on one node (checked against the broker first). (ok, message)"""
-    from app.services import collector
-    target = collector.target_for(node)
     try:
-        d = _upload(target, {'login': login_env(), 'setup.py': _read('setup.py'),
-                             'heartbeat_agent.py': _read('heartbeat_agent.py'),
-                             'heartbeat_protocol.py': _read('heartbeat_protocol.py')})
+        r, out = _helper(node, 'login', {'login': login_env(), 'setup.py': _read('setup.py'),
+                                         'heartbeat_agent.py': _read('heartbeat_agent.py'),
+                                         'heartbeat_protocol.py': _read('heartbeat_protocol.py')})
     except Exception as e:
         from app.services.errors import describe
         return False, describe(e, f'heartbeat login push to {node.name}')
-    cmd = f'sudo python3 {d}/setup.py --set-credentials --login-file {d}/login; rc=$?; rm -rf {d}; exit $rc'
-    r = collector.run_command(target, cmd, timeout=120, sudo_password=target['password'])
-    out = r.get('stdout') or ''
     return 'HEARTBEAT_LOGIN_OK' in out, (out.strip().splitlines() or [r.get('error') or 'no output'])[-1][:300]
 
 
 def push_config(node, s=None):
-    """Replace config.yaml on one node (the agent hot reloads it). (ok, message)"""
-    from app.services import collector
-    target = collector.target_for(node)
+    """Merge the fleet settings into the node's config.yaml (the agent hot reloads it). (ok, message)"""
     try:
-        d = _upload(target, {'config.yaml': config_yaml(s)})
+        r, out = _helper(node, 'config', {'config.yaml': config_yaml(s)}, timeout=60)
     except Exception as e:
         from app.services.errors import describe
         return False, describe(e, f'heartbeat config push to {node.name}')
-    cmd = (f'test -d {REMOTE_HOME} || {{ rm -rf {d}; echo NOT_INSTALLED; exit 3; }}; '
-           f'if [ -f {REMOTE_HOME}/setup.py ]; then '      # 1.2+: merge, keep the way in this node found
-           f'sudo python3 {REMOTE_HOME}/setup.py --merge-config {d}/config.yaml; '
-           f'else sudo install -m 0644 -o root -g root {d}/config.yaml {REMOTE_HOME}/config.yaml.new && '
-           f'sudo mv -f {REMOTE_HOME}/config.yaml.new {REMOTE_HOME}/config.yaml && echo CONFIG_PUSHED; fi; '
-           f'rc=$?; rm -rf {d}; exit $rc')
-    r = collector.run_command(target, cmd, timeout=60, sudo_password=target['password'])
-    out = r.get('stdout') or ''
     if 'NOT_INSTALLED' in out:
         return False, 'agent not installed'
     return ('CONFIG_PUSHED' in out), ('pushed' if 'CONFIG_PUSHED' in out else (r.get('error') or out[-300:]))
 
 
-CHECK = ('if [ -f /opt/edgeshell-heartbeat/heartbeat_agent.py ]; then echo HB_INSTALLED; fi; '
-         '(systemctl is-active --quiet edgeshell-heartbeat 2>/dev/null || '
+# Without sudo: the esapp agent is seen by its unit file (its folder is private to root and its user)
+CHECK = ('if [ -f /opt/edgeshell-heartbeat/heartbeat_agent.py ] || [ -e /etc/systemd/system/es-heartbeat.service ]; '
+         'then echo HB_INSTALLED; fi; '
+         '(systemctl is-active --quiet es-heartbeat 2>/dev/null || systemctl is-active --quiet edgeshell-heartbeat 2>/dev/null || '
          'pgrep -u hbagent -f heartbeat_agent.py >/dev/null 2>&1) && echo HB_RUNNING')
 
 

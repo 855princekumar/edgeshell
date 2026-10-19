@@ -72,7 +72,9 @@ python3 esapp.py check my-sensor-1.0.0.esapp
 checks the result the way a node will. Packages with links, devices or paths
 outside the folder are refused everywhere.
 
-An example: [examples/apps/hello-sensor](../examples/apps/hello-sensor).
+An example: [examples/apps/hello-sensor](../examples/apps/hello-sensor). EdgeShell's own
+MQTT heartbeat agent is an app too ([HEARTBEAT.md](HEARTBEAT.md), ADR 0018): its package,
+built from the agent in the image, is in the bucket as `heartbeat`.
 
 ## 2. Upload and roll out
 

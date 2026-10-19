@@ -172,23 +172,63 @@ def test_without_a_master_key_nothing_can_be_installed(app):
     assert r.status_code == 400 and 'HEARTBEAT_MASTER_KEY' in r.get_json()['message']
 
 
-def test_the_install_sends_only_what_the_node_needs(app, monkeypatch):
-    from app.services import collector, heartbeat_service as hb
-    sent, ran = {}, []
+def test_the_install_sends_only_what_the_node_needs(app, monkeypatch, tmp_path):
+    """The agent goes to the node as an esapp package (kept in the Apps bucket) plus the
+    node's token and login in a private temp folder; hb_node.sh installs and switches."""
+    from app.services import app_service, collector, heartbeat_service as hb
+    app.config['UPLOAD_FOLDER'] = str(tmp_path)
+    sent, ran, put = {}, [], []
     monkeypatch.setattr(hb, '_upload', lambda target, files: sent.update(files) or '/tmp/edgeshell-hb.abcd1234')
+    monkeypatch.setattr(app_service, 'ensure_esapp', lambda node: '1.0.0')
+    monkeypatch.setattr(app_service, '_put', lambda node, path, name: put.append((path, name)) or
+                        '/home/pi/Downloads/edgeshell/' + name)
+    monkeypatch.setattr(app_service, 'refresh_inventory', lambda node: {'ok': True})
     monkeypatch.setattr(collector, 'run_command', lambda target, cmd, **kw: ran.append((cmd, kw)) or
                         {'success': True, 'stdout': 'Ways to the broker\nBroker: broker.hivemq.com over ws-tls on port 8884, '
-                                                    'login accepted\nHEARTBEAT_OK 1.2.0\nDone.'})
+                                                    'login accepted\nHEARTBEAT_FILES_OK\nHEARTBEAT_OK 1.3.0\nDone.'})
     with app.app_context():
         n = Node.query.filter_by(name='pi-01').first()
         ok, out = hb.install(n)
         assert ok and n.hb_installed and n.hb_way == 'ws-tls:8884'
-    assert set(sent) == {'heartbeat_agent.py', 'heartbeat_protocol.py', 'install.sh', 'setup.py', 'token', 'login'}
+        from app.models.apps import AppPackage
+        pkg = AppPackage.query.filter_by(name='heartbeat').one()
+        assert pkg.version == hb.agent_version() and pkg.uploaded_by == 'edgeshell'      # in the bucket, audited
+    assert [name for _, name in put] == ['heartbeat-%s.esapp' % pkg.version]
+    assert set(sent) == {'heartbeat_agent.py', 'heartbeat_protocol.py', 'install.sh', 'setup.py', 'hb_node.sh',
+                         'token', 'login'}
     assert MASTER not in ''.join(sent.values())
     cmd, kw = ran[0]
-    assert 'sudo python3 /tmp/edgeshell-hb.abcd1234/setup.py --token-file' in cmd and '--login-file' in cmd
+    assert cmd.startswith('sudo bash /tmp/edgeshell-hb.abcd1234/hb_node.sh install /home/pi/Downloads/edgeshell/heartbeat-')
+    assert pkg.sha256 in cmd and ' %s ' % pkg.version in cmd
     assert 'rm -rf /tmp/edgeshell-hb.abcd1234' in cmd and 'admin123' not in cmd     # secrets only in files
-    assert '\r' not in sent['install.sh'] and '\r' not in sent['setup.py']          # Unix line endings reach the node
+    for f in ('install.sh', 'setup.py', 'hb_node.sh'):
+        assert '\r' not in sent[f]                                                     # Unix line endings reach the node
+
+
+def test_the_agent_package_is_reproducible_and_what_esapp_accepts(app, tmp_path):
+    from app.services import app_service, heartbeat_service as hb
+    app.config['UPLOAD_FOLDER'] = str(tmp_path)
+    with app.app_context():
+        a = hb.agent_package()
+        m, digest = app_service.ES.read_package(app_service.package_path(a))
+        assert m['name'] == 'heartbeat' and m['version'] == hb.agent_version() and digest == a.sha256
+        assert m['run'] == ['python', 'app/heartbeat_agent.py'] and m['requirements'] == 'requirements.txt'
+        os.remove(app_service.package_path(a))                     # the file is gone: built again, same bytes
+        b = hb.agent_package()
+        assert b.id == a.id and b.sha256 == a.sha256 and app_service.verify(b)
+
+
+def test_the_node_helper_moves_a_classic_install_only_once_the_new_one_runs():
+    """hb_node.sh: build beside, write settings, pause the classic agent, switch; remove the
+    classic install only when the new one runs, start it again when not."""
+    from app.services import heartbeat_service as hb
+    text = open(os.path.join(hb.AGENT_DIR, 'hb_node.sh'), encoding='utf-8').read()
+    order = [text.index(x) for x in ('install "$pkg" --sha256 "$sha" --no-activate', '--files-only',
+                                     'systemctl stop edgeshell-heartbeat', 'activate heartbeat "$ver"',
+                                     'install.sh" --uninstall', 'systemctl start edgeshell-heartbeat')]
+    assert order == sorted(order)
+    assert 'HB_HOME="$A/data" HB_GROUP=es-heartbeat HB_UNIT=es-heartbeat' in text
+    assert 'if [ ! -d /run/systemd/system ]' in text                # no systemd: the classic install
 
 
 def test_the_join_token_is_what_the_agents_setup_py_reads(app):
@@ -210,7 +250,8 @@ def test_the_vendored_agent_is_one_release(app):
     """heartbeat_agent.py, setup.py and install.sh from the same agent release."""
     from app.services import heartbeat_service as hb
     text = open(os.path.join(hb.AGENT_DIR, 'setup.py'), encoding='utf-8').read()
-    assert '--merge-config' in text and '--set-credentials' in text and hb.agent_version() == '1.2.0'
+    assert '--merge-config' in text and '--set-credentials' in text and '--files-only' in text
+    assert hb.agent_version() == '1.3.0'
 
 
 def _node(app, **kw):
@@ -228,8 +269,8 @@ def test_the_routine_plans_install_update_repair_and_leaves_working_nodes_alone(
         n = _node(app, hb_installed=None)
         assert hb.plan(n, now) == 'install'
         n = _node(app, hb_installed=True, hb_agent_version='1.1.0', hb_status='online', hb_last_seen=now)
-        assert hb.plan(n, now) == 'update'                                   # older than the shipped 1.2.0
-        n = _node(app, hb_agent_version='1.2.0')
+        assert hb.plan(n, now) == 'update'                                   # older than the shipped agent
+        n = _node(app, hb_agent_version=hb.agent_version())
         assert hb.plan(n, now) is None                                       # current and fresh: nothing to do
         n = _node(app, hb_status='silent', hb_last_seen=now - timedelta(minutes=5))
         assert hb.plan(n, now) is None                                       # a short gap: wait
@@ -300,7 +341,7 @@ def test_the_routine_changes_nothing_when_sensehive_is_not_reachable(app, monkey
     monkeypatch.setattr(jobs, 'run_each', lambda *a, **k: started.append(1) or 'j')
     with app.app_context():
         for n in Node.query.all():
-            n.hb_installed, n.hb_agent_version, n.hb_status = True, '1.2.0', 'silent'
+            n.hb_installed, n.hb_agent_version, n.hb_status = True, hb.agent_version(), 'silent'
         db.session.commit()
         jid, summary = hb.run_routine()
         assert jid is None and started == [] and summary['result'].startswith('skipped: SenseHive was not reachable')
@@ -345,13 +386,14 @@ def test_the_keeper_waits_then_runs_every_n_hours(app, monkeypatch):
 
 def test_a_settings_push_merges_on_nodes_with_a_new_agent(app, monkeypatch):
     from app.services import collector, heartbeat_service as hb
-    ran = []
-    monkeypatch.setattr(hb, '_upload', lambda target, files: '/tmp/edgeshell-hb.abcd1234')
+    ran, sent = [], {}
+    monkeypatch.setattr(hb, '_upload', lambda target, files: sent.update(files) or '/tmp/edgeshell-hb.abcd1234')
     monkeypatch.setattr(collector, 'run_command', lambda target, cmd, **kw: ran.append(cmd) or
                         {'success': True, 'stdout': 'CONFIG_PUSHED broker x'})
     with app.app_context():
         ok, msg = hb.push_config(Node.query.filter_by(name='pi-01').first())
-    assert ok and '--merge-config' in ran[0]
+    assert ok and ran[0].startswith('sudo bash /tmp/edgeshell-hb.abcd1234/hb_node.sh config;')
+    assert set(sent) == {'config.yaml', 'hb_node.sh'}
 
 
 def test_the_broker_login_push_is_for_administrators_and_runs_as_a_job(app, monkeypatch):
