@@ -232,17 +232,20 @@ def test_inventory_and_the_command_line(node, tmp_path, capsys):
     assert esapp.main(['uninstall', 'demo-sensor']) == 0
 
 
-def test_a_reinstall_of_the_running_version_keeps_the_folder_open_to_its_user(node, tmp_path):
-    """Reinstalling the version that runs (a repair) must never leave the app's folder
-    root-only: its service could not enter its own folder (found on a real node)."""
+def test_a_reinstall_of_the_running_version_keeps_the_folder_open_to_its_user(node, tmp_path, monkeypatch):
+    """Reinstalling the version that runs (a repair) must never lock the app's folder to
+    root again: its service could not enter its own folder (found on a real node)."""
     p = pkg(tmp_path, '1.0.0')
     data = open(p, 'rb').read()
     esapp.install(p)
     app_dir = os.path.join(node.root, 'apps', 'demo-sensor')
-    os.chmod(app_dir, 0o710)
+    locked = []
+    real_chmod = os.chmod
+    monkeypatch.setattr(esapp.os, 'chmod', lambda path, mode: (locked.append(path) if mode == 0o700 else None,
+                                                               real_chmod(path, mode))[1])
     node.calls.clear()
     again = tmp_path / 'again.esapp'
     again.write_bytes(data)
     assert esapp.install(str(again))['note'] == 'already running'
-    assert os.stat(app_dir).st_mode & 0o777 == 0o710                       # not locked to root again
-    assert ['chmod', 'u=rwx,g=x,o=', app_dir] in node.calls                # and its modes repaired
+    assert app_dir not in locked                                            # not locked to root again
+    assert ['chmod', 'u=rwx,g=x,o=', app_dir] in node.calls                 # and its modes repaired
