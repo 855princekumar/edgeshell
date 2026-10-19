@@ -186,7 +186,7 @@ jobs:
         run: docker run --rm --network esnet -e MARIADB_ROOT_PASSWORD=ci-root-pw -v "$PWD/docker/lake-init.sh:/l.sh:ro" mariadb:11.4 sh /l.sh | grep "io=Yes sql=Yes"
 
   esapp:
-    name: Apps on a real systemd node (esapp on Debian 12)
+    name: Apps on a real systemd node (esapp and the heartbeat agent on Debian 12)
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7
@@ -201,6 +201,16 @@ jobs:
         run: python tests/esapp_e2e.py --node esnode
       - name: The example app packs
         run: python app/agents/esapp/esapp.py pack examples/apps/hello-sensor -o /tmp/hello.esapp
+      - name: A broker and a second node for the heartbeat agent
+        run: |
+          docker run -d --name mq -p 1883:1883 eclipse-mosquitto:2.0.20 mosquitto -c /mosquitto-no-auth.conf
+          docker run -d --name hbnode --privileged --cgroupns=host -v /sys/fs/cgroup:/sys/fs/cgroup:rw --add-host host.docker.internal:host-gateway jrei/systemd-debian:12
+          for i in $(seq 1 30); do docker exec hbnode systemctl is-system-running 2>/dev/null | grep -qE 'running|degraded' && break; sleep 2; done
+          pip install -r requirements.txt
+      - name: The heartbeat agent as an app (moved from the classic install, kept when the new one fails, bad update rolls back)
+        env:
+          FLASK_ENV: testing
+        run: python -W ignore tests/heartbeat_esapp_e2e.py --node hbnode --broker-container mq
 
   ui:
     name: Browser UI (1500 nodes, phone to desktop, zoom 67 to 200%)

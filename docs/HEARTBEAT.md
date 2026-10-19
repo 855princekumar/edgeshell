@@ -10,7 +10,7 @@ measured precisely.
 
 ```mermaid
 flowchart LR
-  N[Node<br/>heartbeat agent<br/>/opt/edgeshell-heartbeat] -- "encrypted heartbeat every 10 s<br/>signed last will (LWT)" --> B[(Public MQTT broker<br/>TLS 8883)]
+  N[Node<br/>heartbeat agent<br/>/opt/edgeshell/apps/heartbeat] -- "encrypted heartbeat every 10 s<br/>signed last will (LWT)" --> B[(Public MQTT broker<br/>TLS 8883)]
   B --> S[SenseHive<br/>verifies, keeps state]
   S -- "read-only API (token)" --> E[EdgeShell<br/>node cards, SLA]
   E -- "SSH over the VPN" --> N
@@ -18,7 +18,7 @@ flowchart LR
 
 | Part | Where | Role |
 |---|---|---|
-| Heartbeat agent | every node, `/opt/edgeshell-heartbeat` ([repository](https://github.com/855princekumar/mqtt-heartbeat-service)) | publishes heartbeats and a signed last will; reloads `config.yaml` on the fly |
+| Heartbeat agent | every node, an [app](APPS.md) in `/opt/edgeshell/apps/heartbeat` ([repository](https://github.com/855princekumar/mqtt-heartbeat-service)) | publishes heartbeats and a signed last will; reloads `config.yaml` on the fly |
 | SenseHive | a container in the EdgeShell stack ([repository](https://github.com/855princekumar/sense-hive)) | verifies every message, keeps per-node state (SQLite), serves it read-only |
 | EdgeShell | the app | installs the agent, pushes settings, reads SenseHive, shows status, counts uptime |
 
@@ -110,14 +110,31 @@ It runs as a background job, 8 nodes at a time, with live progress. Per node:
 1. EdgeShell uploads the agent (a pinned copy inside the EdgeShell image; no
    download from the internet), this node's join token (its name and keys,
    never the master key) and the broker login into a private temporary folder.
-2. The agent's `setup.py` checks the token, tries the
-   [four ways to the broker](#four-ways-to-the-broker) with a real login and
-   keeps the best that works, then `install.sh` installs the OS packages
-   (`python3-paho-mqtt`, `python3-yaml`, `python3-cryptography`), creates the
-   unprivileged user `hbagent`, puts the files in `/opt/edgeshell-heartbeat` and
-   starts the hardened systemd service `edgeshell-heartbeat`; the temporary
-   folder is removed. The job log shows the checkpoint table per node.
-3. The agent identifies itself by the **EdgeShell node name**, so its heartbeats
+2. The agent is an [app](APPS.md) (ADR 0018), installed by esapp like any
+   other: its code and **its own Python venv** in
+   `/opt/edgeshell/apps/heartbeat/versions/VERSION` (nothing installed
+   system-wide), the user `es-heartbeat`, the service `es-heartbeat`. The
+   package is built from the agent inside the EdgeShell image and kept in the
+   Apps bucket, so every agent sent to a node is in the audit.
+3. The agent's `setup.py --files-only` checks the token, tries the
+   [four ways to the broker](#four-ways-to-the-broker) with a real login, keeps
+   the best that works and writes the node's settings into
+   `/opt/edgeshell/apps/heartbeat/data` (`agent.env`, `mqtt.env`,
+   `config.yaml`, root:es-heartbeat 0640, in a folder only the agent's user can
+   enter). Then the switch: the new version must stay up, or the previous one
+   comes back by itself. The temporary folder is removed; the job log shows the
+   checkpoint table per node.
+4. **Nodes with the classic install** (`/opt/edgeshell-heartbeat`, user
+   `hbagent`, before 1.17) are moved over by the same step: the classic agent
+   stops only for the switch (one node identity sends from one place) and is
+   removed once the new one runs; if the new one does not run, the classic one
+   starts again. The routine does this by itself: a node reporting agent 1.2
+   is "older than this EdgeShell's" and gets the update. The OS packages the
+   classic install used (`python3-paho-mqtt`, `python3-yaml`,
+   `python3-cryptography`) stay, since other software may use them.
+5. **Nodes without systemd** keep the classic install (esapp apps are systemd
+   services).
+6. The agent identifies itself by the **EdgeShell node name**, so its heartbeats
    land on exactly that node: no duplicates, no overwriting another node.
 
 Try one node first (select it, then install), then the rest. The Fleet Setup
@@ -257,7 +274,7 @@ Details: [ADR 0013](adr/0013-mqtt-heartbeat.md) and the
 | Symptom | Check |
 |---|---|
 | Every node "heartbeat silent" | SenseHive's connection to the broker: SenseHive, Heartbeats page; `docker compose logs sensehive` |
-| One node "LWT offline" but SSH works | the agent on that node: `systemctl status edgeshell-heartbeat`, `journalctl -u edgeshell-heartbeat -n 50` |
+| One node "LWT offline" but SSH works | the agent on that node: `systemctl status es-heartbeat`, `journalctl -u es-heartbeat -n 50` (classic install: `edgeshell-heartbeat`); Apps, On the nodes shows its versions and can roll it back |
 | Install fails at the packages step | the node needs internet for `apt` once |
 | "HEARTBEAT_MASTER_KEY is not set" in Fleet Setup | add it to `.env` (see above) and `docker compose up -d` |
 
@@ -265,12 +282,8 @@ Rotating the master key: set a new `HEARTBEAT_MASTER_KEY`, `docker compose up -d
 then reinstall the agent on every node (Fleet Setup). Until a node is
 reinstalled its heartbeats are rejected (it shows silent), nothing else breaks.
 
-Removing the agent from a node (the installer is not kept on the node):
-
-```bash
-sudo systemctl disable --now edgeshell-heartbeat
-sudo rm -rf /opt/edgeshell-heartbeat /etc/systemd/system/edgeshell-heartbeat.service
-sudo systemctl daemon-reload && sudo userdel hbagent
-```
-
-Or copy the repository's `install.sh` to the node and run `sudo bash install.sh --uninstall`.
+Removing the agent from a node: **Apps, On the nodes, heartbeat, Remove**, or
+on the node `sudo /opt/edgeshell/apps/heartbeat/current/uninstall.sh`. The
+routine installs it again on its next pass unless the routine is off: the
+heartbeat is what the SLA counts on. A classic install is removed with the
+repository's `install.sh`: `sudo bash install.sh --uninstall`.

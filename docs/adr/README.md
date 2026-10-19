@@ -21,3 +21,4 @@ Short records of the significant choices in EdgeShell and why they were made.
 | [0015](0015-hardware-lifecycle.md) | Hardware lifecycle: nodes as positions, detected replacements, fault reports |
 | [0016](0016-heartbeat-everywhere.md) | The heartbeat agent on every node, kept there by a routine; four ways to the broker |
 | [0017](0017-apps-on-the-edge.md) | Apps on the edge: one folder, one service, versions side by side, a way back |
+| [0018](0018-heartbeat-agent-as-an-app.md) | The heartbeat agent is an app: its own venv, an atomic switch, a way back, moved over from the classic install |

@@ -35,6 +35,7 @@ always kept for a one-click rollback.
 The last line of every command is `ESAPP_RESULT {json}` for EdgeShell.
 """
 import argparse
+import gzip
 import hashlib
 import io
 import json
@@ -206,23 +207,29 @@ def extract(path, dest):
 
 
 def pack(folder, out=None):
-    """Build NAME-VERSION.esapp from a folder with manifest.json. Returns the path."""
+    """Build NAME-VERSION.esapp from a folder with manifest.json. Returns the path.
+    Reproducible: the same files always give the same bytes (sorted, fixed times
+    and owners, modes from the executable bit only), so a rebuild of a version
+    is accepted as that version, never refused as changed."""
     with open(os.path.join(folder, 'manifest.json'), encoding='utf-8') as fh:
         m = check_manifest(json.load(fh))
     out = out or os.path.join(os.getcwd(), '%s-%s%s' % (m['name'], m['version'], EXT))
-    with tarfile.open(out, 'w:gz') as tf:
-        for base, dirs, files in os.walk(folder):
-            dirs[:] = sorted(d for d in dirs if d not in SKIP_DIRS and not os.path.islink(os.path.join(base, d)))
-            for f in sorted(files):
-                p = os.path.join(base, f)
-                if f.endswith('.pyc') or os.path.islink(p) or os.path.abspath(p) == os.path.abspath(out):
-                    continue
-                rel = os.path.relpath(p, folder).replace(os.sep, '/')
-                ti = tf.gettarinfo(p, rel)
-                ti.uid = ti.gid = 0
-                ti.uname = ti.gname = 'root'
-                with open(p, 'rb') as fh:
-                    tf.addfile(ti, fh)
+    entries = []
+    for base, dirs, files in os.walk(folder):
+        dirs[:] = sorted(d for d in dirs if d not in SKIP_DIRS and not os.path.islink(os.path.join(base, d)))
+        for f in sorted(files):
+            p = os.path.join(base, f)
+            if f.endswith('.pyc') or os.path.islink(p) or os.path.abspath(p) == os.path.abspath(out):
+                continue
+            entries.append((os.path.relpath(p, folder).replace(os.sep, '/'), p))
+    with open(out, 'wb') as raw, gzip.GzipFile(filename='', mode='wb', fileobj=raw, mtime=0) as gz,             tarfile.open(fileobj=gz, mode='w', format=tarfile.GNU_FORMAT) as tf:
+        for rel, p in sorted(entries):
+            with open(p, 'rb') as fh:
+                data = fh.read()
+            ti = tarfile.TarInfo(rel)
+            ti.size, ti.mtime, ti.uid, ti.gid, ti.uname, ti.gname = len(data), 0, 0, 0, 'root', 'root'
+            ti.mode = 0o755 if os.access(p, os.X_OK) and os.name != 'nt' else 0o644
+            tf.addfile(ti, io.BytesIO(data))
     read_package(out)                                   # the same checks a node will make
     return out
 
@@ -539,10 +546,10 @@ def install(pkg, sha=None, activate_now=True):
         raise Fail('package checksum does not match what EdgeShell sent (%s)' % digest[:12])
     app = App(m['name'])
     v = m['version']
-    os.makedirs(os.path.join(app.dir, 'ota'), exist_ok=True)
-    os.makedirs(os.path.join(app.dir, 'versions'), exist_ok=True)
     for d in (app.dir, os.path.join(app.dir, 'ota'), os.path.join(app.dir, 'versions')):
-        os.chmod(d, 0o700)                              # root only until the app's user exists
+        if not os.path.isdir(d):
+            os.makedirs(d)
+            os.chmod(d, 0o700)                          # a new folder: root only until the app's user exists
     have = app.state['versions'].get(v)
     if have and have.get('sha256') != digest:
         raise Fail('%s %s was installed here with different contents; give the new build a new version' % (app.name, v))
@@ -551,6 +558,8 @@ def install(pkg, sha=None, activate_now=True):
                    % (app.name, v, have.get('failed_reason') or 'rolled back'))
     if have and os.path.isdir(app.vdir(v)):
         _drop_staged(pkg)
+        if user_exists(app.user):
+            _app_dirs(app)                              # a reinstall also repairs the folder modes
         if app.current() == v:
             return {'ok': True, 'app': app.name, 'version': v, 'note': 'already running'}
         return activate(app.name, v) if activate_now else {'ok': True, 'app': app.name, 'version': v}
@@ -562,9 +571,7 @@ def install(pkg, sha=None, activate_now=True):
     app.log('received %s %s (%s)' % (app.name, v, digest[:12]))
     created = ensure_user(app.user, os.path.join(app.dir, 'data'), m['groups'])
     app.state.setdefault('created_user', created)       # uninstall removes the user only if esapp made it
-    for d in (app.dir, os.path.join(app.dir, 'versions')):
-        sh(['chown', 'root:%s' % app.user, d])
-        sh(['chmod', 'u=rwx,g=x,o=', d])               # the app's user may pass through, nobody else
+    _app_dirs(app)
     data = os.path.join(app.dir, 'data')
     if not os.path.isdir(data):
         os.makedirs(data)
@@ -595,6 +602,13 @@ def install(pkg, sha=None, activate_now=True):
     if not activate_now:
         return {'ok': True, 'app': app.name, 'version': v, 'note': 'installed, not running'}
     return activate(app.name, v)
+
+
+def _app_dirs(app):
+    """The app's folder and versions/: root:es-NAME, the app's user may pass through, nobody else."""
+    for d in (app.dir, os.path.join(app.dir, 'versions')):
+        sh(['chown', 'root:%s' % app.user, d])
+        sh(['chmod', 'u=rwx,g=x,o=', d])
 
 
 def _drop_staged(pkg):
