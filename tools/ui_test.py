@@ -576,7 +576,7 @@ def run_interactions(pw, base, rep, total, real_id, label, w, h, scale):
     rep.check(f'{label}: the numbers show service life', 'Service life of parts' in page.inner_text('#numbers'),
               page.inner_text('#numbers')[:200], page)
     page.click('#hwGuideBtn')
-    page.wait_for_url('**/guide/#find')
+    page.wait_for_url('**/guide/#find', wait_until='domcontentloaded')   # the guide's own scene is awaited next; external fonts may lag
     run_guide(page, rep, label, base)
 
     # The top bar on every page: the account button looks like a button, the (i) opens the guide
@@ -590,7 +590,7 @@ def run_interactions(pw, base, rep, total, real_id, label, w, h, scale):
     page.wait_for_url('**/account/')
     rep.check(f'{label}: the account button opens My account', page.url.endswith('/account/'), page.url, page)
     page.click('#topbarGuide')
-    page.wait_for_url('**/guide/')
+    page.wait_for_url('**/guide/', wait_until='domcontentloaded')
     page.wait_for_selector('.scene.on')
     page.click('#backBtn')
     page.wait_for_url('**/account/')
